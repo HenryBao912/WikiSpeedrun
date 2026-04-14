@@ -461,11 +461,25 @@
     display: inline-block;
     font-size: 0.65rem;
     font-weight: 800;
-    margin-left: 1px;
   }
   .lb-arrow.up { color: #b8fce4; animation: arrowBounceUp 0.6s ease-out; }
   .lb-arrow.down { color: #ffb8a8; animation: arrowBounceDown 0.6s ease-out; }
   .lb-arrow.flat { opacity: 0.3; }
+  .lb-step-flash {
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: #b8fce4;
+    opacity: 0;
+    margin-left: 2px;
+  }
+  .lb-step-flash.show {
+    animation: stepFlash 0.8s ease-out forwards;
+  }
+  @keyframes stepFlash {
+    0% { opacity: 1; transform: translateY(0); }
+    70% { opacity: 1; transform: translateY(-4px); }
+    100% { opacity: 0; transform: translateY(-8px); }
+  }
   @keyframes arrowBounceUp {
     0% { transform: translateY(4px); opacity: 0; }
     40% { transform: translateY(-3px); opacity: 1; }
@@ -1043,7 +1057,7 @@ function distColorClass(d) {
 }
 
 // Track previous state for animation
-const prevPositions = new Map(); // pid -> { distance }
+const prevPositions = new Map(); // pid -> { distance, steps }
 const MAX_DIST = 6;
 const COLLAPSE_THRESHOLD = 3; // collapse to grouped dot when this many overlap
 
@@ -1186,14 +1200,20 @@ function renderPlayersBar(distData) {
         let distHtml = '';
         if (e.d !== null && e.d !== undefined && currentMode === 'classic') {
           const cls = distColorClass(e.d);
-          distHtml = `<span class="lb-dist ${cls}">${e.d}${arrowHtml}</span>`;
+          distHtml = `${arrowHtml}<span class="lb-dist ${cls}">${e.d}</span>`;
         }
+
+        // Detect step increase for +1 flash
+        const prevData = prevPositions.get(e.pid);
+        const steppedUp = prevData && prevData.steps !== undefined && e.steps > prevData.steps && !isNew;
+        const stepFlash = steppedUp ? '<span class="lb-step-flash show">+</span>' : '<span class="lb-step-flash"></span>';
 
         rider.style.background = e.color;
         rider.innerHTML = `
+          ${distHtml}
           <span class="lb-name">${esc(e.name)}</span>
           <span class="lb-steps">${e.steps}${e.triInfo}</span>
-          ${distHtml}
+          ${stepFlash}
         `;
 
         // Stack vertically if overlapping
@@ -1206,13 +1226,12 @@ function renderPlayersBar(distData) {
         rowUsed.push({ left: e.leftPct, row });
 
         // Pulse on distance change
-        const prevData = prevPositions.get(e.pid);
         if (prevData && prevData.distance !== null && e.d !== null && prevData.distance !== e.d && !isNew) {
           rider.classList.remove('pulse');
           void rider.offsetWidth;
           rider.classList.add('pulse');
         }
-        prevPositions.set(e.pid, { distance: e.d });
+        prevPositions.set(e.pid, { distance: e.d, steps: e.steps });
       }
     }
   }
