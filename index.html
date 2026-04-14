@@ -414,16 +414,17 @@
   }
   .lb-goal {
     position: absolute;
-    right: -2px;
+    right: -6px;
     top: 50%;
     transform: translateY(-50%);
-    font-size: 10px;
+    font-size: 18px;
     line-height: 1;
+    filter: drop-shadow(0 0 4px rgba(0,184,148,0.6));
   }
   .lb-riders {
     position: relative;
     width: 100%;
-    min-height: 28px;
+    min-height: 56px;
   }
   /* Full pill rider */
   .lb-rider {
@@ -524,7 +525,11 @@
   .lb-rider.collapsed:hover .lb-tip { opacity: 1; }
   .lb-tip .tip-name { font-weight: 700; }
   .lb-tip .tip-steps { opacity: 0.8; }
-  .lb-tip .tip-dist { font-weight: 800; }
+  .lb-tip .tip-dist { font-weight: 800; color: white; }
+  .lb-tip .tip-dist.dist-c0 { color: #fdcb6e; }
+  .lb-tip .tip-dist.dist-c2 { color: #e17055; }
+  .lb-tip .tip-dist.dist-c3 { color: #a29bfe; }
+  .lb-tip .tip-dist.dist-cfar { color: #74b9ff; }
   .lb-tip .tip-arrow { font-size: 0.6rem; font-weight: 800; }
   .lb-tip .tip-arrow.up { color: #b8fce4; }
   .lb-tip .tip-arrow.down { color: #ffb8a8; }
@@ -1127,7 +1132,8 @@ function renderPlayersBar(distData) {
         }
         let dHtml = '';
         if (e.d !== null && e.d !== undefined && currentMode === 'classic') {
-          dHtml = `<span class="tip-dist">${e.d}</span>${arrow}`;
+          const dcls = distColorClass(e.d);
+          dHtml = `<span class="tip-dist ${dcls}">${e.d}</span>${arrow}`;
         }
         return `<div style="display:flex;align-items:center;gap:6px;">
           <span style="width:8px;height:8px;border-radius:50%;background:${e.color};flex-shrink:0;"></span>
