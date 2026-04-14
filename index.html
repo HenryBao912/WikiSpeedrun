@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WikiSpeedrun</title>
+<style>
+  :root {
+    --bg: #0f0f13;
+    --surface: #1a1a24;
+    --surface2: #24243a;
+    --accent: #6c5ce7;
+    --accent2: #a29bfe;
+    --green: #00b894;
+    --red: #e17055;
+    --gold: #fdcb6e;
+    --text: #f0f0f5;
+    --text2: #9090a8;
+    --radius: 12px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  .screen { display: none; min-height: 100vh; }
+  .screen.active { display: flex; }
+
+  /* ─── Home Screen ─── */
+  #home {
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 32px;
+    padding: 40px 20px;
+    text-align: center;
+  }
+  .logo {
+    font-size: 3.2rem;
+    font-weight: 800;
+    letter-spacing: -1px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2), var(--green));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .logo-sub {
+    font-size: 1.1rem;
+    color: var(--text2);
+    margin-top: -16px;
+    max-width: 420px;
+  }
+  .home-form {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+    max-width: 360px;
+  }
+  input[type="text"] {
+    width: 100%;
+    padding: 14px 20px;
+    border: 2px solid var(--surface2);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 1rem;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  input[type="text"]:focus { border-color: var(--accent); }
+  input[type="text"]::placeholder { color: var(--text2); }
+  .btn-row { display: flex; gap: 12px; width: 100%; }
+  .btn-row .btn { flex: 1; }
+  .btn {
+    padding: 14px 24px;
+    border: none;
+    border-radius: var(--radius);
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.2s;
+  }
+  .btn:hover { transform: translateY(-2px); }
+  .btn:active { transform: translateY(0); }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--accent), #7c6cf0);
+    color: white;
+    box-shadow: 0 4px 20px rgba(108, 92, 231, 0.4);
+  }
+  .btn-secondary {
+    background: var(--surface2);
+    color: var(--text);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  }
+  .join-section {
+    display: flex;
+    gap: 10px;
+    width: 100%;
+  }
+  .join-section input { flex: 1; text-transform: uppercase; letter-spacing: 4px; text-align: center; font-weight: 700; }
+  .divider {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+    color: var(--text2);
+    font-size: 0.85rem;
+  }
+  .divider::before, .divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--surface2);
+  }
+  .error-msg {
+    color: var(--red);
+    font-size: 0.9rem;
+    min-height: 1.2em;
+  }
+
+  /* ─── Lobby Screen ─── */
+  #lobby {
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+    padding: 40px 20px;
+    text-align: center;
+  }
+  .room-code-display {
+    font-size: 3rem;
+    font-weight: 800;
+    letter-spacing: 8px;
+    color: var(--accent2);
+    padding: 16px 32px;
+    border: 3px dashed var(--accent);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: background 0.2s;
+    position: relative;
+  }
+  .room-code-display:hover { background: var(--surface2); }
+  .room-code-display .copy-hint {
+    position: absolute;
+    bottom: -24px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.75rem;
+    color: var(--text2);
+    letter-spacing: 0;
+    font-weight: 400;
+  }
+  .player-list {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 8px;
+  }
+  .player-list li {
+    padding: 10px 20px;
+    background: var(--surface);
+    border-radius: 99px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .player-list li.host::before { content: '👑'; }
+  .waiting-text { color: var(--text2); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+  /* ─── Game Screen ─── */
+  #game {
+    flex-direction: column;
+    height: 100vh;
+  }
+  .game-header {
+    background: var(--surface);
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    border-bottom: 2px solid var(--surface2);
+    flex-shrink: 0;
+    flex-wrap: wrap;
+  }
+  .nav-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.95rem;
+  }
+  .nav-info .origin-tag, .nav-info .dest-tag {
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-weight: 700;
+    font-size: 0.85rem;
+  }
+  .origin-tag { background: var(--accent); color: white; }
+  .dest-tag { background: var(--green); color: white; }
+  .nav-info .arrow { color: var(--text2); font-size: 1.2rem; }
+  .game-stats {
+    display: flex;
+    gap: 16px;
+    font-size: 0.85rem;
+    color: var(--text2);
+  }
+  .game-stats span { display: flex; align-items: center; gap: 4px; }
+  .game-stats .stat-val { color: var(--text); font-weight: 700; }
+  .breadcrumb-bar {
+    background: var(--surface);
+    padding: 8px 20px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    overflow-x: auto;
+    flex-shrink: 0;
+    font-size: 0.8rem;
+    border-bottom: 1px solid var(--surface2);
+  }
+  .breadcrumb-bar span {
+    white-space: nowrap;
+    color: var(--text2);
+  }
+  .breadcrumb-bar span:last-child { color: var(--accent2); font-weight: 600; }
+  .breadcrumb-bar .bc-arrow { color: var(--surface2); }
+  .wiki-container {
+    flex: 1;
+    overflow-y: auto;
+    background: #fff;
+    color: #222;
+  }
+  .wiki-content {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 24px 32px;
+    font-family: 'Linux Libertine', Georgia, serif;
+    font-size: 0.95rem;
+    line-height: 1.7;
+  }
+  .wiki-content h1 {
+    font-size: 1.8rem;
+    border-bottom: 1px solid #ccc;
+    padding-bottom: 6px;
+    margin-bottom: 16px;
+  }
+  .wiki-content h2 {
+    font-size: 1.35rem;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 4px;
+    margin-top: 24px;
+    margin-bottom: 12px;
+  }
+  .wiki-content h3 { font-size: 1.15rem; margin-top: 20px; margin-bottom: 8px; }
+  .wiki-content p { margin-bottom: 12px; }
+  .wiki-content a {
+    color: #3366cc;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .wiki-content a:hover { text-decoration: underline; }
+  .wiki-content ul, .wiki-content ol { margin-left: 24px; margin-bottom: 12px; }
+  .wiki-content table { border-collapse: collapse; margin: 12px 0; width: 100%; }
+  .wiki-content th, .wiki-content td { border: 1px solid #ccc; padding: 6px 10px; font-size: 0.85rem; }
+  .wiki-content th { background: #f0f0f0; }
+  .wiki-content .infobox { display: none; }
+  .wiki-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text2);
+    background: var(--bg);
+  }
+  .wiki-loading .spinner {
+    width: 40px; height: 40px;
+    border: 4px solid var(--surface2);
+    border-top: 4px solid var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-right: 16px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Sidebar: player progress */
+  .players-sidebar {
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    background: var(--surface);
+    border: 1px solid var(--surface2);
+    border-radius: var(--radius);
+    padding: 12px 16px;
+    min-width: 200px;
+    z-index: 100;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  }
+  .players-sidebar h4 { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text2); margin-bottom: 8px; }
+  .progress-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 0;
+    font-size: 0.85rem;
+  }
+  .progress-item .p-name { font-weight: 600; }
+  .progress-item .p-steps {
+    background: var(--surface2);
+    padding: 2px 8px;
+    border-radius: 99px;
+    font-size: 0.75rem;
+    color: var(--accent2);
+  }
+
+  /* ─── Results Screen ─── */
+  #results {
+    flex-direction: column;
+    align-items: center;
+    padding: 40px 20px;
+    gap: 24px;
+    min-height: 100vh;
+  }
+  .winner-banner {
+    text-align: center;
+    padding: 32px;
+  }
+  .trophy { font-size: 4rem; display: block; margin-bottom: 8px; }
+  .winner-name {
+    font-size: 2rem;
+    font-weight: 800;
+    background: linear-gradient(135deg, var(--gold), #f39c12);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .winner-sub { color: var(--text2); margin-top: 4px; }
+  .results-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    width: 100%;
+    max-width: 700px;
+  }
+  .result-card {
+    background: var(--surface);
+    border-radius: var(--radius);
+    padding: 20px;
+    border: 2px solid var(--surface2);
+    transition: border-color 0.2s;
+  }
+  .result-card.winner-card { border-color: var(--gold); }
+  .result-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .result-header .r-name { font-weight: 700; font-size: 1.1rem; }
+  .result-header .r-badge {
+    padding: 4px 12px;
+    border-radius: 99px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+  .badge-winner { background: var(--gold); color: #333; }
+  .badge-dnf { background: var(--surface2); color: var(--text2); }
+  .result-stats {
+    display: flex;
+    gap: 20px;
+    font-size: 0.85rem;
+    color: var(--text2);
+    margin-bottom: 12px;
+  }
+  .result-stats .stat-val { color: var(--text); font-weight: 600; }
+  .path-display {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.8rem;
+  }
+  .path-node {
+    padding: 3px 10px;
+    background: var(--surface2);
+    border-radius: 6px;
+    white-space: nowrap;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 0.3s, transform 0.3s;
+  }
+  .path-node.visible { opacity: 1; transform: translateY(0); }
+  .path-node.start { background: var(--accent); color: white; }
+  .path-node.end { background: var(--green); color: white; }
+  .path-arrow { color: var(--text2); font-size: 0.7rem; opacity: 0; transition: opacity 0.2s; }
+  .path-arrow.visible { opacity: 1; }
+  /* Winner announcement animation */
+  .winner-banner { opacity: 0; transform: scale(0.8); transition: opacity 0.6s, transform 0.6s; }
+  .winner-banner.visible { opacity: 1; transform: scale(1); }
+  .result-card { opacity: 0; transform: translateY(20px); transition: opacity 0.4s, transform 0.4s; }
+  .result-card.visible { opacity: 1; transform: translateY(0); }
+  .result-actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 8px;
+  }
+  .btn-small {
+    padding: 10px 24px;
+    border: none;
+    border-radius: var(--radius);
+    font-size: 0.9rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  /* Responsive */
+  @media (max-width: 600px) {
+    .logo { font-size: 2.2rem; }
+    .room-code-display { font-size: 2rem; letter-spacing: 4px; }
+    .game-header { padding: 8px 12px; }
+    .wiki-content { padding: 16px; }
+    .players-sidebar { bottom: 8px; right: 8px; left: 8px; min-width: auto; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ─── Home Screen ─── -->
+<div id="home" class="screen active">
+  <div class="logo">WikiSpeedrun</div>
+  <p class="logo-sub">Race your friends through Wikipedia. Click links to navigate from one article to another. First to reach the destination wins!</p>
+  <div class="home-form">
+    <input type="text" id="playerName" placeholder="Your name" maxlength="20" />
+    <button class="btn btn-primary" onclick="createRoom()" style="width:100%">Create Room</button>
+    <div class="divider">or join a friend</div>
+    <div class="join-section">
+      <input type="text" id="roomCodeInput" placeholder="ROOM CODE" maxlength="5" />
+      <button class="btn btn-secondary" onclick="joinRoom()">Join</button>
+    </div>
+    <div class="error-msg" id="homeError"></div>
+  </div>
+</div>
+
+<!-- ─── Lobby Screen ─── -->
+<div id="lobby" class="screen">
+  <div class="logo" style="font-size:2rem;">WikiSpeedrun</div>
+  <p style="color:var(--text2)">Share this room code with friends:</p>
+  <div class="room-code-display" id="roomCodeDisplay" onclick="copyCode()">
+    <span id="codeText"></span>
+    <span class="copy-hint">click to copy</span>
+  </div>
+  <ul class="player-list" id="playerList"></ul>
+  <p class="waiting-text" id="waitingText">Waiting for players...</p>
+  <button class="btn btn-primary" id="startBtn" onclick="startGame()" style="display:none;padding:14px 48px;flex:none;width:auto;">Start Game</button>
+</div>
+
+<!-- ─── Game Screen ─── -->
+<div id="game" class="screen">
+  <div class="game-header">
+    <div class="nav-info">
+      <span class="origin-tag" id="gameOrigin"></span>
+      <span class="arrow">&rarr;</span>
+      <span class="dest-tag" id="gameDest"></span>
+    </div>
+    <div class="game-stats">
+      <span>Steps: <span class="stat-val" id="stepCount">0</span></span>
+      <span>Time: <span class="stat-val" id="timerDisplay">0:00</span></span>
+    </div>
+  </div>
+  <div class="breadcrumb-bar" id="breadcrumbs"></div>
+  <div class="wiki-container" id="wikiContainer">
+    <div class="wiki-loading" id="wikiLoading">
+      <div class="spinner"></div>
+      Loading Wikipedia...
+    </div>
+    <div class="wiki-content" id="wikiContent"></div>
+  </div>
+  <div class="players-sidebar" id="playersSidebar">
+    <h4>Players</h4>
+    <div id="progressList"></div>
+  </div>
+</div>
+
+<!-- ─── Results Screen ─── -->
+<div id="results" class="screen">
+  <div class="winner-banner">
+    <span class="trophy">🏆</span>
+    <div class="winner-name" id="winnerName"></div>
+    <div class="winner-sub" id="winnerSub"></div>
+  </div>
+  <div class="results-grid" id="resultsGrid"></div>
+  <div class="result-actions">
+    <button class="btn-small btn-primary" id="playAgainBtn" onclick="playAgain()" style="display:none;">Play Again</button>
+    <button class="btn-small btn-secondary" onclick="backToHome()">Leave</button>
+  </div>
+</div>
+
+<script>
+// ─── State ───
+let eventSource = null;
+let myPlayerId = null;
+let currentRoomCode = null;
+let isHost = false;
+let currentArticle = '';
+let myPath = [];
+let gameOrigin = '';
+let gameDestination = '';
+let timerInterval = null;
+let gameStartTime = 0;
+let playerProgress = new Map();
+
+// ─── Screen Management ───
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+// ─── SSE Connection ───
+function connectSSE() {
+  return new Promise((resolve, reject) => {
+    if (eventSource) {
+      eventSource.close();
+    }
+    const url = myPlayerId ? `/events?playerId=${myPlayerId}` : '/events';
+    console.log('[SSE] Connecting to', url);
+    eventSource = new EventSource(url);
+
+    eventSource.onopen = () => {
+      console.log('[SSE] Connected');
+    };
+
+    eventSource.onmessage = (e) => {
+      console.log('[SSE] Message:', e.data.slice(0, 120));
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'connected') {
+          myPlayerId = msg.playerId;
+          console.log('[SSE] Player ID:', myPlayerId);
+          resolve();
+          return;
+        }
+        handleServerMessage(msg);
+      } catch(err) {
+        console.error('[SSE] Parse error:', err);
+      }
+    };
+
+    eventSource.onerror = (e) => {
+      console.error('[SSE] Error:', e);
+      if (eventSource.readyState === EventSource.CLOSED) {
+        showError('Connection lost. Please refresh.');
+      }
+      reject(new Error('SSE connection failed'));
+    };
+  });
+}
+
+async function send(msg) {
+  try {
+    const resp = await fetch('/action', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Player-Id': myPlayerId,
+      },
+      body: JSON.stringify(msg),
+    });
+    const result = await resp.json();
+    if (!result.ok && result.error) {
+      showError(result.error);
+    }
+    return result;
+  } catch(e) {
+    console.error('[HTTP] Send error:', e);
+    showError('Failed to send action. Is the server running?');
+  }
+}
+
+// ─── Home Actions ───
+async function createRoom() {
+  const name = document.getElementById('playerName').value.trim() || 'Player';
+  try {
+    await connectSSE();
+    await send({ type: 'create_room', name });
+  } catch(e) {
+    showError('Could not connect to server. Is it running?');
+  }
+}
+
+async function joinRoom() {
+  const name = document.getElementById('playerName').value.trim() || 'Player';
+  const code = document.getElementById('roomCodeInput').value.trim();
+  if (!code) { showError('Enter a room code'); return; }
+  try {
+    await connectSSE();
+    await send({ type: 'join_room', code, name });
+  } catch(e) {
+    showError('Could not connect to server. Is it running?');
+  }
+}
+
+function showError(msg) {
+  const el = document.getElementById('homeError');
+  el.textContent = msg;
+  setTimeout(() => el.textContent = '', 4000);
+}
+
+function copyCode() {
+  navigator.clipboard?.writeText(currentRoomCode);
+  const hint = document.querySelector('.copy-hint');
+  hint.textContent = 'copied!';
+  setTimeout(() => hint.textContent = 'click to copy', 1500);
+}
+
+// ─── Server Message Handler ───
+function handleServerMessage(msg) {
+  switch (msg.type) {
+    case 'room_created':
+      currentRoomCode = msg.code;
+      isHost = true;
+      document.getElementById('codeText').textContent = msg.code;
+      showScreen('lobby');
+      break;
+
+    case 'room_joined':
+      currentRoomCode = msg.code;
+      document.getElementById('codeText').textContent = msg.code;
+      showScreen('lobby');
+      break;
+
+    case 'player_list':
+      renderPlayerList(msg.players, msg.host);
+      isHost = msg.host === myPlayerId;
+      break;
+
+    case 'error':
+      showError(msg.message);
+      break;
+
+    case 'game_start':
+      startGameUI(msg.origin, msg.destination);
+      break;
+
+    case 'player_progress':
+      playerProgress.set(msg.playerId, { name: msg.name, steps: msg.steps, currentArticle: msg.currentArticle });
+      renderProgress();
+      break;
+
+    case 'game_over':
+      showResults(msg);
+      break;
+
+    case 'player_left':
+      break;
+  }
+}
+
+// ─── Lobby ───
+function renderPlayerList(players, hostId) {
+  const ul = document.getElementById('playerList');
+  ul.innerHTML = players.map(p =>
+    `<li class="${p.id === hostId ? 'host' : ''}">${esc(p.name)}</li>`
+  ).join('');
+  document.getElementById('waitingText').style.display = players.length < 2 ? '' : 'none';
+  document.getElementById('startBtn').style.display = isHost && players.length >= 2 ? '' : 'none';
+}
+
+function startGame() { send({ type: 'start_game' }); }
+
+// ─── Game ───
+function startGameUI(origin, destination) {
+  gameOrigin = origin;
+  gameDestination = destination;
+  myPath = [origin];
+  currentArticle = origin;
+  playerProgress.clear();
+  gameStartTime = Date.now();
+
+  document.getElementById('gameOrigin').textContent = origin.replace(/_/g, ' ');
+  document.getElementById('gameDest').textContent = destination.replace(/_/g, ' ');
+  document.getElementById('stepCount').textContent = '0';
+
+  showScreen('game');
+  startTimer();
+  loadArticle(origin);
+}
+
+function startTimer() {
+  clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - gameStartTime) / 1000);
+    const m = Math.floor(elapsed / 60);
+    const s = (elapsed % 60).toString().padStart(2, '0');
+    document.getElementById('timerDisplay').textContent = `${m}:${s}`;
+  }, 1000);
+}
+
+function updateBreadcrumbs() {
+  const bar = document.getElementById('breadcrumbs');
+  bar.innerHTML = myPath.map((p, i) => {
+    const name = p.replace(/_/g, ' ');
+    const arrow = i < myPath.length - 1 ? '<span class="bc-arrow"> \u203A </span>' : '';
+    return `<span>${esc(name)}</span>${arrow}`;
+  }).join('');
+  bar.scrollLeft = bar.scrollWidth;
+  document.getElementById('stepCount').textContent = myPath.length - 1;
+}
+
+function renderProgress() {
+  const list = document.getElementById('progressList');
+  list.innerHTML = '';
+  for (const [pid, info] of playerProgress) {
+    const div = document.createElement('div');
+    div.className = 'progress-item';
+    div.innerHTML = `
+      <span class="p-name">${pid === myPlayerId ? 'You' : esc(info.name)}</span>
+      <span class="p-steps">${info.steps - 1} steps</span>
+    `;
+    list.appendChild(div);
+  }
+}
+
+// ─── Wikipedia API ───
+async function loadArticle(title) {
+  const container = document.getElementById('wikiContainer');
+  const loading = document.getElementById('wikiLoading');
+  const content = document.getElementById('wikiContent');
+
+  loading.style.display = 'flex';
+  content.style.display = 'none';
+  container.scrollTop = 0;
+
+  try {
+    const apiUrl = `https://en.wikipedia.org/api/rest_v1/page/html/${encodeURIComponent(title)}`;
+    const resp = await fetch(apiUrl);
+    if (!resp.ok) throw new Error('Article not found');
+    let html = await resp.text();
+
+    // Parse and clean the HTML
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+
+    // Remove edit links, references, navboxes, sidebars, and other non-content
+    doc.querySelectorAll(
+      '.mw-editsection, .reference, .reflist, .navbox, .sistersitebox, ' +
+      '.metadata, .mw-empty-elt, .noprint, style, .mw-kartographer-container, ' +
+      'sup.reference, .mw-references-wrap, link, meta, .hatnote, ' +
+      '.shortdescription, .mw-indicators, .ambox, .tmbox, .ombox, .cmbox, ' +
+      '.dmbox, .fmbox, .imbox, .portal, .side-box, .authority-control, ' +
+      // Remove sidebar navigation boxes (e.g. "Part of a series on...")
+      '.sidebar, .sidebar-collapse, .sidebar-content, ' +
+      'table.sidebar, div.sidebar, ' +
+      // Remove vertical/horizontal navboxes and series boxes
+      '.vcard, .vertical-navbox, .hlist, ' +
+      'table.vertical-navbox, ' +
+      // Remove "Part of a series" and similar template boxes
+      '[role="navigation"], .mw-collapsible, ' +
+      // Remove table of contents
+      '#toc, .toc, .toccolours, ' +
+      // Remove geographic/coordinate info
+      '.geo-default, .geo-dms, .geo-dec, #coordinates'
+    ).forEach(el => el.remove());
+
+    // Remove images to keep it clean and fast
+    doc.querySelectorAll('img, figure, .thumb, .image, .mw-file-element, .mw-file-description').forEach(el => el.remove());
+
+    // Remove any remaining infobox/sidebar tables (Wikipedia uses various classes)
+    doc.querySelectorAll('table').forEach(table => {
+      const cls = (table.className || '').toLowerCase();
+      const style = (table.getAttribute('style') || '').toLowerCase();
+      if (cls.includes('infobox') || cls.includes('sidebar') || cls.includes('vcard') ||
+          cls.includes('vertical-navbox') || cls.includes('wikitable plainrowheaders') ||
+          style.includes('float') && (style.includes('right') || style.includes('left')) && table.querySelector('th')) {
+        table.remove();
+      }
+    });
+
+    // Process links: only keep Wikipedia internal article links
+    doc.querySelectorAll('a').forEach(a => {
+      const href = a.getAttribute('href') || '';
+      // Match internal wiki links like ./Article_Name or /wiki/Article_Name
+      const wikiMatch = href.match(/^\.\/([^#?]+)/) || href.match(/^\/wiki\/([^#?]+)/);
+      if (wikiMatch) {
+        const target = decodeURIComponent(wikiMatch[1]);
+        // Skip non-article namespaces
+        if (target.includes(':') && !target.startsWith('The_') && target.indexOf(':') < 15) {
+          a.removeAttribute('href');
+          a.style.color = '#666';
+          a.style.cursor = 'default';
+          return;
+        }
+        a.removeAttribute('href');
+        a.setAttribute('data-article', target);
+        a.style.cursor = 'pointer';
+        a.style.color = '#3366cc';
+      } else {
+        // External or anchor link — disable
+        a.removeAttribute('href');
+        a.style.color = '#666';
+        a.style.cursor = 'default';
+      }
+    });
+
+    content.innerHTML = doc.body.innerHTML;
+    content.style.display = 'block';
+    loading.style.display = 'none';
+
+    // Attach click handlers to wiki links
+    content.querySelectorAll('a[data-article]').forEach(a => {
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        const article = a.getAttribute('data-article');
+        navigateTo(article);
+      });
+    });
+
+    updateBreadcrumbs();
+
+  } catch (err) {
+    content.innerHTML = `<h1>Error loading article</h1><p>Could not load "${title.replace(/_/g, ' ')}". This article may not exist.</p>`;
+    content.style.display = 'block';
+    loading.style.display = 'none';
+  }
+}
+
+function navigateTo(article) {
+  currentArticle = article;
+  myPath.push(article);
+  send({ type: 'navigate', article });
+  loadArticle(article);
+}
+
+// ─── Results ───
+let resultsAnimationTimeouts = [];
+
+function showResults(msg) {
+  clearInterval(timerInterval);
+  // Clear any previous animation timeouts
+  resultsAnimationTimeouts.forEach(t => clearTimeout(t));
+  resultsAnimationTimeouts = [];
+
+  showScreen('results');
+
+  // Reset banner visibility
+  const banner = document.querySelector('.winner-banner');
+  banner.classList.remove('visible');
+
+  document.getElementById('winnerName').textContent = msg.winner + ' wins!';
+  const winnerData = msg.results.find(r => r.isWinner);
+  const time = winnerData ? formatTime(winnerData.time) : '';
+  const steps = winnerData ? winnerData.path.length - 1 : 0;
+  document.getElementById('winnerSub').textContent = `${steps} steps in ${time}`;
+
+  const grid = document.getElementById('resultsGrid');
+  grid.innerHTML = '';
+
+  // Sort: winner first, then by steps
+  const sorted = [...msg.results].sort((a, b) => {
+    if (a.isWinner) return -1;
+    if (b.isWinner) return 1;
+    if (a.finished && !b.finished) return -1;
+    if (!a.finished && b.finished) return 1;
+    return a.path.length - b.path.length;
+  });
+
+  // Build all cards (hidden)
+  const cards = [];
+  for (const r of sorted) {
+    const card = document.createElement('div');
+    card.className = `result-card ${r.isWinner ? 'winner-card' : ''}`;
+    const badge = r.isWinner
+      ? '<span class="r-badge badge-winner">Winner</span>'
+      : r.finished
+        ? '<span class="r-badge" style="background:var(--green);color:white;">Finished</span>'
+        : '<span class="r-badge badge-dnf">DNF</span>';
+
+    const pathHtml = r.path.map((p, i) => {
+      const cls = i === 0 ? 'path-node start' : (i === r.path.length - 1 && r.finished ? 'path-node end' : 'path-node');
+      const arrow = i < r.path.length - 1 ? '<span class="path-arrow">&rarr;</span>' : '';
+      return `<span class="${cls}" data-step="${i}">${esc(p.replace(/_/g, ' '))}</span>${arrow}`;
+    }).join('');
+
+    card.innerHTML = `
+      <div class="result-header">
+        <span class="r-name">${r.id === myPlayerId ? 'You' : esc(r.name)}</span>
+        ${badge}
+      </div>
+      <div class="result-stats">
+        <span>Steps: <span class="stat-val">${r.path.length - 1}</span></span>
+        <span>Time: <span class="stat-val">${r.time ? formatTime(r.time) : 'N/A'}</span></span>
+      </div>
+      <div class="path-display">${pathHtml}</div>
+    `;
+    grid.appendChild(card);
+    cards.push({ card, pathLength: r.path.length });
+  }
+
+  // ─── Animate sequence ───
+  let delay = 100;
+
+  // Step 1: Winner banner fades in
+  resultsAnimationTimeouts.push(setTimeout(() => {
+    banner.classList.add('visible');
+  }, delay));
+  delay += 800;
+
+  // Step 2: Cards appear one by one, then their paths animate
+  for (let c = 0; c < cards.length; c++) {
+    const { card, pathLength } = cards[c];
+
+    // Show the card
+    resultsAnimationTimeouts.push(setTimeout(() => {
+      card.classList.add('visible');
+    }, delay));
+    delay += 400;
+
+    // Animate each step in the path
+    const nodes = card.querySelectorAll('.path-node');
+    const arrows = card.querySelectorAll('.path-arrow');
+    for (let i = 0; i < nodes.length; i++) {
+      resultsAnimationTimeouts.push(setTimeout(() => {
+        nodes[i].classList.add('visible');
+        // Show the arrow before this node (arrows[i-1]) or after (arrows[i])
+        if (i > 0 && arrows[i - 1]) arrows[i - 1].classList.add('visible');
+      }, delay));
+      delay += 500;
+    }
+    delay += 600; // pause between players
+  }
+
+  // Step 3: Show play again button after all animations
+  resultsAnimationTimeouts.push(setTimeout(() => {
+    document.getElementById('playAgainBtn').style.display = isHost ? '' : 'none';
+  }, delay));
+}
+
+function playAgain() { send({ type: 'play_again' }); }
+
+function backToHome() {
+  eventSource?.close();
+  eventSource = null;
+  showScreen('home');
+}
+
+// ─── Helpers ───
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function formatTime(ms) {
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  const sec = (s % 60).toString().padStart(2, '0');
+  return `${m}:${sec}`;
+}
+
+// Enter key support
+document.getElementById('roomCodeInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') joinRoom();
+});
+document.getElementById('playerName').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') createRoom();
+});
+
+// ─── Startup check: warn if opened as a file instead of via the server ───
+if (location.protocol === 'file:') {
+  document.getElementById('homeError').textContent = '';
+  const warn = document.createElement('div');
+  warn.style.cssText = 'background:var(--surface);border:2px solid var(--red);border-radius:12px;padding:20px;max-width:420px;text-align:left;margin-top:8px;';
+  warn.innerHTML = `
+    <div style="color:var(--red);font-weight:700;margin-bottom:8px;">Not connected to server</div>
+    <div style="color:var(--text2);font-size:0.9rem;line-height:1.6;">
+      You opened this file directly. To play, run the server first:<br><br>
+      <code style="background:var(--surface2);padding:8px 12px;border-radius:6px;display:block;color:var(--accent2);font-size:0.95rem;">
+        cd wikispeedrun<br>node server.js
+      </code><br>
+      Then open <a href="http://localhost:3000" style="color:var(--accent2);">http://localhost:3000</a> in your browser.
+    </div>`;
+  document.querySelector('.home-form').appendChild(warn);
+}
+</script>
+</body>
+</html>
