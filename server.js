@@ -204,6 +204,7 @@ function handleAction(playerId, msg) {
       }
       room.players.set(playerId, newPlayerState(name));
       sendSSE(playerId, { type: 'room_joined', code, playerId });
+      sendSSE(playerId, { type: 'mode_changed', mode: room.mode });
       broadcastToRoom(code, {
         type: 'player_list',
         players: [...room.players.entries()].map(([id, p]) => ({ id, name: p.name })),

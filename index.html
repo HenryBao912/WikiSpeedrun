@@ -957,6 +957,23 @@ async function loadArticle(title) {
       }
     });
 
+    // Remove References, Bibliography, Further reading, External links, and everything after
+    const removeHeadings = ['references', 'citations', 'bibliography', 'further_reading',
+      'further reading', 'external_links', 'external links', 'see_also', 'see also', 'notes'];
+    doc.querySelectorAll('h2, h3').forEach(heading => {
+      const id = (heading.id || '').toLowerCase().replace(/_/g, ' ');
+      const text = (heading.textContent || '').toLowerCase().trim();
+      if (removeHeadings.some(r => id.includes(r) || text.includes(r))) {
+        // Remove this heading and all siblings after it
+        let el = heading;
+        while (el) {
+          const next = el.nextElementSibling;
+          el.remove();
+          el = next;
+        }
+      }
+    });
+
     // Process links: only keep Wikipedia internal article links
     doc.querySelectorAll('a').forEach(a => {
       const href = a.getAttribute('href') || '';
