@@ -110,44 +110,54 @@ async function getTopViewedArticles() {
   }
 
   try {
-    // Get yesterday's date for the most-viewed endpoint
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const y = yesterday.getFullYear();
-    const m = String(yesterday.getMonth() + 1).padStart(2, '0');
-    const d = String(yesterday.getDate()).padStart(2, '0');
+    // Try multiple days back — yesterday's data may not be available yet
+    let articles = [];
+    for (let daysBack = 1; daysBack <= 3; daysBack++) {
+      const date = new Date();
+      date.setDate(date.getDate() - daysBack);
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
 
-    const apiUrl = `https://wikimedia.org/api/rest_v1/metrics/pageviews/top/en.wikipedia/all-access/${y}/${m}/${d}`;
+      const apiUrl = `https://wikimedia.org/api/rest_v1/metrics/pageviews/top/en.wikipedia/all-access/${y}/${m}/${d}`;
 
-    const result = await new Promise((resolve, reject) => {
-      https.get(apiUrl, { headers: { 'User-Agent': 'WikiSpeedrun/1.0' } }, (res) => {
-        let data = '';
-        res.on('data', chunk => data += chunk);
-        res.on('end', () => {
-          try { resolve(JSON.parse(data)); } catch (e) { reject(e); }
+      try {
+        const result = await new Promise((resolve, reject) => {
+          https.get(apiUrl, { headers: { 'User-Agent': 'WikiSpeedrun/1.0' } }, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+              try { resolve(JSON.parse(data)); } catch (e) { reject(e); }
+            });
+          }).on('error', reject);
         });
-      }).on('error', reject);
-    });
 
-    const articles = (result.items?.[0]?.articles || [])
+        const dayArticles = (result.items?.[0]?.articles || []);
+        if (dayArticles.length > 0) {
+          articles = dayArticles;
+          console.log(`[top-articles] Got data for ${y}-${m}-${d} (${dayArticles.length} articles)`);
+          break;
+        }
+      } catch (e) {
+        console.log(`[top-articles] No data for ${y}-${m}-${d}, trying older...`);
+      }
+    }
+
+    const filtered = articles
       .filter(a => {
         const t = a.article;
-        // Filter out Wikipedia special pages and bad titles
         if (t === 'Main_Page' || t === 'Special:Search' || t.startsWith('Special:')) return false;
         if (t.startsWith('Wikipedia:') || t.startsWith('Portal:') || t.startsWith('Help:')) return false;
         if (isBadTitle(t)) return false;
-        // Filter out people-like articles that are probably just trending news
-        // Keep only articles with very high daily views (>20K/day = universally known)
-        // Lower-ranked articles are often just news spikes
         return true;
       })
-      .filter(a => a.views >= 5000) // At least 5K daily views = genuinely well-known, not just a news spike
+      .filter(a => a.views >= 5000) // At least 5K daily views = genuinely well-known
       .map(a => ({ title: a.article, views: a.views * 30 }));
 
-    topArticlesCache = articles;
+    topArticlesCache = filtered;
     topArticlesCacheTime = Date.now();
-    console.log(`[top-articles] Cached ${articles.length} popular articles`);
-    return articles;
+    console.log(`[top-articles] Cached ${filtered.length} popular articles (5K+ daily views)`);
+    return filtered;
   } catch (e) {
     console.error('Error fetching top articles:', e.message);
     return topArticlesCache || [];
@@ -166,12 +176,20 @@ async function pickFromTopArticles(count, viewRange) {
   }
   if (pool.length < count) pool = top; // fallback to all top if range too narrow
 
-  // Shuffle and pick
+  // Shuffle and pick extra candidates (validation may reject some)
   const shuffled = pool.slice().sort(() => Math.random() - 0.5);
-  const picked = shuffled.slice(0, Math.min(count * 3, shuffled.length)).map(a => a.title);
+  const picked = shuffled.slice(0, Math.min(count * 5, shuffled.length)).map(a => a.title);
 
-  // Validate (filter disambig/stubs)
+  // Validate (filter disambig/stubs) — try multiple rounds if needed
   const validated = await validateArticles(picked);
+  if (validated.length >= count) return validated.slice(0, count);
+
+  // If first batch wasn't enough, try more from the pool
+  const remaining = shuffled.slice(count * 5, count * 10).map(a => a.title);
+  if (remaining.length > 0) {
+    const extra = await validateArticles(remaining);
+    validated.push(...extra);
+  }
   return validated.slice(0, count);
 }
 
@@ -229,14 +247,10 @@ async function getGoodRandomArticles(count, viewRange) {
     }
   }
 
-  // If we still don't have enough, supplement from top articles or plain random
+  // If we still don't have enough, supplement from top articles (never use unfiltered random)
   if (good.length < needed) {
-    const extra = await pickFromTopArticles(needed - good.length, viewRange);
+    const extra = await pickFromTopArticles(needed - good.length, null);
     good.push(...extra);
-  }
-  if (good.length < needed) {
-    const fallback = await fetchRandomArticles(needed - good.length);
-    good.push(...fallback);
   }
 
   return good.slice(0, needed);
