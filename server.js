@@ -1,4 +1,5 @@
 const http = require('http');
+const https = require('https');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -71,6 +72,101 @@ function normalizeArticle(name) {
   return (name || '').replace(/_/g, ' ').toLowerCase();
 }
 
+// ─── Wikipedia API for distance calculation ───
+const linkCache = new Map(); // title -> Set of outgoing link titles
+const backlinkCache = new Map(); // title -> Set of backlink titles
+
+function wikiAPI(params) {
+  return new Promise((resolve, reject) => {
+    const qs = new URLSearchParams({ ...params, format: 'json', origin: '*' });
+    const reqUrl = `https://en.wikipedia.org/w/api.php?${qs}`;
+    https.get(reqUrl, { headers: { 'User-Agent': 'WikiSpeedrun/1.0' } }, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try { resolve(JSON.parse(data)); } catch (e) { reject(e); }
+      });
+    }).on('error', reject);
+  });
+}
+
+async function getPageLinks(title) {
+  const norm = normalizeArticle(title);
+  if (linkCache.has(norm)) return linkCache.get(norm);
+  const links = new Set();
+  let plcontinue = null;
+  try {
+    do {
+      const params = { action: 'query', titles: title.replace(/ /g, '_'), prop: 'links', pllimit: '500', plnamespace: '0' };
+      if (plcontinue) params.plcontinue = plcontinue;
+      const data = await wikiAPI(params);
+      const pages = data.query?.pages || {};
+      for (const page of Object.values(pages)) {
+        if (page.links) page.links.forEach(l => links.add(normalizeArticle(l.title)));
+      }
+      plcontinue = data.continue?.plcontinue;
+    } while (plcontinue && links.size < 1000);
+  } catch (e) {
+    console.error('Error fetching links for', title, e.message);
+  }
+  linkCache.set(norm, links);
+  return links;
+}
+
+async function getBacklinks(title, limit = 500) {
+  const norm = normalizeArticle(title);
+  if (backlinkCache.has(norm)) return backlinkCache.get(norm);
+  const links = new Set();
+  let blcontinue = null;
+  try {
+    do {
+      const params = { action: 'query', list: 'backlinks', bltitle: title.replace(/ /g, '_'), bllimit: String(Math.min(limit - links.size, 500)), blnamespace: '0' };
+      if (blcontinue) params.blcontinue = blcontinue;
+      const data = await wikiAPI(params);
+      if (data.query?.backlinks) data.query.backlinks.forEach(l => links.add(normalizeArticle(l.title)));
+      blcontinue = data.continue?.blcontinue;
+    } while (blcontinue && links.size < limit);
+  } catch (e) {
+    console.error('Error fetching backlinks for', title, e.message);
+  }
+  backlinkCache.set(norm, links);
+  return links;
+}
+
+async function computeDistance(currentArticle, destination, destBacklinks) {
+  const currentNorm = normalizeArticle(currentArticle);
+  const destNorm = normalizeArticle(destination);
+
+  if (currentNorm === destNorm) return 0;
+
+  // Get outgoing links from current page
+  const outLinks = await getPageLinks(currentArticle);
+
+  // Distance 1: destination is directly linked
+  if (outLinks.has(destNorm)) return 1;
+
+  // Distance 2: any outgoing link also links to destination (is in dest's backlinks)
+  let overlap = 0;
+  for (const link of outLinks) {
+    if (destBacklinks.has(link)) overlap++;
+  }
+
+  if (overlap > 20) return 2;
+  if (overlap > 5) return 3;
+  if (overlap > 0) return 4;
+
+  // No overlap at all — likely far away
+  return 6;
+}
+
+// Pre-cache destination data when game starts
+async function cacheDestination(destination) {
+  console.log(`Caching backlinks for destination: ${destination}`);
+  const backlinks = await getBacklinks(destination, 500);
+  console.log(`Cached ${backlinks.size} backlinks for ${destination}`);
+  return backlinks;
+}
+
 // ─── SSE helpers ───
 function sendSSE(playerId, data) {
   const player = players.get(playerId);
@@ -101,6 +197,7 @@ function initRoom(code, hostId, hostName) {
     started: false,
     startTime: null,
     winner: null,
+    destBacklinks: new Set(), // cached backlinks for distance calc
   };
 }
 
@@ -115,7 +212,7 @@ function newPlayerState(name) {
   };
 }
 
-function startGameForRoom(room, roomCode) {
+async function startGameForRoom(room, roomCode) {
   room.started = true;
   room.startTime = Date.now();
   room.winner = null;
@@ -123,7 +220,7 @@ function startGameForRoom(room, roomCode) {
   if (room.mode === 'classic') {
     room.pair = getRandomPair();
     for (const [, p] of room.players) {
-      Object.assign(p, { path: [room.pair.origin], finished: false, finishTime: null, visited: [] });
+      Object.assign(p, { path: [room.pair.origin], finished: false, finishTime: null, visited: [], distances: [] });
     }
     broadcastToRoom(roomCode, {
       type: 'game_start',
@@ -131,12 +228,22 @@ function startGameForRoom(room, roomCode) {
       origin: room.pair.origin,
       destination: room.pair.destination,
     });
+    // Cache destination backlinks async (don't block game start)
+    cacheDestination(room.pair.destination).then(backlinks => {
+      room.destBacklinks = backlinks;
+      // Compute initial distance for starting article
+      computeDistance(room.pair.origin, room.pair.destination, backlinks).then(dist => {
+        for (const [pid, p] of room.players) {
+          p.distances.push(dist);
+        }
+        broadcastToRoom(roomCode, { type: 'distance_update', distances: getDistanceMap(room) });
+      });
+    });
   } else {
     room.triple = getRandomTriple();
-    // In tri mode, players start on the first target
     const startArticle = room.triple.targets[0];
     for (const [, p] of room.players) {
-      Object.assign(p, { path: [startArticle], finished: false, finishTime: null, visited: [startArticle] });
+      Object.assign(p, { path: [startArticle], finished: false, finishTime: null, visited: [startArticle], distances: [] });
     }
     broadcastToRoom(roomCode, {
       type: 'game_start',
@@ -145,6 +252,14 @@ function startGameForRoom(room, roomCode) {
       targets: room.triple.targets,
     });
   }
+}
+
+function getDistanceMap(room) {
+  const map = {};
+  for (const [pid, p] of room.players) {
+    map[pid] = { name: p.name, distance: p.distances.length > 0 ? p.distances[p.distances.length - 1] : null, distances: p.distances };
+  }
+  return map;
 }
 
 function checkWin(room, rp, article) {
@@ -270,6 +385,7 @@ function handleAction(playerId, msg) {
             finished: p.finished, time: p.finishTime,
             isWinner: id === room.winner,
             visited: p.visited,
+            distances: p.distances || [],
           }));
           broadcastToRoom(player.roomCode, {
             type: 'game_over',
@@ -296,6 +412,18 @@ function handleAction(playerId, msg) {
             break;
           }
         }
+      }
+
+      // Compute distance async (classic mode only, don't block response)
+      if (room.mode === 'classic' && !won && room.destBacklinks) {
+        const rc = player.roomCode;
+        computeDistance(article, room.pair.destination, room.destBacklinks).then(dist => {
+          rp.distances.push(dist);
+          const currentRoom = rooms.get(rc);
+          if (currentRoom && currentRoom.started) {
+            broadcastToRoom(rc, { type: 'distance_update', distances: getDistanceMap(currentRoom) });
+          }
+        }).catch(e => console.error('Distance calc error:', e.message));
       }
 
       return { ok: true };

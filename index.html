@@ -231,6 +231,76 @@
     box-shadow: 0 4px 20px rgba(0,184,148,0.4);
   }
   .checkpoint-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  /* Distance tracker bar */
+  .distance-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--surface);
+    border-top: 2px solid var(--surface2);
+    padding: 10px 20px;
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    justify-content: center;
+    z-index: 99;
+    flex-wrap: wrap;
+  }
+  .distance-player {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+  }
+  .distance-player .dp-name { font-weight: 600; color: var(--text2); }
+  .distance-player .dp-dist {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .distance-dots {
+    display: flex;
+    gap: 3px;
+    align-items: center;
+  }
+  .distance-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    transition: background 0.4s;
+  }
+  .distance-dot.hot { background: #fdcb6e; }
+  .distance-dot.warm { background: #e17055; }
+  .distance-dot.cool { background: #a29bfe; }
+  .distance-dot.cold { background: #74b9ff; }
+  .distance-num {
+    font-weight: 700;
+    font-size: 0.9rem;
+    min-width: 20px;
+    text-align: center;
+    transition: color 0.3s;
+  }
+  .distance-num.d0 { color: #fdcb6e; }
+  .distance-num.d1 { color: #fdcb6e; }
+  .distance-num.d2 { color: #e17055; }
+  .distance-num.d3 { color: #a29bfe; }
+  .distance-num.d4 { color: #a29bfe; }
+  .distance-num.dfar { color: #74b9ff; }
+  .distance-label { font-size: 0.7rem; color: var(--text2); }
+  /* Distance badge on path nodes in results */
+  .path-dist {
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 4px;
+    margin-left: 3px;
+    vertical-align: middle;
+  }
+  .path-dist.pd-hot { background: rgba(253,203,110,0.2); color: #fdcb6e; }
+  .path-dist.pd-warm { background: rgba(225,112,85,0.2); color: #e17055; }
+  .path-dist.pd-cool { background: rgba(162,155,254,0.2); color: #a29bfe; }
+  .path-dist.pd-cold { background: rgba(116,185,255,0.2); color: #74b9ff; }
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
 
   /* ─── Game Screen ─── */
@@ -575,6 +645,10 @@
     <h4>Players</h4>
     <div id="progressList"></div>
   </div>
+  <div class="distance-bar" id="distanceBar" style="display:none;">
+    <span class="distance-label">Distance to goal:</span>
+    <div id="distancePlayers"></div>
+  </div>
 </div>
 
 <!-- ─── Results Screen ─── -->
@@ -759,6 +833,10 @@ function handleServerMessage(msg) {
       renderProgress(msg.playerId);
       break;
 
+    case 'distance_update':
+      renderDistanceBar(msg.distances);
+      break;
+
     case 'checkpoint_reached':
       myVisited = msg.visited;
       renderTriTargets();
@@ -817,6 +895,8 @@ function startGameUI(origin, destination) {
   document.getElementById('stepCount').textContent = '0';
 
   showScreen('game');
+  document.getElementById('distanceBar').style.display = 'flex';
+  document.getElementById('wikiContent').style.paddingBottom = '60px';
   startTimer();
   loadArticle(origin);
 }
@@ -838,6 +918,8 @@ function startTriGameUI(origin, targets) {
 
   renderTriTargets();
   showScreen('game');
+  document.getElementById('distanceBar').style.display = 'none';
+  document.getElementById('wikiContent').style.paddingBottom = '0';
   startTimer();
   loadArticle(origin);
 }
@@ -859,6 +941,62 @@ function showCheckpointToast(article, remaining) {
   toast.textContent = `✓ ${name} reached! ${remaining} left`;
   toast.classList.add('show');
   setTimeout(() => toast.classList.remove('show'), 2500);
+}
+
+function distanceLabel(d) {
+  if (d === null || d === undefined) return { text: '...', cls: 'dfar' };
+  if (d === 0) return { text: '0', cls: 'd0' };
+  if (d === 1) return { text: '1', cls: 'd1' };
+  if (d <= 2) return { text: String(d), cls: 'd2' };
+  if (d <= 3) return { text: String(d), cls: 'd3' };
+  if (d <= 4) return { text: String(d), cls: 'd4' };
+  return { text: String(d) + '+', cls: 'dfar' };
+}
+
+function distanceDots(d) {
+  if (d === null || d === undefined) return '';
+  const max = 6;
+  const filled = Math.max(0, max - d);
+  let html = '';
+  for (let i = 0; i < max; i++) {
+    const cls = i < filled
+      ? (filled >= 5 ? 'hot' : filled >= 3 ? 'warm' : 'cool')
+      : 'cold';
+    html += `<span class="distance-dot ${cls}"></span>`;
+  }
+  return html;
+}
+
+function renderDistanceBar(distances) {
+  const bar = document.getElementById('distanceBar');
+  const container = document.getElementById('distancePlayers');
+  if (!distances) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+  container.innerHTML = '';
+  for (const [pid, info] of Object.entries(distances)) {
+    const d = info.distance;
+    const label = distanceLabel(d);
+    const div = document.createElement('div');
+    div.className = 'distance-player';
+    div.innerHTML = `
+      <span class="dp-name">${pid === myPlayerId ? 'You' : esc(info.name)}</span>
+      <span class="dp-dist">
+        <span class="distance-dots">${distanceDots(d)}</span>
+        <span class="distance-num ${label.cls}">${label.text}</span>
+      </span>
+    `;
+    container.appendChild(div);
+  }
+}
+
+function distBadge(d) {
+  if (d === null || d === undefined) return '';
+  let cls;
+  if (d <= 1) cls = 'pd-hot';      // gold – very close
+  else if (d <= 2) cls = 'pd-warm'; // red – getting closer
+  else if (d <= 4) cls = 'pd-cool'; // purple – moderate
+  else cls = 'pd-cold';             // light blue – far
+  return `<span class="path-dist ${cls}">${d}</span>`;
 }
 
 function startTimer() {
@@ -1034,6 +1172,7 @@ let resultsAnimationTimeouts = [];
 
 function showResults(msg) {
   clearInterval(timerInterval);
+  document.getElementById('distanceBar').style.display = 'none';
   // Clear any previous animation timeouts
   resultsAnimationTimeouts.forEach(t => clearTimeout(t));
   resultsAnimationTimeouts = [];
@@ -1076,6 +1215,7 @@ function showResults(msg) {
 
     // In tri mode, highlight checkpoint articles
     const triTgts = msg.targets || [];
+    const dists = r.distances || [];
     const pathHtml = r.path.map((p, i) => {
       const norm = p.replace(/_/g, ' ').toLowerCase();
       const isCheckpoint = msg.mode === 'tri' && triTgts.some(t => t.replace(/_/g, ' ').toLowerCase() === norm);
@@ -1084,8 +1224,9 @@ function showResults(msg) {
       else if (i === r.path.length - 1 && r.finished) cls = 'path-node end';
       else if (isCheckpoint) cls = 'path-node end'; // green for checkpoints
       else cls = 'path-node';
+      const badge = (msg.mode !== 'tri' && dists[i] !== undefined) ? distBadge(dists[i]) : '';
       const arrow = i < r.path.length - 1 ? '<span class="path-arrow">&rarr;</span>' : '';
-      return `<span class="${cls}" data-step="${i}">${esc(p.replace(/_/g, ' '))}</span>${arrow}`;
+      return `<span class="${cls}" data-step="${i}">${esc(p.replace(/_/g, ' '))}${badge}</span>${arrow}`;
     }).join('');
 
     card.innerHTML = `
@@ -1147,6 +1288,7 @@ function playAgain() { send({ type: 'play_again' }); }
 function backToHome() {
   eventSource?.close();
   eventSource = null;
+  document.getElementById('distanceBar').style.display = 'none';
   showScreen('home');
 }
 
