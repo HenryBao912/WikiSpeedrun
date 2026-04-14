@@ -17,55 +17,53 @@ function generatePlayerId() {
   return crypto.randomBytes(8).toString('hex');
 }
 
-// ─── Classic Mode: Curated Word Pairs ───
-const WORD_PAIRS = [
-  { origin: 'Pizza', destination: 'Ancient_Egypt' },
-  { origin: 'Football', destination: 'Moon' },
-  { origin: 'Banana', destination: 'Albert_Einstein' },
-  { origin: 'Guitar', destination: 'World_War_II' },
-  { origin: 'Cat', destination: 'Philosophy' },
-  { origin: 'Coffee', destination: 'Mathematics' },
-  { origin: 'Bicycle', destination: 'Napoleon' },
-  { origin: 'Chocolate', destination: 'Japan' },
-  { origin: 'Shark', destination: 'Internet' },
-  { origin: 'Diamond', destination: 'Shakespeare' },
-  { origin: 'Volcano', destination: 'Democracy' },
-  { origin: 'Piano', destination: 'Amazon_rainforest' },
-  { origin: 'Penguin', destination: 'Olympic_Games' },
-  { origin: 'Bread', destination: 'Artificial_intelligence' },
-  { origin: 'Tiger', destination: 'Electricity' },
-  { origin: 'Sushi', destination: 'Leonardo_da_Vinci' },
-  { origin: 'Mars', destination: 'Dog' },
-  { origin: 'Yoga', destination: 'Roman_Empire' },
-  { origin: 'Ice_cream', destination: 'Quantum_mechanics' },
-  { origin: 'Tornado', destination: 'Cleopatra' },
-];
-
-// ─── Tri Mode: Curated Word Triples (visit all 3 in any order) ───
-const WORD_TRIPLES = [
-  { targets: ['Moon', 'Dinosaur', 'Jazz'] },
-  { targets: ['Albert_Einstein', 'Sushi', 'Brazil'] },
-  { targets: ['Volcano', 'Shakespeare', 'Basketball'] },
-  { targets: ['Pyramid', 'Internet', 'Penguin'] },
-  { targets: ['Chess', 'Amazon_rainforest', 'Mozart'] },
-  { targets: ['Samurai', 'Electricity', 'Chocolate'] },
-  { targets: ['DNA', 'Olympic_Games', 'Pizza'] },
-  { targets: ['Black_hole', 'Democracy', 'Coffee'] },
-  { targets: ['Viking', 'Photography', 'Elephant'] },
-  { targets: ['Mars', 'Philosophy', 'Guitar'] },
-  { targets: ['Titanic', 'Mathematics', 'Banana'] },
-  { targets: ['Napoleon', 'Yoga', 'Shark'] },
-  { targets: ['Roman_Empire', 'Artificial_intelligence', 'Cat'] },
-  { targets: ['Cleopatra', 'Bicycle', 'Quantum_mechanics'] },
-  { targets: ['Leonardo_da_Vinci', 'Football', 'Diamond'] },
-];
-
-function getRandomPair() {
-  return WORD_PAIRS[Math.floor(Math.random() * WORD_PAIRS.length)];
+// ─── Random article fetching from Wikipedia ───
+async function getRandomArticles(count) {
+  const articles = [];
+  try {
+    const params = {
+      action: 'query',
+      list: 'random',
+      rnnamespace: '0',
+      rnlimit: String(count),
+    };
+    const data = await wikiAPI(params);
+    if (data.query?.random) {
+      for (const r of data.query.random) {
+        articles.push(r.title.replace(/ /g, '_'));
+      }
+    }
+  } catch (e) {
+    console.error('Error fetching random articles:', e.message);
+  }
+  // Filter out boring/disambiguation/list articles
+  const filtered = articles.filter(a => {
+    const lower = a.toLowerCase();
+    return !lower.startsWith('list_of') &&
+           !lower.includes('(disambiguation)') &&
+           !lower.startsWith('lists_of') &&
+           !lower.startsWith('index_of') &&
+           !lower.startsWith('outline_of');
+  });
+  return filtered;
 }
 
-function getRandomTriple() {
-  return WORD_TRIPLES[Math.floor(Math.random() * WORD_TRIPLES.length)];
+async function getRandomPair() {
+  // Fetch extra in case some get filtered out
+  const articles = await getRandomArticles(10);
+  if (articles.length >= 2) {
+    return { origin: articles[0], destination: articles[1] };
+  }
+  // Fallback
+  return { origin: 'Pizza', destination: 'Moon' };
+}
+
+async function getRandomTriple() {
+  const articles = await getRandomArticles(10);
+  if (articles.length >= 3) {
+    return { targets: [articles[0], articles[1], articles[2]] };
+  }
+  return { targets: ['Moon', 'Dinosaur', 'Jazz'] };
 }
 
 function normalizeArticle(name) {
@@ -221,7 +219,7 @@ async function startGameForRoom(room, roomCode) {
   room.winner = null;
 
   if (room.mode === 'classic') {
-    room.pair = getRandomPair();
+    room.pair = await getRandomPair();
     for (const [, p] of room.players) {
       Object.assign(p, { path: [room.pair.origin], finished: false, finishTime: null, visited: [], distances: [] });
     }
@@ -243,7 +241,7 @@ async function startGameForRoom(room, roomCode) {
       });
     });
   } else {
-    room.triple = getRandomTriple();
+    room.triple = await getRandomTriple();
     const startArticle = room.triple.targets[0];
     for (const [, p] of room.players) {
       Object.assign(p, { path: [startArticle], finished: false, finishTime: null, visited: [startArticle], distances: [] });
