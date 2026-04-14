@@ -164,21 +164,14 @@
   }
   .player-list li {
     padding: 10px 20px;
-    background: var(--surface);
     border-radius: 99px;
     font-weight: 600;
     display: flex;
     align-items: center;
     gap: 8px;
+    color: white;
   }
   .player-list li.host::before { content: '👑'; }
-  .player-color-dot {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    display: inline-block;
-    flex-shrink: 0;
-  }
   .waiting-text { color: var(--text2); animation: pulse 2s infinite; }
   .mode-selector {
     display: flex;
@@ -482,17 +475,32 @@
     40% { transform: translateY(3px); opacity: 1; }
     100% { transform: translateY(0); opacity: 1; }
   }
-  /* Collapsed dot for crowded positions */
+  /* Collapsed grouped dot: overlapping colored circles */
   .lb-rider.collapsed {
     padding: 0;
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
+    height: auto;
+    border-radius: 0;
     overflow: visible;
+    display: flex;
+    align-items: center;
+    background: none !important;
   }
   .lb-rider.collapsed .lb-name,
   .lb-rider.collapsed .lb-steps,
   .lb-rider.collapsed .lb-dist { display: none; }
+  .lb-stack {
+    display: flex;
+    align-items: center;
+  }
+  .lb-stack-circle {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 2px solid var(--surface);
+    margin-left: -6px;
+    flex-shrink: 0;
+  }
+  .lb-stack-circle:first-child { margin-left: 0; }
   /* Tooltip for collapsed dots */
   .lb-rider .lb-tip {
     position: absolute;
@@ -929,9 +937,8 @@ function handleServerMessage(msg) {
 function renderPlayerList(players, hostId) {
   const ul = document.getElementById('playerList');
   ul.innerHTML = players.map(p => {
-    const color = playerColors.get(p.id) || '#6c5ce7';
-    const dot = `<span class="player-color-dot" style="background:${color}"></span>`;
-    return `<li class="${p.id === hostId ? 'host' : ''}">${dot}${esc(p.name)}</li>`;
+    const color = playerColors.get(p.id) || '#7c6fad';
+    return `<li class="${p.id === hostId ? 'host' : ''}" style="background:${color}">${esc(p.name)}</li>`;
   }).join('');
   document.getElementById('waitingText').style.display = players.length < 2 ? '' : 'none';
   document.getElementById('startBtn').style.display = isHost && players.length >= 2 ? '' : 'none';
@@ -1033,7 +1040,7 @@ function distColorClass(d) {
 // Track previous state for animation
 const prevPositions = new Map(); // pid -> { distance }
 const MAX_DIST = 6;
-const COLLAPSE_THRESHOLD = 3; // collapse to dots when this many overlap
+const COLLAPSE_THRESHOLD = 3; // collapse to grouped dot when this many overlap
 
 function renderPlayersBar(distData) {
   const container = document.getElementById('lbRiders');
@@ -1049,7 +1056,7 @@ function renderPlayersBar(distData) {
     const steps = dist?.steps ?? (prog ? prog.steps - 1 : 0);
     const d = dist?.distance ?? null;
     const prev = dist?.prev ?? null;
-    const color = playerColors.get(pid) || '#6c5ce7';
+    const color = playerColors.get(pid) || '#7c6fad';
     const triInfo = prog?.mode === 'tri' ? ` · ${prog.visited || 0}/3` : '';
     entries.push({ pid, name, steps, d, prev, color, triInfo });
   }
@@ -1064,110 +1071,152 @@ function renderPlayersBar(distData) {
     }
   });
 
-  // Group by similar position to detect crowding
-  // Count how many riders share each position bucket (within 8%)
-  entries.forEach(e => {
-    const neighbors = entries.filter(o => o.pid !== e.pid && Math.abs(o.leftPct - e.leftPct) < 8);
-    e.crowded = neighbors.length + 1 >= COLLAPSE_THRESHOLD;
-  });
-
-  // For non-crowded entries, stack vertically if they overlap
-  let rowUsed = []; // array of { left, row }
-  entries.forEach(e => {
-    if (e.crowded) {
-      e.topOffset = 0;
-      return;
-    }
-    let row = 0;
-    for (const u of rowUsed) {
-      if (Math.abs(u.left - e.leftPct) < 12 && u.row === row) {
-        row++;
+  // Group entries by proximity on the track
+  const groups = [];
+  const assigned = new Set();
+  for (let i = 0; i < entries.length; i++) {
+    if (assigned.has(i)) continue;
+    const group = [entries[i]];
+    assigned.add(i);
+    for (let j = i + 1; j < entries.length; j++) {
+      if (assigned.has(j)) continue;
+      if (Math.abs(entries[i].leftPct - entries[j].leftPct) < 8) {
+        group.push(entries[j]);
+        assigned.add(j);
       }
     }
-    e.topOffset = row * 28;
-    rowUsed.push({ left: e.leftPct, row });
-  });
-
-  // Render or update each rider
-  for (const e of entries) {
-    let rider = container.querySelector(`[data-pid="${e.pid}"]`);
-    const isNew = !rider;
-
-    if (isNew) {
-      rider = document.createElement('div');
-      rider.className = 'lb-rider';
-      rider.setAttribute('data-pid', e.pid);
-      if (e.pid === myPlayerId) rider.classList.add('is-me');
-      container.appendChild(rider);
-    }
-
-    // Arrow HTML
-    let arrowHtml = '';
-    if (e.d !== null && e.prev !== null && e.prev !== undefined && currentMode === 'classic') {
-      if (e.d < e.prev) arrowHtml = '<span class="lb-arrow up">▲</span>';
-      else if (e.d > e.prev) arrowHtml = '<span class="lb-arrow down">▼</span>';
-      else arrowHtml = '<span class="lb-arrow flat">=</span>';
-    }
-
-    let distHtml = '';
-    if (e.d !== null && e.d !== undefined && currentMode === 'classic') {
-      const cls = distColorClass(e.d);
-      distHtml = `<span class="lb-dist ${cls}">${e.d}${arrowHtml}</span>`;
-    }
-
-    rider.style.background = e.color;
-
-    if (e.crowded) {
-      // Collapsed dot with hover tooltip
-      rider.classList.add('collapsed');
-      let tipArrow = '';
-      if (e.d !== null && e.prev !== null && e.prev !== undefined && currentMode === 'classic') {
-        if (e.d < e.prev) tipArrow = '<span class="tip-arrow up">▲</span>';
-        else if (e.d > e.prev) tipArrow = '<span class="tip-arrow down">▼</span>';
-      }
-      let tipDist = '';
-      if (e.d !== null && e.d !== undefined && currentMode === 'classic') {
-        tipDist = `<span class="tip-dist">${e.d}</span>${tipArrow}`;
-      }
-      rider.innerHTML = `
-        <span class="lb-name">${esc(e.name)}</span>
-        <span class="lb-steps">${e.steps}${e.triInfo}</span>
-        ${distHtml}
-        <div class="lb-tip" style="background:${e.color}">
-          <span class="tip-name">${esc(e.name)}</span>
-          <span class="tip-steps">${e.steps}</span>
-          ${tipDist}
-        </div>
-      `;
-      rider.style.top = '4px';
-    } else {
-      // Full pill
-      rider.classList.remove('collapsed');
-      rider.innerHTML = `
-        <span class="lb-name">${esc(e.name)}</span>
-        <span class="lb-steps">${e.steps}${e.triInfo}</span>
-        ${distHtml}
-      `;
-      rider.style.top = (e.topOffset || 0) + 'px';
-    }
-
-    rider.style.left = e.leftPct + '%';
-
-    // Pulse on distance change
-    const prevData = prevPositions.get(e.pid);
-    if (prevData && prevData.distance !== null && e.d !== null && prevData.distance !== e.d && !isNew) {
-      rider.classList.remove('pulse');
-      void rider.offsetWidth;
-      rider.classList.add('pulse');
-    }
-
-    prevPositions.set(e.pid, { distance: e.d });
+    groups.push(group);
   }
 
-  // Remove riders for players who left
+  // Track which pids we've rendered so we can clean up stale elements
+  const renderedIds = new Set();
+
+  for (const group of groups) {
+    if (group.length >= COLLAPSE_THRESHOLD) {
+      // === COLLAPSED GROUP: single dot with multi-player tooltip ===
+      const groupId = 'grp-' + group.map(e => e.pid).sort().join('-');
+      renderedIds.add(groupId);
+
+      // Remove individual riders that are now in this group
+      for (const e of group) {
+        const old = container.querySelector(`[data-pid="${e.pid}"]`);
+        if (old) old.remove();
+      }
+
+      let dot = container.querySelector(`[data-gid="${groupId}"]`);
+      if (!dot) {
+        dot = document.createElement('div');
+        dot.className = 'lb-rider collapsed';
+        dot.setAttribute('data-gid', groupId);
+        container.appendChild(dot);
+      }
+
+      const avgLeft = group.reduce((s, e) => s + e.leftPct, 0) / group.length;
+
+      // Overlapping colored circles
+      const circles = group.map(e =>
+        `<span class="lb-stack-circle" style="background:${e.color}"></span>`
+      ).join('');
+
+      // Combined tooltip rows
+      const tipRows = group.map(e => {
+        let arrow = '';
+        if (e.d !== null && e.prev !== null && e.prev !== undefined && currentMode === 'classic') {
+          if (e.d < e.prev) arrow = '<span class="tip-arrow up">▲</span>';
+          else if (e.d > e.prev) arrow = '<span class="tip-arrow down">▼</span>';
+        }
+        let dHtml = '';
+        if (e.d !== null && e.d !== undefined && currentMode === 'classic') {
+          dHtml = `<span class="tip-dist">${e.d}</span>${arrow}`;
+        }
+        return `<div style="display:flex;align-items:center;gap:6px;">
+          <span style="width:8px;height:8px;border-radius:50%;background:${e.color};flex-shrink:0;"></span>
+          <span class="tip-name">${esc(e.name)}</span>
+          <span class="tip-steps">${e.steps}</span>
+          ${dHtml}
+        </div>`;
+      }).join('');
+
+      dot.innerHTML = `
+        <div class="lb-stack">${circles}</div>
+        <div class="lb-tip" style="background:var(--surface);flex-direction:column;gap:4px;padding:8px 12px;">
+          ${tipRows}
+        </div>
+      `;
+      dot.style.left = avgLeft + '%';
+      dot.style.top = '0px';
+      dot.style.width = 'auto';
+
+    } else {
+      // === NORMAL: full pills, stack if 2 overlap ===
+      // Remove any group dot that contained these players
+      container.querySelectorAll('[data-gid]').forEach(el => {
+        const gid = el.getAttribute('data-gid');
+        if (group.some(e => gid.includes(e.pid))) el.remove();
+      });
+
+      let rowUsed = [];
+      for (const e of group) {
+        renderedIds.add(e.pid);
+        let rider = container.querySelector(`[data-pid="${e.pid}"]`);
+        const isNew = !rider;
+
+        if (isNew) {
+          rider = document.createElement('div');
+          rider.className = 'lb-rider';
+          rider.setAttribute('data-pid', e.pid);
+          if (e.pid === myPlayerId) rider.classList.add('is-me');
+          container.appendChild(rider);
+        }
+        rider.classList.remove('collapsed');
+
+        let arrowHtml = '';
+        if (e.d !== null && e.prev !== null && e.prev !== undefined && currentMode === 'classic') {
+          if (e.d < e.prev) arrowHtml = '<span class="lb-arrow up">▲</span>';
+          else if (e.d > e.prev) arrowHtml = '<span class="lb-arrow down">▼</span>';
+          else arrowHtml = '<span class="lb-arrow flat">=</span>';
+        }
+
+        let distHtml = '';
+        if (e.d !== null && e.d !== undefined && currentMode === 'classic') {
+          const cls = distColorClass(e.d);
+          distHtml = `<span class="lb-dist ${cls}">${e.d}${arrowHtml}</span>`;
+        }
+
+        rider.style.background = e.color;
+        rider.innerHTML = `
+          <span class="lb-name">${esc(e.name)}</span>
+          <span class="lb-steps">${e.steps}${e.triInfo}</span>
+          ${distHtml}
+        `;
+
+        // Stack vertically if overlapping
+        let row = 0;
+        for (const u of rowUsed) {
+          if (Math.abs(u.left - e.leftPct) < 12 && u.row === row) row++;
+        }
+        rider.style.top = (row * 28) + 'px';
+        rider.style.left = e.leftPct + '%';
+        rowUsed.push({ left: e.leftPct, row });
+
+        // Pulse on distance change
+        const prevData = prevPositions.get(e.pid);
+        if (prevData && prevData.distance !== null && e.d !== null && prevData.distance !== e.d && !isNew) {
+          rider.classList.remove('pulse');
+          void rider.offsetWidth;
+          rider.classList.add('pulse');
+        }
+        prevPositions.set(e.pid, { distance: e.d });
+      }
+    }
+  }
+
+  // Clean up stale elements
   container.querySelectorAll('.lb-rider').forEach(el => {
     const pid = el.getAttribute('data-pid');
-    if (!allPids.has(pid)) el.remove();
+    const gid = el.getAttribute('data-gid');
+    if (pid && !renderedIds.has(pid)) el.remove();
+    if (gid && !renderedIds.has(gid)) el.remove();
   });
 }
 
