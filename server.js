@@ -24,8 +24,9 @@ function isBadTitle(title) {
   const lower = title.toLowerCase().replace(/_/g, ' ');
   // Lists, indexes, outlines, drafts
   if (/^(list of|lists of|index of|outline of|draft:|wikipedia:|template:|category:|portal:|module:)/.test(lower)) return true;
-  // Disambiguation
-  if (lower.includes('(disambiguation)')) return true;
+  // Disambiguation and parenthetical qualifiers — these are hard to reach via links
+  // e.g. "Mario Bros. (Game & Watch)", "Paris (Texas)", "Mercury (planet)"
+  if (lower.includes('(')) return true;
   // Chemical formulas like C11H15NO2, C2H6O, etc.
   if (/^c\d+h\d+/i.test(title)) return true;
   // Pure numbers or dates like "1945" or "1800s"
