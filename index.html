@@ -232,62 +232,11 @@
   }
   .checkpoint-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
   /* Distance tracker bar */
-  .distance-bar {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    background: var(--surface);
-    border-top: 2px solid var(--surface2);
-    padding: 10px 20px;
-    display: flex;
-    gap: 16px;
-    align-items: center;
-    justify-content: center;
-    z-index: 99;
-    flex-wrap: wrap;
-  }
-  .distance-player {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 0.85rem;
-  }
-  .distance-player .dp-name { font-weight: 600; color: var(--text2); }
-  .distance-player .dp-dist {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-  .distance-dots {
-    display: flex;
-    gap: 3px;
-    align-items: center;
-  }
-  .distance-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    transition: background 0.4s;
-  }
-  .distance-dot.hot { background: #fdcb6e; }
-  .distance-dot.warm { background: #e17055; }
-  .distance-dot.cool { background: #a29bfe; }
-  .distance-dot.cold { background: #74b9ff; }
-  .distance-num {
-    font-weight: 700;
-    font-size: 0.9rem;
-    min-width: 20px;
-    text-align: center;
-    transition: color 0.3s;
-  }
-  .distance-num.d0 { color: #fdcb6e; }
-  .distance-num.d1 { color: #fdcb6e; }
-  .distance-num.d2 { color: #e17055; }
-  .distance-num.d3 { color: #a29bfe; }
-  .distance-num.d4 { color: #a29bfe; }
-  .distance-num.dfar { color: #74b9ff; }
-  .distance-label { font-size: 0.7rem; color: var(--text2); }
+  /* Distance colors for numbers */
+  .dist-c0, .dist-c1 { color: #fdcb6e; }
+  .dist-c2 { color: #e17055; }
+  .dist-c3, .dist-c4 { color: #a29bfe; }
+  .dist-cfar { color: #74b9ff; }
   /* Distance badge on path nodes in results */
   .path-dist {
     font-size: 0.65rem;
@@ -301,6 +250,13 @@
   .path-dist.pd-warm { background: rgba(225,112,85,0.2); color: #e17055; }
   .path-dist.pd-cool { background: rgba(162,155,254,0.2); color: #a29bfe; }
   .path-dist.pd-cold { background: rgba(116,185,255,0.2); color: #74b9ff; }
+  .path-dist-arrow {
+    font-size: 0.55rem;
+    margin-left: 2px;
+    vertical-align: middle;
+  }
+  .path-dist-arrow.better { color: #00b894; }
+  .path-dist-arrow.worse { color: #e17055; }
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
 
   /* ─── Game Screen ─── */
@@ -417,54 +373,56 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  /* Sidebar: player progress */
-  .players-sidebar {
+  /* Combined bottom bar: players + distance */
+  .players-bar {
     position: fixed;
-    bottom: 16px;
-    right: 16px;
+    bottom: 0;
+    left: 0;
+    right: 0;
     background: var(--surface);
-    border: 1px solid var(--surface2);
-    border-radius: var(--radius);
-    padding: 12px 16px;
-    min-width: 200px;
+    border-top: 2px solid var(--surface2);
+    padding: 8px 20px;
+    display: none;
+    justify-content: center;
+    gap: 24px;
     z-index: 100;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    flex-wrap: wrap;
   }
-  .players-sidebar h4 { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text2); margin-bottom: 8px; }
-  .progress-item {
+  .player-chip {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: 6px 0;
+    gap: 10px;
     font-size: 0.85rem;
-  }
-  .progress-item .p-name { font-weight: 600; }
-  .progress-item .p-steps {
     background: var(--surface2);
-    padding: 2px 8px;
+    padding: 6px 14px;
     border-radius: 99px;
-    font-size: 0.75rem;
-    color: var(--accent2);
   }
-  .progress-item .step-arrow {
-    display: inline-block;
-    color: var(--green);
-    font-size: 1rem;
+  .player-chip .pc-name { font-weight: 600; color: var(--text); }
+  .player-chip .pc-steps { color: var(--text2); font-size: 0.8rem; }
+  .player-chip .pc-dist {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .player-chip .pc-dist-num {
     font-weight: 700;
-    margin-left: 6px;
-    opacity: 0;
-    transform: translateY(4px);
-    transition: none;
+    font-size: 0.9rem;
+    min-width: 16px;
+    text-align: center;
   }
-  .progress-item .step-arrow.flash {
-    opacity: 1;
-    transform: translateY(0);
-    animation: arrowFlash 0.7s ease-out forwards;
+  .pc-dist-arrow {
+    font-size: 0.75rem;
+    font-weight: 700;
+    transition: opacity 0.3s;
   }
-  @keyframes arrowFlash {
-    0% { opacity: 1; transform: translateY(0) scale(1.3); }
-    50% { opacity: 1; transform: translateY(-4px) scale(1); }
-    100% { opacity: 0; transform: translateY(-8px) scale(0.8); }
+  .pc-dist-arrow.better { color: #00b894; }
+  .pc-dist-arrow.worse { color: #e17055; }
+  .pc-dist-arrow.same { color: var(--text2); opacity: 0.4; }
+  #playerChips {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
   }
 
   /* ─── Results Screen ─── */
@@ -641,13 +599,8 @@
     </div>
     <div class="wiki-content" id="wikiContent"></div>
   </div>
-  <div class="players-sidebar" id="playersSidebar">
-    <h4>Players</h4>
-    <div id="progressList"></div>
-  </div>
-  <div class="distance-bar" id="distanceBar" style="display:none;">
-    <span class="distance-label">Distance to goal:</span>
-    <div id="distancePlayers"></div>
+  <div class="players-bar" id="playersBar">
+    <div id="playerChips"></div>
   </div>
 </div>
 
@@ -834,7 +787,8 @@ function handleServerMessage(msg) {
       break;
 
     case 'distance_update':
-      renderDistanceBar(msg.distances);
+      latestDistData = msg.distances;
+      renderPlayersBar(latestDistData);
       break;
 
     case 'checkpoint_reached':
@@ -894,8 +848,9 @@ function startGameUI(origin, destination) {
   document.getElementById('gameDest').textContent = destination.replace(/_/g, ' ');
   document.getElementById('stepCount').textContent = '0';
 
+  latestDistData = null;
   showScreen('game');
-  document.getElementById('distanceBar').style.display = 'flex';
+  document.getElementById('playersBar').style.display = 'flex';
   document.getElementById('wikiContent').style.paddingBottom = '60px';
   startTimer();
   loadArticle(origin);
@@ -916,10 +871,11 @@ function startTriGameUI(origin, targets) {
   document.getElementById('triNav').style.display = 'flex';
   document.getElementById('stepCount').textContent = '0';
 
+  latestDistData = null;
   renderTriTargets();
   showScreen('game');
-  document.getElementById('distanceBar').style.display = 'none';
-  document.getElementById('wikiContent').style.paddingBottom = '0';
+  document.getElementById('playersBar').style.display = 'flex';
+  document.getElementById('wikiContent').style.paddingBottom = '60px';
   startTimer();
   loadArticle(origin);
 }
@@ -943,60 +899,68 @@ function showCheckpointToast(article, remaining) {
   setTimeout(() => toast.classList.remove('show'), 2500);
 }
 
-function distanceLabel(d) {
-  if (d === null || d === undefined) return { text: '...', cls: 'dfar' };
-  if (d === 0) return { text: '0', cls: 'd0' };
-  if (d === 1) return { text: '1', cls: 'd1' };
-  if (d <= 2) return { text: String(d), cls: 'd2' };
-  if (d <= 3) return { text: String(d), cls: 'd3' };
-  if (d <= 4) return { text: String(d), cls: 'd4' };
-  return { text: String(d) + '+', cls: 'dfar' };
+function distColorClass(d) {
+  if (d === null || d === undefined) return 'dist-cfar';
+  if (d <= 1) return 'dist-c0';
+  if (d <= 2) return 'dist-c2';
+  if (d <= 4) return 'dist-c3';
+  return 'dist-cfar';
 }
 
-function distanceDots(d) {
-  if (d === null || d === undefined) return '';
-  const max = 6;
-  const filled = Math.max(0, max - d);
-  let html = '';
-  for (let i = 0; i < max; i++) {
-    const cls = i < filled
-      ? (filled >= 5 ? 'hot' : filled >= 3 ? 'warm' : 'cool')
-      : 'cold';
-    html += `<span class="distance-dot ${cls}"></span>`;
-  }
-  return html;
-}
-
-function renderDistanceBar(distances) {
-  const bar = document.getElementById('distanceBar');
-  const container = document.getElementById('distancePlayers');
-  if (!distances) { bar.style.display = 'none'; return; }
-  bar.style.display = 'flex';
+function renderPlayersBar(distData) {
+  const bar = document.getElementById('playersBar');
+  const container = document.getElementById('playerChips');
   container.innerHTML = '';
-  for (const [pid, info] of Object.entries(distances)) {
-    const d = info.distance;
-    const label = distanceLabel(d);
-    const div = document.createElement('div');
-    div.className = 'distance-player';
-    div.innerHTML = `
-      <span class="dp-name">${pid === myPlayerId ? 'You' : esc(info.name)}</span>
-      <span class="dp-dist">
-        <span class="distance-dots">${distanceDots(d)}</span>
-        <span class="distance-num ${label.cls}">${label.text}</span>
-      </span>
+
+  // Merge playerProgress with distance data
+  const allPids = new Set([...playerProgress.keys(), ...(distData ? Object.keys(distData) : [])]);
+
+  for (const pid of allPids) {
+    const prog = playerProgress.get(pid);
+    const dist = distData ? distData[pid] : null;
+
+    const name = pid === myPlayerId ? 'You' : (prog?.name || dist?.name || '?');
+    const steps = dist?.steps ?? (prog ? prog.steps - 1 : 0);
+    const d = dist?.distance;
+    const prev = dist?.prev;
+
+    let distHtml = '';
+    if (d !== null && d !== undefined && currentMode === 'classic') {
+      const cls = distColorClass(d);
+      let arrowHtml = '';
+      if (prev !== null && prev !== undefined) {
+        if (d < prev) arrowHtml = '<span class="pc-dist-arrow better">▼</span>';
+        else if (d > prev) arrowHtml = '<span class="pc-dist-arrow worse">▲</span>';
+        else arrowHtml = '<span class="pc-dist-arrow same">=</span>';
+      }
+      distHtml = `<span class="pc-dist"><span class="pc-dist-num ${cls}">${d}</span>${arrowHtml}</span>`;
+    }
+
+    const triInfo = prog?.mode === 'tri' ? ` · ${prog.visited || 0}/3` : '';
+    const chip = document.createElement('div');
+    chip.className = 'player-chip';
+    chip.innerHTML = `
+      <span class="pc-name">${esc(name)}</span>
+      <span class="pc-steps">${steps} steps${triInfo}</span>
+      ${distHtml}
     `;
-    container.appendChild(div);
+    container.appendChild(chip);
   }
 }
 
-function distBadge(d) {
+function distBadge(d, prev) {
   if (d === null || d === undefined) return '';
   let cls;
-  if (d <= 1) cls = 'pd-hot';      // gold – very close
-  else if (d <= 2) cls = 'pd-warm'; // red – getting closer
-  else if (d <= 4) cls = 'pd-cool'; // purple – moderate
-  else cls = 'pd-cold';             // light blue – far
-  return `<span class="path-dist ${cls}">${d}</span>`;
+  if (d <= 1) cls = 'pd-hot';
+  else if (d <= 2) cls = 'pd-warm';
+  else if (d <= 4) cls = 'pd-cool';
+  else cls = 'pd-cold';
+  let arrow = '';
+  if (prev !== null && prev !== undefined) {
+    if (d < prev) arrow = '<span class="path-dist-arrow better">▼</span>';
+    else if (d > prev) arrow = '<span class="path-dist-arrow worse">▲</span>';
+  }
+  return `<span class="path-dist ${cls}">${d}${arrow}</span>`;
 }
 
 function startTimer() {
@@ -1020,24 +984,10 @@ function updateBreadcrumbs() {
   document.getElementById('stepCount').textContent = myPath.length - 1;
 }
 
+let latestDistData = null;
+
 function renderProgress(flashPlayerId) {
-  const list = document.getElementById('progressList');
-  list.innerHTML = '';
-  for (const [pid, info] of playerProgress) {
-    const div = document.createElement('div');
-    div.className = 'progress-item';
-    div.setAttribute('data-pid', pid);
-    const shouldFlash = flashPlayerId === pid && pid !== myPlayerId;
-    const triInfo = info.mode === 'tri' ? ` &middot; ${info.visited || 0}/3` : '';
-    div.innerHTML = `
-      <span class="p-name">${pid === myPlayerId ? 'You' : esc(info.name)}</span>
-      <span>
-        <span class="p-steps">${info.steps - 1} steps${triInfo}</span>
-        <span class="step-arrow${shouldFlash ? ' flash' : ''}">&#9650;</span>
-      </span>
-    `;
-    list.appendChild(div);
-  }
+  renderPlayersBar(latestDistData);
 }
 
 // ─── Wikipedia API ───
@@ -1172,7 +1122,7 @@ let resultsAnimationTimeouts = [];
 
 function showResults(msg) {
   clearInterval(timerInterval);
-  document.getElementById('distanceBar').style.display = 'none';
+  document.getElementById('playersBar').style.display = 'none';
   // Clear any previous animation timeouts
   resultsAnimationTimeouts.forEach(t => clearTimeout(t));
   resultsAnimationTimeouts = [];
@@ -1224,7 +1174,8 @@ function showResults(msg) {
       else if (i === r.path.length - 1 && r.finished) cls = 'path-node end';
       else if (isCheckpoint) cls = 'path-node end'; // green for checkpoints
       else cls = 'path-node';
-      const badge = (msg.mode !== 'tri' && dists[i] !== undefined) ? distBadge(dists[i]) : '';
+      const prevDist = (i > 0 && dists[i - 1] !== undefined) ? dists[i - 1] : null;
+      const badge = (msg.mode !== 'tri' && dists[i] !== undefined) ? distBadge(dists[i], prevDist) : '';
       const arrow = i < r.path.length - 1 ? '<span class="path-arrow">&rarr;</span>' : '';
       return `<span class="${cls}" data-step="${i}">${esc(p.replace(/_/g, ' '))}${badge}</span>${arrow}`;
     }).join('');
@@ -1288,7 +1239,8 @@ function playAgain() { send({ type: 'play_again' }); }
 function backToHome() {
   eventSource?.close();
   eventSource = null;
-  document.getElementById('distanceBar').style.display = 'none';
+  document.getElementById('playersBar').style.display = 'none';
+  latestDistData = null;
   showScreen('home');
 }
 

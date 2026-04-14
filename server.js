@@ -105,7 +105,7 @@ async function getPageLinks(title) {
         if (page.links) page.links.forEach(l => links.add(normalizeArticle(l.title)));
       }
       plcontinue = data.continue?.plcontinue;
-    } while (plcontinue && links.size < 1000);
+    } while (plcontinue);
   } catch (e) {
     console.error('Error fetching links for', title, e.message);
   }
@@ -139,24 +139,27 @@ async function computeDistance(currentArticle, destination, destBacklinks) {
 
   if (currentNorm === destNorm) return 0;
 
-  // Get outgoing links from current page
+  // Get ALL outgoing links from current page (no cap)
   const outLinks = await getPageLinks(currentArticle);
 
-  // Distance 1: destination is directly linked
+  // Distance 1: destination is directly linked from current page
   if (outLinks.has(destNorm)) return 1;
 
-  // Distance 2: any outgoing link also links to destination (is in dest's backlinks)
-  let overlap = 0;
+  // Distance 2: any outgoing link from current page is also a backlink to destination
+  // (meaning: current -> X -> destination is a valid 2-hop path)
+  let hasOverlap = false;
   for (const link of outLinks) {
-    if (destBacklinks.has(link)) overlap++;
+    if (destBacklinks.has(link)) { hasOverlap = true; break; }
   }
+  if (hasOverlap) return 2;
 
-  if (overlap > 20) return 2;
-  if (overlap > 5) return 3;
-  if (overlap > 0) return 4;
-
-  // No overlap at all — likely far away
-  return 6;
+  // Distance 3+: no direct 2-hop path found. Estimate based on how many outgoing links
+  // share categories/topics (rough heuristic for 3+ hops)
+  // Check if destination's backlinks have any overlap with current page's outgoing links' neighbors
+  // For performance, just return 3 if there are lots of outgoing links (likely connected through broader graph)
+  if (outLinks.size > 100) return 3;
+  if (outLinks.size > 30) return 4;
+  return 5;
 }
 
 // Pre-cache destination data when game starts
@@ -257,7 +260,10 @@ async function startGameForRoom(room, roomCode) {
 function getDistanceMap(room) {
   const map = {};
   for (const [pid, p] of room.players) {
-    map[pid] = { name: p.name, distance: p.distances.length > 0 ? p.distances[p.distances.length - 1] : null, distances: p.distances };
+    const len = p.distances.length;
+    const curr = len > 0 ? p.distances[len - 1] : null;
+    const prev = len > 1 ? p.distances[len - 2] : null;
+    map[pid] = { name: p.name, distance: curr, prev, steps: p.path.length - 1 };
   }
   return map;
 }
