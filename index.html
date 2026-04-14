@@ -380,30 +380,30 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  /* ─── F1-style leaderboard bar ─── */
+  /* ─── Race track leaderboard ─── */
   .players-bar {
     background: var(--surface);
     border-bottom: 1px solid var(--surface2);
     display: none;
     flex-direction: column;
     z-index: 50;
-    padding: 6px 20px 4px;
+    padding: 6px 24px 4px;
     flex-shrink: 0;
   }
   .lb-track {
     position: relative;
     width: 100%;
-    height: 6px;
+    height: 4px;
     background: var(--surface2);
-    border-radius: 3px;
+    border-radius: 2px;
     margin-bottom: 4px;
   }
   .lb-track-fill {
     position: absolute;
     left: 0; top: 0; bottom: 0;
-    background: linear-gradient(90deg, var(--accent), var(--green));
-    border-radius: 3px;
-    opacity: 0.15;
+    background: linear-gradient(90deg, var(--surface2), var(--accent), var(--green));
+    border-radius: 2px;
+    opacity: 0.2;
     width: 100%;
   }
   .lb-ticks {
@@ -417,21 +417,22 @@
   .lb-tick {
     width: 1px;
     height: 100%;
-    background: rgba(255,255,255,0.06);
+    background: rgba(255,255,255,0.05);
   }
   .lb-goal {
     position: absolute;
-    right: -4px;
+    right: -2px;
     top: 50%;
     transform: translateY(-50%);
-    font-size: 12px;
+    font-size: 10px;
     line-height: 1;
   }
   .lb-riders {
     position: relative;
     width: 100%;
-    min-height: 30px;
+    min-height: 28px;
   }
+  /* Full pill rider */
   .lb-rider {
     position: absolute;
     top: 0;
@@ -452,6 +453,7 @@
   .lb-rider.is-me {
     outline: 2px solid rgba(255,255,255,0.5);
     outline-offset: 1px;
+    z-index: 2;
   }
   .lb-rider .lb-name { font-weight: 700; font-size: 0.75rem; }
   .lb-rider .lb-steps { opacity: 0.75; font-size: 0.7rem; }
@@ -466,7 +468,6 @@
     font-size: 0.65rem;
     font-weight: 800;
     margin-left: 1px;
-    transition: transform 0.3s, opacity 0.3s;
   }
   .lb-arrow.up { color: #b8fce4; animation: arrowBounceUp 0.6s ease-out; }
   .lb-arrow.down { color: #ffb8a8; animation: arrowBounceDown 0.6s ease-out; }
@@ -481,17 +482,50 @@
     40% { transform: translateY(3px); opacity: 1; }
     100% { transform: translateY(0); opacity: 1; }
   }
-  .lb-rider.pos-up { animation: posFlashGreen 0.8s ease-out; }
-  .lb-rider.pos-down { animation: posFlashRed 0.8s ease-out; }
-  @keyframes posFlashGreen {
-    0% { box-shadow: 0 0 0 0 rgba(0,184,148,0.5); }
-    50% { box-shadow: 0 0 10px 3px rgba(0,184,148,0.3); }
-    100% { box-shadow: none; }
+  /* Collapsed dot for crowded positions */
+  .lb-rider.collapsed {
+    padding: 0;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    overflow: visible;
   }
-  @keyframes posFlashRed {
-    0% { box-shadow: 0 0 0 0 rgba(225,112,85,0.5); }
-    50% { box-shadow: 0 0 10px 3px rgba(225,112,85,0.3); }
-    100% { box-shadow: none; }
+  .lb-rider.collapsed .lb-name,
+  .lb-rider.collapsed .lb-steps,
+  .lb-rider.collapsed .lb-dist { display: none; }
+  /* Tooltip for collapsed dots */
+  .lb-rider .lb-tip {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 4px 10px;
+    border-radius: 8px;
+    font-size: 0.72rem;
+    white-space: nowrap;
+    color: white;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    z-index: 10;
+  }
+  .lb-rider.collapsed:hover .lb-tip { opacity: 1; }
+  .lb-tip .tip-name { font-weight: 700; }
+  .lb-tip .tip-steps { opacity: 0.8; }
+  .lb-tip .tip-dist { font-weight: 800; }
+  .lb-tip .tip-arrow { font-size: 0.6rem; font-weight: 800; }
+  .lb-tip .tip-arrow.up { color: #b8fce4; }
+  .lb-tip .tip-arrow.down { color: #ffb8a8; }
+  .lb-tip .tip-arrow.flat { opacity: 0.3; }
+  .lb-rider.pulse { animation: dotPulse 0.6s ease-out; }
+  @keyframes dotPulse {
+    0% { transform: translateX(-50%) scale(1); }
+    30% { transform: translateX(-50%) scale(1.3); }
+    100% { transform: translateX(-50%) scale(1); }
   }
 
   /* ─── Results Screen ─── */
@@ -996,14 +1030,15 @@ function distColorClass(d) {
   return 'dist-cfar';
 }
 
-// Track previous positions for animation
-const prevPositions = new Map(); // pid -> { pos, distance }
-const MAX_DIST = 6; // max distance for track positioning
+// Track previous state for animation
+const prevPositions = new Map(); // pid -> { distance }
+const MAX_DIST = 6;
+const COLLAPSE_THRESHOLD = 3; // collapse to dots when this many overlap
 
 function renderPlayersBar(distData) {
   const container = document.getElementById('lbRiders');
 
-  // Build player list with data
+  // Build entries
   const entries = [];
   const allPids = new Set([...playerProgress.keys(), ...(distData ? Object.keys(distData) : [])]);
 
@@ -1019,46 +1054,39 @@ function renderPlayersBar(distData) {
     entries.push({ pid, name, steps, d, prev, color, triInfo });
   }
 
-  // Sort by distance (lower = closer = better), nulls last
-  // Tied players (same distance) keep stable order by pid
-  entries.sort((a, b) => {
-    if (a.d === null && b.d === null) return 0;
-    if (a.d === null) return 1;
-    if (b.d === null) return -1;
-    if (a.d !== b.d) return a.d - b.d;
-    return 0; // tied — don't reorder
-  });
-
-  // Assign positions — tied players share the same rank
-  let rank = 1;
-  entries.forEach((e, i) => {
-    if (i > 0 && e.d !== null && entries[i - 1].d !== null && e.d === entries[i - 1].d) {
-      e.pos = entries[i - 1].pos; // same rank as previous
-    } else {
-      e.pos = rank;
-    }
-    rank = i + 2;
-  });
-
-  // Calculate left % based on distance (closer = further right toward flag)
+  // Calculate left % based on distance
   entries.forEach(e => {
     if (e.d !== null && e.d !== undefined) {
       const clamped = Math.min(e.d, MAX_DIST);
-      e.leftPct = 95 - (clamped / MAX_DIST) * 90;
+      e.leftPct = 93 - (clamped / MAX_DIST) * 86;
     } else {
-      e.leftPct = 5;
+      e.leftPct = 7;
     }
   });
 
-  // Handle overlap: if two riders are at the same left%, offset vertically
-  for (let i = 0; i < entries.length; i++) {
-    entries[i].topOffset = 0;
-    for (let j = 0; j < i; j++) {
-      if (Math.abs(entries[i].leftPct - entries[j].leftPct) < 8) {
-        entries[i].topOffset = (entries[i].topOffset || 0) + 26;
+  // Group by similar position to detect crowding
+  // Count how many riders share each position bucket (within 8%)
+  entries.forEach(e => {
+    const neighbors = entries.filter(o => o.pid !== e.pid && Math.abs(o.leftPct - e.leftPct) < 8);
+    e.crowded = neighbors.length + 1 >= COLLAPSE_THRESHOLD;
+  });
+
+  // For non-crowded entries, stack vertically if they overlap
+  let rowUsed = []; // array of { left, row }
+  entries.forEach(e => {
+    if (e.crowded) {
+      e.topOffset = 0;
+      return;
+    }
+    let row = 0;
+    for (const u of rowUsed) {
+      if (Math.abs(u.left - e.leftPct) < 12 && u.row === row) {
+        row++;
       }
     }
-  }
+    e.topOffset = row * 28;
+    rowUsed.push({ left: e.leftPct, row });
+  });
 
   // Render or update each rider
   for (const e of entries) {
@@ -1073,13 +1101,7 @@ function renderPlayersBar(distData) {
       container.appendChild(rider);
     }
 
-    // Check for position change
-    const prevData = prevPositions.get(e.pid);
-    const posChanged = prevData && prevData.pos !== e.pos;
-    const wentUp = prevData && e.pos < prevData.pos;
-    const wentDown = prevData && e.pos > prevData.pos;
-
-    // Distance arrow
+    // Arrow HTML
     let arrowHtml = '';
     if (e.d !== null && e.prev !== null && e.prev !== undefined && currentMode === 'classic') {
       if (e.d < e.prev) arrowHtml = '<span class="lb-arrow up">▲</span>';
@@ -1087,7 +1109,6 @@ function renderPlayersBar(distData) {
       else arrowHtml = '<span class="lb-arrow flat">=</span>';
     }
 
-    // Distance display
     let distHtml = '';
     if (e.d !== null && e.d !== undefined && currentMode === 'classic') {
       const cls = distColorClass(e.d);
@@ -1096,25 +1117,51 @@ function renderPlayersBar(distData) {
 
     rider.style.background = e.color;
 
-    rider.innerHTML = `
-      <span class="lb-name">${esc(e.name)}</span>
-      <span class="lb-steps">${e.steps}${e.triInfo}</span>
-      ${distHtml}
-    `;
-
-    // Animate position
-    rider.style.left = e.leftPct + '%';
-    rider.style.top = (e.topOffset || 0) + 'px';
-
-    // Flash on position change
-    if (posChanged && !isNew) {
-      rider.classList.remove('pos-up', 'pos-down');
-      void rider.offsetWidth;
-      rider.classList.add(wentUp ? 'pos-up' : 'pos-down');
+    if (e.crowded) {
+      // Collapsed dot with hover tooltip
+      rider.classList.add('collapsed');
+      let tipArrow = '';
+      if (e.d !== null && e.prev !== null && e.prev !== undefined && currentMode === 'classic') {
+        if (e.d < e.prev) tipArrow = '<span class="tip-arrow up">▲</span>';
+        else if (e.d > e.prev) tipArrow = '<span class="tip-arrow down">▼</span>';
+      }
+      let tipDist = '';
+      if (e.d !== null && e.d !== undefined && currentMode === 'classic') {
+        tipDist = `<span class="tip-dist">${e.d}</span>${tipArrow}`;
+      }
+      rider.innerHTML = `
+        <span class="lb-name">${esc(e.name)}</span>
+        <span class="lb-steps">${e.steps}${e.triInfo}</span>
+        ${distHtml}
+        <div class="lb-tip" style="background:${e.color}">
+          <span class="tip-name">${esc(e.name)}</span>
+          <span class="tip-steps">${e.steps}</span>
+          ${tipDist}
+        </div>
+      `;
+      rider.style.top = '4px';
+    } else {
+      // Full pill
+      rider.classList.remove('collapsed');
+      rider.innerHTML = `
+        <span class="lb-name">${esc(e.name)}</span>
+        <span class="lb-steps">${e.steps}${e.triInfo}</span>
+        ${distHtml}
+      `;
+      rider.style.top = (e.topOffset || 0) + 'px';
     }
 
-    // Store current state
-    prevPositions.set(e.pid, { pos: e.pos, distance: e.d });
+    rider.style.left = e.leftPct + '%';
+
+    // Pulse on distance change
+    const prevData = prevPositions.get(e.pid);
+    if (prevData && prevData.distance !== null && e.d !== null && prevData.distance !== e.d && !isNew) {
+      rider.classList.remove('pulse');
+      void rider.offsetWidth;
+      rider.classList.add('pulse');
+    }
+
+    prevPositions.set(e.pid, { distance: e.d });
   }
 
   // Remove riders for players who left
