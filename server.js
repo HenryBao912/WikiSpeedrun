@@ -67,13 +67,12 @@ async function validateArticles(titles) {
   }
 }
 
-// ─── Page views fetching for difficulty filtering ───
+// ─── Page views & difficulty filtering ───
+
+// Fetch individual article view counts (for mid-range filtering)
 function getPageViews(titles) {
-  // Uses Wikimedia pageviews API to get monthly views for articles
-  // Returns a Map of title -> monthly views
   const today = new Date();
   const endDate = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
-  // Get last 30 days
   const start = new Date(today);
   start.setDate(start.getDate() - 30);
   const startDate = `${start.getFullYear()}${String(start.getMonth() + 1).padStart(2, '0')}${String(start.getDate()).padStart(2, '0')}`;
@@ -98,30 +97,112 @@ function getPageViews(titles) {
   return Promise.all(promises);
 }
 
-// Difficulty ranges (monthly views). Wide buckets so filtering is fast.
-// Slider sends [minViews, maxViews]
-const DIFF_PRESETS = {
-  // labels for reference:
-  // ez = famous articles (>50K views/month)
-  // mid = moderate (5K - 50K)
-  // tf = obscure (<5K views/month)
-};
+// Fetch top viewed articles from Wikimedia (for easy/popular range)
+// Returns array of { title, views } sorted by views desc
+let topArticlesCache = null;
+let topArticlesCacheTime = 0;
+const TOP_CACHE_TTL = 1000 * 60 * 60; // 1 hour
 
+async function getTopViewedArticles() {
+  // Return cache if fresh
+  if (topArticlesCache && (Date.now() - topArticlesCacheTime < TOP_CACHE_TTL)) {
+    return topArticlesCache;
+  }
+
+  try {
+    // Get yesterday's date for the most-viewed endpoint
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const y = yesterday.getFullYear();
+    const m = String(yesterday.getMonth() + 1).padStart(2, '0');
+    const d = String(yesterday.getDate()).padStart(2, '0');
+
+    const apiUrl = `https://wikimedia.org/api/rest_v1/metrics/pageviews/top/en.wikipedia/all-access/${y}/${m}/${d}`;
+
+    const result = await new Promise((resolve, reject) => {
+      https.get(apiUrl, { headers: { 'User-Agent': 'WikiSpeedrun/1.0' } }, (res) => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          try { resolve(JSON.parse(data)); } catch (e) { reject(e); }
+        });
+      }).on('error', reject);
+    });
+
+    const articles = (result.items?.[0]?.articles || [])
+      .filter(a => {
+        const t = a.article;
+        // Filter out Wikipedia special pages and bad titles
+        if (t === 'Main_Page' || t === 'Special:Search' || t.startsWith('Special:')) return false;
+        if (t.startsWith('Wikipedia:') || t.startsWith('Portal:') || t.startsWith('Help:')) return false;
+        if (isBadTitle(t)) return false;
+        return true;
+      })
+      .map(a => ({ title: a.article, views: a.views * 30 })); // Approximate monthly from daily
+
+    topArticlesCache = articles;
+    topArticlesCacheTime = Date.now();
+    console.log(`[top-articles] Cached ${articles.length} popular articles`);
+    return articles;
+  } catch (e) {
+    console.error('Error fetching top articles:', e.message);
+    return topArticlesCache || [];
+  }
+}
+
+// Pick random articles from the top-viewed pool within a view range
+async function pickFromTopArticles(count, viewRange) {
+  const top = await getTopViewedArticles();
+  if (top.length === 0) return [];
+
+  // Filter to view range
+  let pool = top;
+  if (viewRange) {
+    pool = top.filter(a => a.views >= viewRange[0] && a.views <= viewRange[1]);
+  }
+  if (pool.length < count) pool = top; // fallback to all top if range too narrow
+
+  // Shuffle and pick
+  const shuffled = pool.slice().sort(() => Math.random() - 0.5);
+  const picked = shuffled.slice(0, Math.min(count * 3, shuffled.length)).map(a => a.title);
+
+  // Validate (filter disambig/stubs)
+  const validated = await validateArticles(picked);
+  return validated.slice(0, count);
+}
+
+// Main article fetcher — uses different strategies based on view range
 async function getGoodRandomArticles(count, viewRange) {
   const needed = count;
+
+  // If no filter, use plain random
+  if (!viewRange) {
+    return await fetchRandomArticles(needed);
+  }
+
+  const [minViews, maxViews] = viewRange;
+
+  // High views (easy): pull from top-viewed articles
+  // Threshold: if min views > 30K, use the top-viewed pool
+  if (minViews >= 30000) {
+    const fromTop = await pickFromTopArticles(needed, viewRange);
+    if (fromTop.length >= needed) return fromTop;
+    // Fallback: try random with filtering
+  }
+
+  // Mid or low range: use random articles + filter by views
   const good = [];
   let attempts = 0;
-  const maxAttempts = viewRange ? 8 : 4; // more attempts when filtering by views
+  const maxAttempts = 8;
 
   while (good.length < needed && attempts < maxAttempts) {
     attempts++;
     try {
-      // Fetch a batch of random articles
       const params = {
         action: 'query',
         list: 'random',
         rnnamespace: '0',
-        rnlimit: String(Math.min(20, needed * 5)),
+        rnlimit: '20',
       };
       const data = await wikiAPI(params);
       const batch = (data.query?.random || [])
@@ -129,23 +210,14 @@ async function getGoodRandomArticles(count, viewRange) {
         .filter(t => !isBadTitle(t));
 
       if (batch.length === 0) continue;
-
-      // Validate via API (check for disambig, stub, etc.)
       const validated = await validateArticles(batch);
       if (validated.length === 0) continue;
 
-      // If view range filter is set, check page views
-      if (viewRange && viewRange[0] != null && viewRange[1] != null) {
-        const viewData = await getPageViews(validated);
-        for (const { title, views } of viewData) {
-          if (good.length >= needed) break;
-          if (views >= viewRange[0] && views <= viewRange[1]) {
-            good.push(title);
-          }
-        }
-      } else {
-        for (const a of validated) {
-          if (good.length < needed) good.push(a);
+      const viewData = await getPageViews(validated);
+      for (const { title, views } of viewData) {
+        if (good.length >= needed) break;
+        if (views >= minViews && views <= maxViews) {
+          good.push(title);
         }
       }
     } catch (e) {
@@ -153,6 +225,45 @@ async function getGoodRandomArticles(count, viewRange) {
     }
   }
 
+  // If we still don't have enough, supplement from top articles or plain random
+  if (good.length < needed) {
+    const extra = await pickFromTopArticles(needed - good.length, viewRange);
+    good.push(...extra);
+  }
+  if (good.length < needed) {
+    const fallback = await fetchRandomArticles(needed - good.length);
+    good.push(...fallback);
+  }
+
+  return good.slice(0, needed);
+}
+
+// Plain random articles (no view filtering) — extracted from old logic
+async function fetchRandomArticles(count) {
+  const good = [];
+  let attempts = 0;
+  while (good.length < count && attempts < 4) {
+    attempts++;
+    try {
+      const params = {
+        action: 'query',
+        list: 'random',
+        rnnamespace: '0',
+        rnlimit: String(Math.min(20, count * 5)),
+      };
+      const data = await wikiAPI(params);
+      const batch = (data.query?.random || [])
+        .map(r => r.title.replace(/ /g, '_'))
+        .filter(t => !isBadTitle(t));
+      if (batch.length === 0) continue;
+      const validated = await validateArticles(batch);
+      for (const a of validated) {
+        if (good.length < count) good.push(a);
+      }
+    } catch (e) {
+      console.error('Error fetching random articles:', e.message);
+    }
+  }
   return good;
 }
 
@@ -161,11 +272,6 @@ async function getRandomPair(viewRange) {
   if (articles.length >= 2) {
     return { origin: articles[0], destination: articles[1] };
   }
-  // Fallback if filtering was too strict — retry without filter
-  if (viewRange) {
-    const fallback = await getGoodRandomArticles(2, null);
-    if (fallback.length >= 2) return { origin: fallback[0], destination: fallback[1] };
-  }
   return { origin: 'Pizza', destination: 'Moon' };
 }
 
@@ -173,10 +279,6 @@ async function getRandomTriple(viewRange) {
   const articles = await getGoodRandomArticles(3, viewRange);
   if (articles.length >= 3) {
     return { targets: [articles[0], articles[1], articles[2]] };
-  }
-  if (viewRange) {
-    const fallback = await getGoodRandomArticles(3, null);
-    if (fallback.length >= 3) return { targets: [fallback[0], fallback[1], fallback[2]] };
   }
   return { targets: ['Moon', 'Dinosaur', 'Jazz'] };
 }
