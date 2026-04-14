@@ -255,7 +255,7 @@ function initRoom(code, hostId, hostName) {
 }
 
 // Player colors — assigned in join order
-const PLAYER_COLORS = ['#6c5ce7', '#00b894', '#e17055', '#fdcb6e', '#74b9ff', '#fd79a8', '#55efc4', '#ffeaa7'];
+const PLAYER_COLORS = ['#6c5ce7', '#00a884', '#d35400', '#2980b9', '#c0392b', '#8e44ad', '#16a085', '#e67e22'];
 let colorIndex = 0;
 
 function newPlayerState(name) {

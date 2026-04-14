@@ -382,34 +382,30 @@
 
   /* ─── F1-style leaderboard bar ─── */
   .players-bar {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
     background: var(--surface);
-    border-top: 2px solid var(--surface2);
+    border-bottom: 1px solid var(--surface2);
     display: none;
     flex-direction: column;
-    z-index: 100;
-    padding: 0 20px 6px;
+    z-index: 50;
+    padding: 6px 20px 4px;
+    flex-shrink: 0;
   }
   .lb-track {
     position: relative;
     width: 100%;
-    height: 8px;
+    height: 6px;
     background: var(--surface2);
-    border-radius: 4px;
-    margin: 10px 0 4px;
+    border-radius: 3px;
+    margin-bottom: 4px;
   }
   .lb-track-fill {
     position: absolute;
     left: 0; top: 0; bottom: 0;
     background: linear-gradient(90deg, var(--accent), var(--green));
-    border-radius: 4px;
+    border-radius: 3px;
     opacity: 0.15;
     width: 100%;
   }
-  /* Tick marks on track */
   .lb-ticks {
     position: absolute;
     top: 0; left: 0; right: 0; bottom: 0;
@@ -423,18 +419,18 @@
     height: 100%;
     background: rgba(255,255,255,0.06);
   }
-  /* Goal flag on right end */
   .lb-goal {
     position: absolute;
-    right: -2px;
-    top: -10px;
-    font-size: 14px;
+    right: -4px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 12px;
     line-height: 1;
   }
   .lb-riders {
     position: relative;
     width: 100%;
-    height: 46px;
+    min-height: 30px;
   }
   .lb-rider {
     position: absolute;
@@ -442,47 +438,39 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    background: var(--surface2);
-    border: 1.5px solid transparent;
-    padding: 4px 12px 4px 8px;
+    padding: 3px 10px;
     border-radius: 99px;
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     white-space: nowrap;
     transition: left 0.8s cubic-bezier(0.22, 1, 0.36, 1),
-                top 0.3s ease,
-                border-color 0.4s;
+                top 0.3s ease;
     transform: translateX(-50%);
     z-index: 1;
     cursor: default;
+    color: white;
   }
   .lb-rider.is-me {
-    border-color: var(--accent);
-    background: rgba(108, 92, 231, 0.2);
+    outline: 2px solid rgba(255,255,255,0.5);
+    outline-offset: 1px;
   }
-  .lb-rider .lb-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    flex-shrink: 0;
-  }
-  .lb-rider .lb-name { font-weight: 600; }
-  .lb-rider .lb-steps { color: var(--text2); font-size: 0.75rem; }
+  .lb-rider .lb-name { font-weight: 700; font-size: 0.75rem; }
+  .lb-rider .lb-steps { opacity: 0.75; font-size: 0.7rem; }
   .lb-rider .lb-dist {
-    font-weight: 700;
-    font-size: 0.85rem;
-    min-width: 14px;
+    font-weight: 800;
+    font-size: 0.8rem;
+    min-width: 12px;
     text-align: center;
   }
   .lb-arrow {
     display: inline-block;
-    font-size: 0.7rem;
+    font-size: 0.65rem;
     font-weight: 800;
-    margin-left: 2px;
+    margin-left: 1px;
     transition: transform 0.3s, opacity 0.3s;
   }
-  .lb-arrow.up { color: #00b894; animation: arrowBounceUp 0.6s ease-out; }
-  .lb-arrow.down { color: #e17055; animation: arrowBounceDown 0.6s ease-out; }
-  .lb-arrow.flat { color: var(--text2); opacity: 0.3; }
+  .lb-arrow.up { color: #b8fce4; animation: arrowBounceUp 0.6s ease-out; }
+  .lb-arrow.down { color: #ffb8a8; animation: arrowBounceDown 0.6s ease-out; }
+  .lb-arrow.flat { opacity: 0.3; }
   @keyframes arrowBounceUp {
     0% { transform: translateY(4px); opacity: 0; }
     40% { transform: translateY(-3px); opacity: 1; }
@@ -493,17 +481,16 @@
     40% { transform: translateY(3px); opacity: 1; }
     100% { transform: translateY(0); opacity: 1; }
   }
-  /* Position change flash */
   .lb-rider.pos-up { animation: posFlashGreen 0.8s ease-out; }
   .lb-rider.pos-down { animation: posFlashRed 0.8s ease-out; }
   @keyframes posFlashGreen {
     0% { box-shadow: 0 0 0 0 rgba(0,184,148,0.5); }
-    50% { box-shadow: 0 0 12px 4px rgba(0,184,148,0.3); }
+    50% { box-shadow: 0 0 10px 3px rgba(0,184,148,0.3); }
     100% { box-shadow: none; }
   }
   @keyframes posFlashRed {
     0% { box-shadow: 0 0 0 0 rgba(225,112,85,0.5); }
-    50% { box-shadow: 0 0 12px 4px rgba(225,112,85,0.3); }
+    50% { box-shadow: 0 0 10px 3px rgba(225,112,85,0.3); }
     100% { box-shadow: none; }
   }
 
@@ -674,13 +661,6 @@
     </div>
   </div>
   <div class="breadcrumb-bar" id="breadcrumbs"></div>
-  <div class="wiki-container" id="wikiContainer">
-    <div class="wiki-loading" id="wikiLoading">
-      <div class="spinner"></div>
-      Loading Wikipedia...
-    </div>
-    <div class="wiki-content" id="wikiContent"></div>
-  </div>
   <div class="players-bar" id="playersBar">
     <div class="lb-track">
       <div class="lb-track-fill"></div>
@@ -691,6 +671,13 @@
       <span class="lb-goal">🏁</span>
     </div>
     <div class="lb-riders" id="lbRiders"></div>
+  </div>
+  <div class="wiki-container" id="wikiContainer">
+    <div class="wiki-loading" id="wikiLoading">
+      <div class="spinner"></div>
+      Loading Wikipedia...
+    </div>
+    <div class="wiki-content" id="wikiContent"></div>
   </div>
 </div>
 
@@ -953,7 +940,7 @@ function startGameUI(origin, destination) {
   document.getElementById('lbRiders').innerHTML = '';
   showScreen('game');
   document.getElementById('playersBar').style.display = 'flex';
-  document.getElementById('wikiContent').style.paddingBottom = '80px';
+  document.getElementById('wikiContent').style.paddingBottom = '0';
   startTimer();
   loadArticle(origin);
 }
@@ -977,7 +964,7 @@ function startTriGameUI(origin, targets) {
   renderTriTargets();
   showScreen('game');
   document.getElementById('playersBar').style.display = 'flex';
-  document.getElementById('wikiContent').style.paddingBottom = '60px';
+  document.getElementById('wikiContent').style.paddingBottom = '0';
   startTimer();
   loadArticle(origin);
 }
@@ -1107,11 +1094,9 @@ function renderPlayersBar(distData) {
       distHtml = `<span class="lb-dist ${cls}">${e.d}${arrowHtml}</span>`;
     }
 
-    // Color dot instead of P1/P2
-    const dotHtml = `<span class="lb-dot" style="background:${e.color}"></span>`;
+    rider.style.background = e.color;
 
     rider.innerHTML = `
-      ${dotHtml}
       <span class="lb-name">${esc(e.name)}</span>
       <span class="lb-steps">${e.steps}${e.triInfo}</span>
       ${distHtml}
