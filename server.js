@@ -51,7 +51,6 @@ async function validateArticles(titles) {
       ppprop: 'disambiguation',
       inprop: 'length',
       cllimit: '50',
-      clcategories: 'Category:Living people|Category:Possibly living people',
     };
     const data = await wikiAPI(params);
     const pages = data.query?.pages || {};
@@ -61,16 +60,30 @@ async function validateArticles(titles) {
       // Skip disambiguation pages
       if (page.pageprops && 'disambiguation' in page.pageprops) continue;
 
-      // Check if it's a biography (has "Living people" or similar category)
-      const cats = (page.categories || []).map(c => c.title);
-      const isBio = cats.some(c =>
-        c === 'Category:Living people' || c === 'Category:Possibly living people'
+      // Detect biographies — check categories AND title pattern
+      const cats = (page.categories || []).map(c => c.title.toLowerCase());
+      const isBioByCat = cats.some(c =>
+        c.includes('living people') ||
+        c.includes('possibly living people') ||
+        /\d{1,4} births/.test(c) ||
+        /\d{1,4} deaths/.test(c) ||
+        c.includes('biography') ||
+        c.includes('actresses') ||
+        c.includes('actors') ||
+        c.includes('politicians') ||
+        c.includes('singers') ||
+        c.includes('footballers') ||
+        c.includes('musicians')
       );
+      // Title heuristic: "Firstname Lastname" pattern (2-3 capitalized words, no other stuff)
+      const titleClean = page.title.replace(/_/g, ' ');
+      const isBioByTitle = /^[A-Z][a-z]+ [A-Z][a-z]+( [A-Z][a-z]+)?$/.test(titleClean);
+
+      const isBio = isBioByCat || isBioByTitle;
 
       if (isBio) {
-        // Biographies need to be much longer (well-known people have big articles)
-        // 30KB+ filters to roughly top-tier famous people
-        if (page.length && page.length < 30000) continue;
+        // Biographies need 50KB+ — only mega-famous people (Obama, Taylor Swift, etc.)
+        if (page.length && page.length < 50000) continue;
       } else {
         // Normal articles: skip stubs under 5KB
         if (page.length && page.length < 5000) continue;
@@ -161,15 +174,20 @@ async function getTopViewedArticles() {
       }
     }
 
+    // Pre-filter: remove special pages, bad titles, and person-name-shaped titles
     const filtered = articles
       .filter(a => {
         const t = a.article;
         if (t === 'Main_Page' || t === 'Special:Search' || t.startsWith('Special:')) return false;
         if (t.startsWith('Wikipedia:') || t.startsWith('Portal:') || t.startsWith('Help:')) return false;
         if (isBadTitle(t)) return false;
+        // Filter out person-name-shaped titles from top articles
+        // "Firstname Lastname" or "Firstname Middle Lastname" pattern
+        const clean = t.replace(/_/g, ' ');
+        if (/^[A-Z][a-z]+ [A-Z][a-z]+( [A-Z][a-z]+)?$/.test(clean)) return false;
         return true;
       })
-      .filter(a => a.views >= 5000) // At least 5K daily views = genuinely well-known
+      .filter(a => a.views >= 5000)
       .map(a => ({ title: a.article, views: a.views * 30 }));
 
     topArticlesCache = filtered;
