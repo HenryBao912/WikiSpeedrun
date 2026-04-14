@@ -40,15 +40,18 @@ function isBadTitle(title) {
 }
 
 // Validate articles via API: check they're real content pages (not disambig/stubs)
+// Biographies get a stricter threshold — only very famous people are fun to play with
 async function validateArticles(titles) {
   if (titles.length === 0) return [];
   try {
     const params = {
       action: 'query',
       titles: titles.join('|'),
-      prop: 'pageprops|info',
+      prop: 'pageprops|info|categories',
       ppprop: 'disambiguation',
       inprop: 'length',
+      cllimit: '50',
+      clcategories: 'Category:Living people|Category:Possibly living people',
     };
     const data = await wikiAPI(params);
     const pages = data.query?.pages || {};
@@ -57,8 +60,22 @@ async function validateArticles(titles) {
       if (!page || page.missing !== undefined) continue;
       // Skip disambiguation pages
       if (page.pageprops && 'disambiguation' in page.pageprops) continue;
-      // Skip very short articles (stubs under 5KB are likely not fun)
-      if (page.length && page.length < 5000) continue;
+
+      // Check if it's a biography (has "Living people" or similar category)
+      const cats = (page.categories || []).map(c => c.title);
+      const isBio = cats.some(c =>
+        c === 'Category:Living people' || c === 'Category:Possibly living people'
+      );
+
+      if (isBio) {
+        // Biographies need to be much longer (well-known people have big articles)
+        // 30KB+ filters to roughly top-tier famous people
+        if (page.length && page.length < 30000) continue;
+      } else {
+        // Normal articles: skip stubs under 5KB
+        if (page.length && page.length < 5000) continue;
+      }
+
       good.push(page.title.replace(/ /g, '_'));
     }
     return good;
