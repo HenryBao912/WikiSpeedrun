@@ -1151,9 +1151,9 @@ function renderPlayersBar(distData) {
         }
         return `<div style="display:flex;align-items:center;gap:6px;">
           <span style="width:8px;height:8px;border-radius:50%;background:${e.color};flex-shrink:0;"></span>
+          ${dHtml}
           <span class="tip-name">${esc(e.name)}</span>
           <span class="tip-steps">${e.steps}</span>
-          ${dHtml}
         </div>`;
       }).join('');
 
