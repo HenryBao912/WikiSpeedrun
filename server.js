@@ -254,9 +254,16 @@ function initRoom(code, hostId, hostName) {
   };
 }
 
+// Player colors — assigned in join order
+const PLAYER_COLORS = ['#6c5ce7', '#00b894', '#e17055', '#fdcb6e', '#74b9ff', '#fd79a8', '#55efc4', '#ffeaa7'];
+let colorIndex = 0;
+
 function newPlayerState(name) {
+  const color = PLAYER_COLORS[colorIndex % PLAYER_COLORS.length];
+  colorIndex++;
   return {
     name,
+    color,
     path: [],
     finished: false,
     finishTime: null,
@@ -313,7 +320,7 @@ function getDistanceMap(room) {
     const len = p.distances.length;
     const curr = len > 0 ? p.distances[len - 1] : null;
     const prev = len > 1 ? p.distances[len - 2] : null;
-    map[pid] = { name: p.name, distance: curr, prev, steps: p.path.length - 1 };
+    map[pid] = { name: p.name, color: p.color, distance: curr, prev, steps: p.path.length - 1 };
   }
   return map;
 }
@@ -354,7 +361,7 @@ function handleAction(playerId, msg) {
       sendSSE(playerId, { type: 'room_created', code, playerId });
       broadcastToRoom(code, {
         type: 'player_list',
-        players: [...rooms.get(code).players.entries()].map(([id, p]) => ({ id, name: p.name })),
+        players: [...rooms.get(code).players.entries()].map(([id, p]) => ({ id, name: p.name, color: p.color })),
         host: playerId,
       });
       return { ok: true, code };
@@ -378,7 +385,7 @@ function handleAction(playerId, msg) {
       sendSSE(playerId, { type: 'mode_changed', mode: room.mode });
       broadcastToRoom(code, {
         type: 'player_list',
-        players: [...room.players.entries()].map(([id, p]) => ({ id, name: p.name })),
+        players: [...room.players.entries()].map(([id, p]) => ({ id, name: p.name, color: p.color })),
         host: room.host,
       });
       return { ok: true };
@@ -423,6 +430,7 @@ function handleAction(playerId, msg) {
         type: 'player_progress',
         playerId,
         name: rp.name,
+        color: rp.color,
         steps: rp.path.length,
         currentArticle: article,
         visited: rp.visited.length,
@@ -519,7 +527,7 @@ function handleDisconnect(playerId) {
     }
     broadcastToRoom(roomCode, {
       type: 'player_list',
-      players: [...room.players.entries()].map(([id, p]) => ({ id, name: p.name })),
+      players: [...room.players.entries()].map(([id, p]) => ({ id, name: p.name, color: p.color })),
       host: room.host,
     });
   }

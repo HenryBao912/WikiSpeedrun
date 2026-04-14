@@ -172,6 +172,13 @@
     gap: 8px;
   }
   .player-list li.host::before { content: '👑'; }
+  .player-color-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+  }
   .waiting-text { color: var(--text2); animation: pulse 2s infinite; }
   .mode-selector {
     display: flex;
@@ -452,20 +459,12 @@
     border-color: var(--accent);
     background: rgba(108, 92, 231, 0.2);
   }
-  .lb-rider .lb-pos {
-    font-weight: 800;
-    font-size: 0.75rem;
-    min-width: 16px;
-    height: 16px;
-    line-height: 16px;
-    text-align: center;
+  .lb-rider .lb-dot {
+    width: 10px;
+    height: 10px;
     border-radius: 50%;
-    background: var(--accent);
-    color: white;
+    flex-shrink: 0;
   }
-  .lb-rider .lb-pos.p1 { background: #fdcb6e; color: #333; }
-  .lb-rider .lb-pos.p2 { background: #b2bec3; color: #333; }
-  .lb-rider .lb-pos.p3 { background: #e17055; color: white; }
   .lb-rider .lb-name { font-weight: 600; }
   .lb-rider .lb-steps { color: var(--text2); font-size: 0.75rem; }
   .lb-rider .lb-dist {
@@ -722,6 +721,7 @@ let gameDestination = '';
 let timerInterval = null;
 let gameStartTime = 0;
 let playerProgress = new Map();
+let playerColors = new Map(); // pid -> color hex
 let currentMode = 'classic';
 let triTargets = [];
 let myVisited = [];
@@ -846,6 +846,9 @@ function handleServerMessage(msg) {
       break;
 
     case 'player_list':
+      for (const p of msg.players) {
+        if (p.color) playerColors.set(p.id, p.color);
+      }
       renderPlayerList(msg.players, msg.host);
       isHost = msg.host === myPlayerId;
       break;
@@ -869,6 +872,7 @@ function handleServerMessage(msg) {
       break;
 
     case 'player_progress':
+      if (msg.color) playerColors.set(msg.playerId, msg.color);
       playerProgress.set(msg.playerId, {
         name: msg.name, steps: msg.steps,
         currentArticle: msg.currentArticle,
@@ -879,6 +883,9 @@ function handleServerMessage(msg) {
 
     case 'distance_update':
       latestDistData = msg.distances;
+      for (const [pid, info] of Object.entries(msg.distances)) {
+        if (info.color) playerColors.set(pid, info.color);
+      }
       renderPlayersBar(latestDistData);
       break;
 
@@ -900,9 +907,11 @@ function handleServerMessage(msg) {
 // ─── Lobby ───
 function renderPlayerList(players, hostId) {
   const ul = document.getElementById('playerList');
-  ul.innerHTML = players.map(p =>
-    `<li class="${p.id === hostId ? 'host' : ''}">${esc(p.name)}</li>`
-  ).join('');
+  ul.innerHTML = players.map(p => {
+    const color = playerColors.get(p.id) || '#6c5ce7';
+    const dot = `<span class="player-color-dot" style="background:${color}"></span>`;
+    return `<li class="${p.id === hostId ? 'host' : ''}">${dot}${esc(p.name)}</li>`;
+  }).join('');
   document.getElementById('waitingText').style.display = players.length < 2 ? '' : 'none';
   document.getElementById('startBtn').style.display = isHost && players.length >= 2 ? '' : 'none';
   // Only host can change mode
@@ -1018,39 +1027,48 @@ function renderPlayersBar(distData) {
     const steps = dist?.steps ?? (prog ? prog.steps - 1 : 0);
     const d = dist?.distance ?? null;
     const prev = dist?.prev ?? null;
+    const color = playerColors.get(pid) || '#6c5ce7';
     const triInfo = prog?.mode === 'tri' ? ` · ${prog.visited || 0}/3` : '';
-    entries.push({ pid, name, steps, d, prev, triInfo });
+    entries.push({ pid, name, steps, d, prev, color, triInfo });
   }
 
   // Sort by distance (lower = closer = better), nulls last
+  // Tied players (same distance) keep stable order by pid
   entries.sort((a, b) => {
-    if (a.d === null && b.d === null) return a.steps - b.steps;
+    if (a.d === null && b.d === null) return 0;
     if (a.d === null) return 1;
     if (b.d === null) return -1;
     if (a.d !== b.d) return a.d - b.d;
-    return a.steps - b.steps;
+    return 0; // tied — don't reorder
   });
 
-  // Assign positions (1-based rank)
-  entries.forEach((e, i) => e.pos = i + 1);
+  // Assign positions — tied players share the same rank
+  let rank = 1;
+  entries.forEach((e, i) => {
+    if (i > 0 && e.d !== null && entries[i - 1].d !== null && e.d === entries[i - 1].d) {
+      e.pos = entries[i - 1].pos; // same rank as previous
+    } else {
+      e.pos = rank;
+    }
+    rank = i + 2;
+  });
 
   // Calculate left % based on distance (closer = further right toward flag)
   entries.forEach(e => {
     if (e.d !== null && e.d !== undefined) {
-      // distance 0 = 95%, distance MAX_DIST+ = 5%
       const clamped = Math.min(e.d, MAX_DIST);
       e.leftPct = 95 - (clamped / MAX_DIST) * 90;
     } else {
-      e.leftPct = 5; // no data yet, start at left
+      e.leftPct = 5;
     }
   });
 
-  // Handle overlap: if two riders are within 8% of each other, offset vertically
+  // Handle overlap: if two riders are at the same left%, offset vertically
   for (let i = 0; i < entries.length; i++) {
     entries[i].topOffset = 0;
     for (let j = 0; j < i; j++) {
-      if (Math.abs(entries[i].leftPct - entries[j].leftPct) < 10) {
-        entries[i].topOffset = (entries[i].topOffset || 0) + 24;
+      if (Math.abs(entries[i].leftPct - entries[j].leftPct) < 8) {
+        entries[i].topOffset = (entries[i].topOffset || 0) + 26;
       }
     }
   }
@@ -1089,11 +1107,11 @@ function renderPlayersBar(distData) {
       distHtml = `<span class="lb-dist ${cls}">${e.d}${arrowHtml}</span>`;
     }
 
-    // Position badge class
-    const posCls = e.pos === 1 ? 'p1' : e.pos === 2 ? 'p2' : e.pos === 3 ? 'p3' : '';
+    // Color dot instead of P1/P2
+    const dotHtml = `<span class="lb-dot" style="background:${e.color}"></span>`;
 
     rider.innerHTML = `
-      <span class="lb-pos ${posCls}">P${e.pos}</span>
+      ${dotHtml}
       <span class="lb-name">${esc(e.name)}</span>
       <span class="lb-steps">${e.steps}${e.triInfo}</span>
       ${distHtml}
@@ -1106,7 +1124,7 @@ function renderPlayersBar(distData) {
     // Flash on position change
     if (posChanged && !isNew) {
       rider.classList.remove('pos-up', 'pos-down');
-      void rider.offsetWidth; // force reflow
+      void rider.offsetWidth;
       rider.classList.add(wentUp ? 'pos-up' : 'pos-down');
     }
 
