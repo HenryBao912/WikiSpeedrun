@@ -373,7 +373,7 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  /* Combined bottom bar: players + distance */
+  /* ─── F1-style leaderboard bar ─── */
   .players-bar {
     position: fixed;
     bottom: 0;
@@ -381,48 +381,131 @@
     right: 0;
     background: var(--surface);
     border-top: 2px solid var(--surface2);
-    padding: 8px 20px;
     display: none;
-    justify-content: center;
-    gap: 24px;
+    flex-direction: column;
     z-index: 100;
-    flex-wrap: wrap;
+    padding: 0 20px 6px;
   }
-  .player-chip {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 0.85rem;
+  .lb-track {
+    position: relative;
+    width: 100%;
+    height: 8px;
     background: var(--surface2);
-    padding: 6px 14px;
-    border-radius: 99px;
+    border-radius: 4px;
+    margin: 10px 0 4px;
   }
-  .player-chip .pc-name { font-weight: 600; color: var(--text); }
-  .player-chip .pc-steps { color: var(--text2); font-size: 0.8rem; }
-  .player-chip .pc-dist {
+  .lb-track-fill {
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    background: linear-gradient(90deg, var(--accent), var(--green));
+    border-radius: 4px;
+    opacity: 0.15;
+    width: 100%;
+  }
+  /* Tick marks on track */
+  .lb-ticks {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    display: flex;
+    justify-content: space-between;
+    padding: 0 2px;
+    pointer-events: none;
+  }
+  .lb-tick {
+    width: 1px;
+    height: 100%;
+    background: rgba(255,255,255,0.06);
+  }
+  /* Goal flag on right end */
+  .lb-goal {
+    position: absolute;
+    right: -2px;
+    top: -10px;
+    font-size: 14px;
+    line-height: 1;
+  }
+  .lb-riders {
+    position: relative;
+    width: 100%;
+    height: 46px;
+  }
+  .lb-rider {
+    position: absolute;
+    top: 0;
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 6px;
+    background: var(--surface2);
+    border: 1.5px solid transparent;
+    padding: 4px 12px 4px 8px;
+    border-radius: 99px;
+    font-size: 0.8rem;
+    white-space: nowrap;
+    transition: left 0.8s cubic-bezier(0.22, 1, 0.36, 1),
+                top 0.3s ease,
+                border-color 0.4s;
+    transform: translateX(-50%);
+    z-index: 1;
+    cursor: default;
   }
-  .player-chip .pc-dist-num {
-    font-weight: 700;
-    font-size: 0.9rem;
+  .lb-rider.is-me {
+    border-color: var(--accent);
+    background: rgba(108, 92, 231, 0.2);
+  }
+  .lb-rider .lb-pos {
+    font-weight: 800;
+    font-size: 0.75rem;
     min-width: 16px;
+    height: 16px;
+    line-height: 16px;
+    text-align: center;
+    border-radius: 50%;
+    background: var(--accent);
+    color: white;
+  }
+  .lb-rider .lb-pos.p1 { background: #fdcb6e; color: #333; }
+  .lb-rider .lb-pos.p2 { background: #b2bec3; color: #333; }
+  .lb-rider .lb-pos.p3 { background: #e17055; color: white; }
+  .lb-rider .lb-name { font-weight: 600; }
+  .lb-rider .lb-steps { color: var(--text2); font-size: 0.75rem; }
+  .lb-rider .lb-dist {
+    font-weight: 700;
+    font-size: 0.85rem;
+    min-width: 14px;
     text-align: center;
   }
-  .pc-dist-arrow {
-    font-size: 0.75rem;
-    font-weight: 700;
-    transition: opacity 0.3s;
+  .lb-arrow {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 800;
+    margin-left: 2px;
+    transition: transform 0.3s, opacity 0.3s;
   }
-  .pc-dist-arrow.better { color: #00b894; }
-  .pc-dist-arrow.worse { color: #e17055; }
-  .pc-dist-arrow.same { color: var(--text2); opacity: 0.4; }
-  #playerChips {
-    display: flex;
-    gap: 12px;
-    flex-wrap: wrap;
-    justify-content: center;
+  .lb-arrow.up { color: #00b894; animation: arrowBounceUp 0.6s ease-out; }
+  .lb-arrow.down { color: #e17055; animation: arrowBounceDown 0.6s ease-out; }
+  .lb-arrow.flat { color: var(--text2); opacity: 0.3; }
+  @keyframes arrowBounceUp {
+    0% { transform: translateY(4px); opacity: 0; }
+    40% { transform: translateY(-3px); opacity: 1; }
+    100% { transform: translateY(0); opacity: 1; }
+  }
+  @keyframes arrowBounceDown {
+    0% { transform: translateY(-4px); opacity: 0; }
+    40% { transform: translateY(3px); opacity: 1; }
+    100% { transform: translateY(0); opacity: 1; }
+  }
+  /* Position change flash */
+  .lb-rider.pos-up { animation: posFlashGreen 0.8s ease-out; }
+  .lb-rider.pos-down { animation: posFlashRed 0.8s ease-out; }
+  @keyframes posFlashGreen {
+    0% { box-shadow: 0 0 0 0 rgba(0,184,148,0.5); }
+    50% { box-shadow: 0 0 12px 4px rgba(0,184,148,0.3); }
+    100% { box-shadow: none; }
+  }
+  @keyframes posFlashRed {
+    0% { box-shadow: 0 0 0 0 rgba(225,112,85,0.5); }
+    50% { box-shadow: 0 0 12px 4px rgba(225,112,85,0.3); }
+    100% { box-shadow: none; }
   }
 
   /* ─── Results Screen ─── */
@@ -600,7 +683,15 @@
     <div class="wiki-content" id="wikiContent"></div>
   </div>
   <div class="players-bar" id="playersBar">
-    <div id="playerChips"></div>
+    <div class="lb-track">
+      <div class="lb-track-fill"></div>
+      <div class="lb-ticks">
+        <span class="lb-tick"></span><span class="lb-tick"></span><span class="lb-tick"></span>
+        <span class="lb-tick"></span><span class="lb-tick"></span><span class="lb-tick"></span>
+      </div>
+      <span class="lb-goal">🏁</span>
+    </div>
+    <div class="lb-riders" id="lbRiders"></div>
   </div>
 </div>
 
@@ -849,9 +940,11 @@ function startGameUI(origin, destination) {
   document.getElementById('stepCount').textContent = '0';
 
   latestDistData = null;
+  prevPositions.clear();
+  document.getElementById('lbRiders').innerHTML = '';
   showScreen('game');
   document.getElementById('playersBar').style.display = 'flex';
-  document.getElementById('wikiContent').style.paddingBottom = '60px';
+  document.getElementById('wikiContent').style.paddingBottom = '80px';
   startTimer();
   loadArticle(origin);
 }
@@ -907,45 +1000,125 @@ function distColorClass(d) {
   return 'dist-cfar';
 }
 
-function renderPlayersBar(distData) {
-  const bar = document.getElementById('playersBar');
-  const container = document.getElementById('playerChips');
-  container.innerHTML = '';
+// Track previous positions for animation
+const prevPositions = new Map(); // pid -> { pos, distance }
+const MAX_DIST = 6; // max distance for track positioning
 
-  // Merge playerProgress with distance data
+function renderPlayersBar(distData) {
+  const container = document.getElementById('lbRiders');
+
+  // Build player list with data
+  const entries = [];
   const allPids = new Set([...playerProgress.keys(), ...(distData ? Object.keys(distData) : [])]);
 
   for (const pid of allPids) {
     const prog = playerProgress.get(pid);
     const dist = distData ? distData[pid] : null;
-
     const name = pid === myPlayerId ? 'You' : (prog?.name || dist?.name || '?');
     const steps = dist?.steps ?? (prog ? prog.steps - 1 : 0);
-    const d = dist?.distance;
-    const prev = dist?.prev;
+    const d = dist?.distance ?? null;
+    const prev = dist?.prev ?? null;
+    const triInfo = prog?.mode === 'tri' ? ` · ${prog.visited || 0}/3` : '';
+    entries.push({ pid, name, steps, d, prev, triInfo });
+  }
 
-    let distHtml = '';
-    if (d !== null && d !== undefined && currentMode === 'classic') {
-      const cls = distColorClass(d);
-      let arrowHtml = '';
-      if (prev !== null && prev !== undefined) {
-        if (d < prev) arrowHtml = '<span class="pc-dist-arrow better">▼</span>';
-        else if (d > prev) arrowHtml = '<span class="pc-dist-arrow worse">▲</span>';
-        else arrowHtml = '<span class="pc-dist-arrow same">=</span>';
+  // Sort by distance (lower = closer = better), nulls last
+  entries.sort((a, b) => {
+    if (a.d === null && b.d === null) return a.steps - b.steps;
+    if (a.d === null) return 1;
+    if (b.d === null) return -1;
+    if (a.d !== b.d) return a.d - b.d;
+    return a.steps - b.steps;
+  });
+
+  // Assign positions (1-based rank)
+  entries.forEach((e, i) => e.pos = i + 1);
+
+  // Calculate left % based on distance (closer = further right toward flag)
+  entries.forEach(e => {
+    if (e.d !== null && e.d !== undefined) {
+      // distance 0 = 95%, distance MAX_DIST+ = 5%
+      const clamped = Math.min(e.d, MAX_DIST);
+      e.leftPct = 95 - (clamped / MAX_DIST) * 90;
+    } else {
+      e.leftPct = 5; // no data yet, start at left
+    }
+  });
+
+  // Handle overlap: if two riders are within 8% of each other, offset vertically
+  for (let i = 0; i < entries.length; i++) {
+    entries[i].topOffset = 0;
+    for (let j = 0; j < i; j++) {
+      if (Math.abs(entries[i].leftPct - entries[j].leftPct) < 10) {
+        entries[i].topOffset = (entries[i].topOffset || 0) + 24;
       }
-      distHtml = `<span class="pc-dist"><span class="pc-dist-num ${cls}">${d}</span>${arrowHtml}</span>`;
+    }
+  }
+
+  // Render or update each rider
+  for (const e of entries) {
+    let rider = container.querySelector(`[data-pid="${e.pid}"]`);
+    const isNew = !rider;
+
+    if (isNew) {
+      rider = document.createElement('div');
+      rider.className = 'lb-rider';
+      rider.setAttribute('data-pid', e.pid);
+      if (e.pid === myPlayerId) rider.classList.add('is-me');
+      container.appendChild(rider);
     }
 
-    const triInfo = prog?.mode === 'tri' ? ` · ${prog.visited || 0}/3` : '';
-    const chip = document.createElement('div');
-    chip.className = 'player-chip';
-    chip.innerHTML = `
-      <span class="pc-name">${esc(name)}</span>
-      <span class="pc-steps">${steps} steps${triInfo}</span>
+    // Check for position change
+    const prevData = prevPositions.get(e.pid);
+    const posChanged = prevData && prevData.pos !== e.pos;
+    const wentUp = prevData && e.pos < prevData.pos;
+    const wentDown = prevData && e.pos > prevData.pos;
+
+    // Distance arrow
+    let arrowHtml = '';
+    if (e.d !== null && e.prev !== null && e.prev !== undefined && currentMode === 'classic') {
+      if (e.d < e.prev) arrowHtml = '<span class="lb-arrow up">▲</span>';
+      else if (e.d > e.prev) arrowHtml = '<span class="lb-arrow down">▼</span>';
+      else arrowHtml = '<span class="lb-arrow flat">=</span>';
+    }
+
+    // Distance display
+    let distHtml = '';
+    if (e.d !== null && e.d !== undefined && currentMode === 'classic') {
+      const cls = distColorClass(e.d);
+      distHtml = `<span class="lb-dist ${cls}">${e.d}${arrowHtml}</span>`;
+    }
+
+    // Position badge class
+    const posCls = e.pos === 1 ? 'p1' : e.pos === 2 ? 'p2' : e.pos === 3 ? 'p3' : '';
+
+    rider.innerHTML = `
+      <span class="lb-pos ${posCls}">P${e.pos}</span>
+      <span class="lb-name">${esc(e.name)}</span>
+      <span class="lb-steps">${e.steps}${e.triInfo}</span>
       ${distHtml}
     `;
-    container.appendChild(chip);
+
+    // Animate position
+    rider.style.left = e.leftPct + '%';
+    rider.style.top = (e.topOffset || 0) + 'px';
+
+    // Flash on position change
+    if (posChanged && !isNew) {
+      rider.classList.remove('pos-up', 'pos-down');
+      void rider.offsetWidth; // force reflow
+      rider.classList.add(wentUp ? 'pos-up' : 'pos-down');
+    }
+
+    // Store current state
+    prevPositions.set(e.pid, { pos: e.pos, distance: e.d });
   }
+
+  // Remove riders for players who left
+  container.querySelectorAll('.lb-rider').forEach(el => {
+    const pid = el.getAttribute('data-pid');
+    if (!allPids.has(pid)) el.remove();
+  });
 }
 
 function distBadge(d, prev) {
