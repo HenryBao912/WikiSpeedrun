@@ -16,7 +16,7 @@ function generatePlayerId() {
   return crypto.randomBytes(8).toString('hex');
 }
 
-// ─── Curated Word Pairs ───
+// ─── Classic Mode: Curated Word Pairs ───
 const WORD_PAIRS = [
   { origin: 'Pizza', destination: 'Ancient_Egypt' },
   { origin: 'Football', destination: 'Moon' },
@@ -40,8 +40,35 @@ const WORD_PAIRS = [
   { origin: 'Tornado', destination: 'Cleopatra' },
 ];
 
+// ─── Tri Mode: Curated Word Triples (visit all 3 in any order) ───
+const WORD_TRIPLES = [
+  { targets: ['Moon', 'Dinosaur', 'Jazz'] },
+  { targets: ['Albert_Einstein', 'Sushi', 'Brazil'] },
+  { targets: ['Volcano', 'Shakespeare', 'Basketball'] },
+  { targets: ['Pyramid', 'Internet', 'Penguin'] },
+  { targets: ['Chess', 'Amazon_rainforest', 'Mozart'] },
+  { targets: ['Samurai', 'Electricity', 'Chocolate'] },
+  { targets: ['DNA', 'Olympic_Games', 'Pizza'] },
+  { targets: ['Black_hole', 'Democracy', 'Coffee'] },
+  { targets: ['Viking', 'Photography', 'Elephant'] },
+  { targets: ['Mars', 'Philosophy', 'Guitar'] },
+  { targets: ['Titanic', 'Mathematics', 'Banana'] },
+  { targets: ['Napoleon', 'Yoga', 'Shark'] },
+  { targets: ['Roman_Empire', 'Artificial_intelligence', 'Cat'] },
+  { targets: ['Cleopatra', 'Bicycle', 'Quantum_mechanics'] },
+  { targets: ['Leonardo_da_Vinci', 'Football', 'Diamond'] },
+];
+
 function getRandomPair() {
   return WORD_PAIRS[Math.floor(Math.random() * WORD_PAIRS.length)];
+}
+
+function getRandomTriple() {
+  return WORD_TRIPLES[Math.floor(Math.random() * WORD_TRIPLES.length)];
+}
+
+function normalizeArticle(name) {
+  return (name || '').replace(/_/g, ' ').toLowerCase();
 }
 
 // ─── SSE helpers ───
@@ -64,6 +91,81 @@ function broadcastToRoom(roomCode, msg) {
 }
 
 // ─── Game Logic ───
+function initRoom(code, hostId, hostName) {
+  return {
+    host: hostId,
+    players: new Map([[hostId, newPlayerState(hostName)]]),
+    mode: 'classic', // 'classic' or 'tri'
+    pair: null,       // classic mode
+    triple: null,     // tri mode
+    started: false,
+    startTime: null,
+    winner: null,
+  };
+}
+
+function newPlayerState(name) {
+  return {
+    name,
+    path: [],
+    finished: false,
+    finishTime: null,
+    // Tri mode: which targets has this player visited
+    visited: [],
+  };
+}
+
+function startGameForRoom(room, roomCode) {
+  room.started = true;
+  room.startTime = Date.now();
+  room.winner = null;
+
+  if (room.mode === 'classic') {
+    room.pair = getRandomPair();
+    for (const [, p] of room.players) {
+      Object.assign(p, { path: [room.pair.origin], finished: false, finishTime: null, visited: [] });
+    }
+    broadcastToRoom(roomCode, {
+      type: 'game_start',
+      mode: 'classic',
+      origin: room.pair.origin,
+      destination: room.pair.destination,
+    });
+  } else {
+    room.triple = getRandomTriple();
+    // In tri mode, players start on the first target
+    const startArticle = room.triple.targets[0];
+    for (const [, p] of room.players) {
+      Object.assign(p, { path: [startArticle], finished: false, finishTime: null, visited: [startArticle] });
+    }
+    broadcastToRoom(roomCode, {
+      type: 'game_start',
+      mode: 'tri',
+      origin: startArticle,
+      targets: room.triple.targets,
+    });
+  }
+}
+
+function checkWin(room, rp, article) {
+  if (room.mode === 'classic') {
+    const dest = normalizeArticle(room.pair.destination);
+    const current = normalizeArticle(article);
+    return current === dest;
+  } else {
+    // Tri mode: check if this article matches any unvisited target
+    const current = normalizeArticle(article);
+    for (const t of room.triple.targets) {
+      if (normalizeArticle(t) === current && !rp.visited.includes(t)) {
+        rp.visited.push(t);
+        break;
+      }
+    }
+    // Win if all 3 targets visited
+    return rp.visited.length >= room.triple.targets.length;
+  }
+}
+
 function handleAction(playerId, msg) {
   console.log(`[${playerId.slice(0,8)}] ${msg.type}`, msg.type === 'navigate' ? msg.article : '');
 
@@ -77,14 +179,7 @@ function handleAction(playerId, msg) {
         player.name = name;
         player.roomCode = code;
       }
-      rooms.set(code, {
-        host: playerId,
-        players: new Map([[playerId, { name, path: [], finished: false, finishTime: null }]]),
-        pair: null,
-        started: false,
-        startTime: null,
-        winner: null,
-      });
+      rooms.set(code, initRoom(code, playerId, name));
       sendSSE(playerId, { type: 'room_created', code, playerId });
       broadcastToRoom(code, {
         type: 'player_list',
@@ -107,7 +202,7 @@ function handleAction(playerId, msg) {
         player.name = name;
         player.roomCode = code;
       }
-      room.players.set(playerId, { name, path: [], finished: false, finishTime: null });
+      room.players.set(playerId, newPlayerState(name));
       sendSSE(playerId, { type: 'room_joined', code, playerId });
       broadcastToRoom(code, {
         type: 'player_list',
@@ -117,27 +212,25 @@ function handleAction(playerId, msg) {
       return { ok: true };
     }
 
+    case 'set_mode': {
+      const player = players.get(playerId);
+      if (!player) return { ok: false };
+      const room = rooms.get(player.roomCode);
+      if (!room || room.host !== playerId) return { ok: false, error: 'Only host can change mode' };
+      if (room.started) return { ok: false };
+      const mode = msg.mode === 'tri' ? 'tri' : 'classic';
+      room.mode = mode;
+      broadcastToRoom(player.roomCode, { type: 'mode_changed', mode });
+      return { ok: true };
+    }
+
     case 'start_game': {
       const player = players.get(playerId);
       if (!player) return { ok: false };
       const room = rooms.get(player.roomCode);
       if (!room || room.host !== playerId) return { ok: false, error: 'Only host can start' };
       if (room.players.size < 2) return { ok: false, error: 'Need at least 2 players' };
-
-      room.pair = getRandomPair();
-      room.started = true;
-      room.startTime = Date.now();
-      room.winner = null;
-      for (const [, p] of room.players) {
-        p.path = [room.pair.origin];
-        p.finished = false;
-        p.finishTime = null;
-      }
-      broadcastToRoom(player.roomCode, {
-        type: 'game_start',
-        origin: room.pair.origin,
-        destination: room.pair.destination,
-      });
+      startGameForRoom(room, player.roomCode);
       return { ok: true };
     }
 
@@ -153,18 +246,20 @@ function handleAction(playerId, msg) {
       if (!article) return { ok: false };
       rp.path.push(article);
 
+      // For tri mode, include visited count in progress
       broadcastToRoom(player.roomCode, {
         type: 'player_progress',
         playerId,
         name: rp.name,
         steps: rp.path.length,
         currentArticle: article,
+        visited: rp.visited.length,
+        mode: room.mode,
       });
 
       // Check win
-      const dest = room.pair.destination.replace(/_/g, ' ').toLowerCase();
-      const current = article.replace(/_/g, ' ').toLowerCase();
-      if (current === dest) {
+      const won = checkWin(room, rp, article);
+      if (won) {
         rp.finished = true;
         rp.finishTime = Date.now() - room.startTime;
         if (!room.winner) {
@@ -173,11 +268,35 @@ function handleAction(playerId, msg) {
             id, name: p.name, path: p.path,
             finished: p.finished, time: p.finishTime,
             isWinner: id === room.winner,
+            visited: p.visited,
           }));
-          broadcastToRoom(player.roomCode, { type: 'game_over', winner: rp.name, results });
+          broadcastToRoom(player.roomCode, {
+            type: 'game_over',
+            winner: rp.name,
+            results,
+            mode: room.mode,
+            targets: room.mode === 'tri' ? room.triple.targets : null,
+          });
           room.started = false;
         }
       }
+
+      // For tri mode, notify the player when they hit a checkpoint
+      if (!won && room.mode === 'tri') {
+        const current = normalizeArticle(article);
+        for (const t of room.triple.targets) {
+          if (normalizeArticle(t) === current && rp.visited.includes(t)) {
+            sendSSE(playerId, {
+              type: 'checkpoint_reached',
+              article: t,
+              visited: [...rp.visited],
+              remaining: room.triple.targets.length - rp.visited.length,
+            });
+            break;
+          }
+        }
+      }
+
       return { ok: true };
     }
 
@@ -186,21 +305,7 @@ function handleAction(playerId, msg) {
       if (!player) return { ok: false };
       const room = rooms.get(player.roomCode);
       if (!room || room.host !== playerId) return { ok: false };
-
-      room.pair = getRandomPair();
-      room.started = true;
-      room.startTime = Date.now();
-      room.winner = null;
-      for (const [, p] of room.players) {
-        p.path = [room.pair.origin];
-        p.finished = false;
-        p.finishTime = null;
-      }
-      broadcastToRoom(player.roomCode, {
-        type: 'game_start',
-        origin: room.pair.origin,
-        destination: room.pair.destination,
-      });
+      startGameForRoom(room, player.roomCode);
       return { ok: true };
     }
 
@@ -256,21 +361,18 @@ const server = http.createServer(async (req, res) => {
   const parsed = url.parse(req.url, true);
   cors(res);
 
-  // CORS preflight
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
     res.end();
     return;
   }
 
-  // Serve HTML
   if (parsed.pathname === '/' || parsed.pathname === '/index.html') {
     res.writeHead(200, { 'Content-Type': 'text/html' });
     fs.createReadStream(path.join(__dirname, 'index.html')).pipe(res);
     return;
   }
 
-  // SSE endpoint
   if (parsed.pathname === '/events' && req.method === 'GET') {
     let playerId = parsed.query.playerId;
     if (!playerId) {
@@ -282,16 +384,13 @@ const server = http.createServer(async (req, res) => {
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
     });
-    res.write('\n'); // flush headers
+    res.write('\n');
 
-    // Register player
     players.set(playerId, { res, roomCode: null, name: null });
     console.log(`SSE connected: ${playerId.slice(0, 8)} (total: ${players.size})`);
 
-    // Send the player their ID
     sendSSE(playerId, { type: 'connected', playerId });
 
-    // Keepalive ping every 15s
     const keepalive = setInterval(() => {
       if (!res.writableEnded) {
         res.write(': keepalive\n\n');
@@ -306,7 +405,6 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // Action endpoint
   if (parsed.pathname === '/action' && req.method === 'POST') {
     try {
       const body = await readBody(req);

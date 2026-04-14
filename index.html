@@ -173,6 +173,64 @@
   }
   .player-list li.host::before { content: '👑'; }
   .waiting-text { color: var(--text2); animation: pulse 2s infinite; }
+  .mode-selector {
+    display: flex;
+    gap: 10px;
+    margin-top: 8px;
+    width: 100%;
+    max-width: 420px;
+  }
+  .mode-btn {
+    flex: 1;
+    padding: 12px 16px;
+    border: 2px solid var(--surface2);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--text2);
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: center;
+    transition: border-color 0.2s, color 0.2s, background 0.2s;
+  }
+  .mode-btn:hover { border-color: var(--accent); color: var(--text); }
+  .mode-btn.active { border-color: var(--accent); color: var(--text); background: var(--surface2); }
+  .mode-btn .mode-label { display: block; font-size: 1rem; font-weight: 700; color: var(--text); margin-bottom: 2px; }
+  .mode-btn .mode-desc { font-size: 0.75rem; color: var(--text2); }
+  /* Tri-mode header targets */
+  .tri-targets { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .target-tag {
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-weight: 700;
+    font-size: 0.85rem;
+    background: var(--surface2);
+    color: var(--text2);
+    transition: background 0.3s, color 0.3s;
+  }
+  .target-tag.current { background: var(--accent); color: white; }
+  .target-tag.reached { background: var(--green); color: white; }
+  .target-tag.unreached { background: var(--surface2); color: var(--text2); }
+  .target-sep { color: var(--text2); font-size: 0.7rem; }
+  /* Checkpoint toast */
+  .checkpoint-toast {
+    position: fixed;
+    top: 80px;
+    left: 50%;
+    transform: translateX(-50%) translateY(-20px);
+    background: var(--green);
+    color: white;
+    padding: 12px 28px;
+    border-radius: var(--radius);
+    font-weight: 700;
+    font-size: 1.1rem;
+    z-index: 200;
+    opacity: 0;
+    transition: opacity 0.3s, transform 0.3s;
+    pointer-events: none;
+    box-shadow: 0 4px 20px rgba(0,184,148,0.4);
+  }
+  .checkpoint-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
 
   /* ─── Game Screen ─── */
@@ -475,6 +533,16 @@
     <span id="codeText"></span>
     <span class="copy-hint">click to copy</span>
   </div>
+  <div class="mode-selector" id="modeSelector">
+    <div class="mode-btn active" id="modeClassic" onclick="setMode('classic')">
+      <span class="mode-label">Classic</span>
+      <span class="mode-desc">A &rarr; B</span>
+    </div>
+    <div class="mode-btn" id="modeTri" onclick="setMode('tri')">
+      <span class="mode-label">Tri Speedrun</span>
+      <span class="mode-desc">Visit all 3</span>
+    </div>
+  </div>
   <ul class="player-list" id="playerList"></ul>
   <p class="waiting-text" id="waitingText">Waiting for players...</p>
   <button class="btn btn-primary" id="startBtn" onclick="startGame()" style="display:none;padding:14px 48px;flex:none;width:auto;">Start Game</button>
@@ -482,12 +550,14 @@
 
 <!-- ─── Game Screen ─── -->
 <div id="game" class="screen">
+  <div class="checkpoint-toast" id="checkpointToast"></div>
   <div class="game-header">
-    <div class="nav-info">
+    <div class="nav-info" id="classicNav">
       <span class="origin-tag" id="gameOrigin"></span>
       <span class="arrow">&rarr;</span>
       <span class="dest-tag" id="gameDest"></span>
     </div>
+    <div class="tri-targets" id="triNav" style="display:none;"></div>
     <div class="game-stats">
       <span>Steps: <span class="stat-val" id="stepCount">0</span></span>
       <span>Time: <span class="stat-val" id="timerDisplay">0:00</span></span>
@@ -534,6 +604,9 @@ let gameDestination = '';
 let timerInterval = null;
 let gameStartTime = 0;
 let playerProgress = new Map();
+let currentMode = 'classic';
+let triTargets = [];
+let myVisited = [];
 
 // ─── Screen Management ───
 function showScreen(id) {
@@ -663,13 +736,33 @@ function handleServerMessage(msg) {
       showError(msg.message);
       break;
 
+    case 'mode_changed':
+      currentMode = msg.mode;
+      document.getElementById('modeClassic').classList.toggle('active', msg.mode === 'classic');
+      document.getElementById('modeTri').classList.toggle('active', msg.mode === 'tri');
+      break;
+
     case 'game_start':
-      startGameUI(msg.origin, msg.destination);
+      if (msg.mode === 'tri') {
+        startTriGameUI(msg.origin, msg.targets);
+      } else {
+        startGameUI(msg.origin, msg.destination);
+      }
       break;
 
     case 'player_progress':
-      playerProgress.set(msg.playerId, { name: msg.name, steps: msg.steps, currentArticle: msg.currentArticle });
+      playerProgress.set(msg.playerId, {
+        name: msg.name, steps: msg.steps,
+        currentArticle: msg.currentArticle,
+        visited: msg.visited || 0, mode: msg.mode || 'classic',
+      });
       renderProgress(msg.playerId);
+      break;
+
+    case 'checkpoint_reached':
+      myVisited = msg.visited;
+      renderTriTargets();
+      showCheckpointToast(msg.article, msg.remaining);
       break;
 
     case 'game_over':
@@ -689,19 +782,36 @@ function renderPlayerList(players, hostId) {
   ).join('');
   document.getElementById('waitingText').style.display = players.length < 2 ? '' : 'none';
   document.getElementById('startBtn').style.display = isHost && players.length >= 2 ? '' : 'none';
+  // Only host can change mode
+  const modeSelector = document.getElementById('modeSelector');
+  modeSelector.style.opacity = isHost ? '1' : '0.5';
+  modeSelector.style.pointerEvents = isHost ? 'auto' : 'none';
 }
 
 function startGame() { send({ type: 'start_game' }); }
 
+function setMode(mode) {
+  if (!isHost) return;
+  currentMode = mode;
+  document.getElementById('modeClassic').classList.toggle('active', mode === 'classic');
+  document.getElementById('modeTri').classList.toggle('active', mode === 'tri');
+  send({ type: 'set_mode', mode });
+}
+
 // ─── Game ───
 function startGameUI(origin, destination) {
+  currentMode = 'classic';
   gameOrigin = origin;
   gameDestination = destination;
+  triTargets = [];
+  myVisited = [];
   myPath = [origin];
   currentArticle = origin;
   playerProgress.clear();
   gameStartTime = Date.now();
 
+  document.getElementById('classicNav').style.display = '';
+  document.getElementById('triNav').style.display = 'none';
   document.getElementById('gameOrigin').textContent = origin.replace(/_/g, ' ');
   document.getElementById('gameDest').textContent = destination.replace(/_/g, ' ');
   document.getElementById('stepCount').textContent = '0';
@@ -709,6 +819,46 @@ function startGameUI(origin, destination) {
   showScreen('game');
   startTimer();
   loadArticle(origin);
+}
+
+function startTriGameUI(origin, targets) {
+  currentMode = 'tri';
+  triTargets = targets;
+  myVisited = [origin]; // first target is the starting point
+  gameOrigin = origin;
+  gameDestination = '';
+  myPath = [origin];
+  currentArticle = origin;
+  playerProgress.clear();
+  gameStartTime = Date.now();
+
+  document.getElementById('classicNav').style.display = 'none';
+  document.getElementById('triNav').style.display = 'flex';
+  document.getElementById('stepCount').textContent = '0';
+
+  renderTriTargets();
+  showScreen('game');
+  startTimer();
+  loadArticle(origin);
+}
+
+function renderTriTargets() {
+  const nav = document.getElementById('triNav');
+  nav.innerHTML = triTargets.map((t, i) => {
+    const name = t.replace(/_/g, ' ');
+    const isVisited = myVisited.some(v => v.replace(/_/g, ' ').toLowerCase() === t.replace(/_/g, ' ').toLowerCase());
+    const cls = isVisited ? 'target-tag reached' : 'target-tag unreached';
+    const sep = i < triTargets.length - 1 ? '<span class="target-sep">&bull;</span>' : '';
+    return `<span class="${cls}">${esc(name)}${isVisited ? ' ✓' : ''}</span>${sep}`;
+  }).join('');
+}
+
+function showCheckpointToast(article, remaining) {
+  const toast = document.getElementById('checkpointToast');
+  const name = article.replace(/_/g, ' ');
+  toast.textContent = `✓ ${name} reached! ${remaining} left`;
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 2500);
 }
 
 function startTimer() {
@@ -740,10 +890,11 @@ function renderProgress(flashPlayerId) {
     div.className = 'progress-item';
     div.setAttribute('data-pid', pid);
     const shouldFlash = flashPlayerId === pid && pid !== myPlayerId;
+    const triInfo = info.mode === 'tri' ? ` &middot; ${info.visited || 0}/3` : '';
     div.innerHTML = `
       <span class="p-name">${pid === myPlayerId ? 'You' : esc(info.name)}</span>
       <span>
-        <span class="p-steps">${info.steps - 1} steps</span>
+        <span class="p-steps">${info.steps - 1} steps${triInfo}</span>
         <span class="step-arrow${shouldFlash ? ' flash' : ''}">&#9650;</span>
       </span>
     `;
@@ -880,7 +1031,8 @@ function showResults(msg) {
   const winnerData = msg.results.find(r => r.isWinner);
   const time = winnerData ? formatTime(winnerData.time) : '';
   const steps = winnerData ? winnerData.path.length - 1 : 0;
-  document.getElementById('winnerSub').textContent = `${steps} steps in ${time}`;
+  const modeLabel = msg.mode === 'tri' ? 'Tri Speedrun · ' : '';
+  document.getElementById('winnerSub').textContent = `${modeLabel}${steps} steps in ${time}`;
 
   const grid = document.getElementById('resultsGrid');
   grid.innerHTML = '';
@@ -905,8 +1057,16 @@ function showResults(msg) {
         ? '<span class="r-badge" style="background:var(--green);color:white;">Finished</span>'
         : '<span class="r-badge badge-dnf">DNF</span>';
 
+    // In tri mode, highlight checkpoint articles
+    const triTgts = msg.targets || [];
     const pathHtml = r.path.map((p, i) => {
-      const cls = i === 0 ? 'path-node start' : (i === r.path.length - 1 && r.finished ? 'path-node end' : 'path-node');
+      const norm = p.replace(/_/g, ' ').toLowerCase();
+      const isCheckpoint = msg.mode === 'tri' && triTgts.some(t => t.replace(/_/g, ' ').toLowerCase() === norm);
+      let cls;
+      if (i === 0) cls = 'path-node start';
+      else if (i === r.path.length - 1 && r.finished) cls = 'path-node end';
+      else if (isCheckpoint) cls = 'path-node end'; // green for checkpoints
+      else cls = 'path-node';
       const arrow = i < r.path.length - 1 ? '<span class="path-arrow">&rarr;</span>' : '';
       return `<span class="${cls}" data-step="${i}">${esc(p.replace(/_/g, ' '))}</span>${arrow}`;
     }).join('');
