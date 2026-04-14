@@ -67,12 +67,53 @@ async function validateArticles(titles) {
   }
 }
 
-async function getGoodRandomArticles(count) {
+// ─── Page views fetching for difficulty filtering ───
+function getPageViews(titles) {
+  // Uses Wikimedia pageviews API to get monthly views for articles
+  // Returns a Map of title -> monthly views
+  const today = new Date();
+  const endDate = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+  // Get last 30 days
+  const start = new Date(today);
+  start.setDate(start.getDate() - 30);
+  const startDate = `${start.getFullYear()}${String(start.getMonth() + 1).padStart(2, '0')}${String(start.getDate()).padStart(2, '0')}`;
+
+  const promises = titles.map(title => {
+    const encodedTitle = encodeURIComponent(title.replace(/ /g, '_'));
+    const apiUrl = `https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/en.wikipedia/all-access/all-agents/${encodedTitle}/daily/${startDate}/${endDate}`;
+    return new Promise((resolve) => {
+      https.get(apiUrl, { headers: { 'User-Agent': 'WikiSpeedrun/1.0' } }, (res) => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          try {
+            const json = JSON.parse(data);
+            const total = (json.items || []).reduce((sum, d) => sum + (d.views || 0), 0);
+            resolve({ title, views: total });
+          } catch (e) { resolve({ title, views: 0 }); }
+        });
+      }).on('error', () => resolve({ title, views: 0 }));
+    });
+  });
+  return Promise.all(promises);
+}
+
+// Difficulty ranges (monthly views). Wide buckets so filtering is fast.
+// Slider sends [minViews, maxViews]
+const DIFF_PRESETS = {
+  // labels for reference:
+  // ez = famous articles (>50K views/month)
+  // mid = moderate (5K - 50K)
+  // tf = obscure (<5K views/month)
+};
+
+async function getGoodRandomArticles(count, viewRange) {
   const needed = count;
   const good = [];
   let attempts = 0;
+  const maxAttempts = viewRange ? 8 : 4; // more attempts when filtering by views
 
-  while (good.length < needed && attempts < 4) {
+  while (good.length < needed && attempts < maxAttempts) {
     attempts++;
     try {
       // Fetch a batch of random articles
@@ -91,8 +132,21 @@ async function getGoodRandomArticles(count) {
 
       // Validate via API (check for disambig, stub, etc.)
       const validated = await validateArticles(batch);
-      for (const a of validated) {
-        if (good.length < needed) good.push(a);
+      if (validated.length === 0) continue;
+
+      // If view range filter is set, check page views
+      if (viewRange && viewRange[0] != null && viewRange[1] != null) {
+        const viewData = await getPageViews(validated);
+        for (const { title, views } of viewData) {
+          if (good.length >= needed) break;
+          if (views >= viewRange[0] && views <= viewRange[1]) {
+            good.push(title);
+          }
+        }
+      } else {
+        for (const a of validated) {
+          if (good.length < needed) good.push(a);
+        }
       }
     } catch (e) {
       console.error('Error fetching random articles:', e.message);
@@ -102,18 +156,27 @@ async function getGoodRandomArticles(count) {
   return good;
 }
 
-async function getRandomPair() {
-  const articles = await getGoodRandomArticles(2);
+async function getRandomPair(viewRange) {
+  const articles = await getGoodRandomArticles(2, viewRange);
   if (articles.length >= 2) {
     return { origin: articles[0], destination: articles[1] };
+  }
+  // Fallback if filtering was too strict — retry without filter
+  if (viewRange) {
+    const fallback = await getGoodRandomArticles(2, null);
+    if (fallback.length >= 2) return { origin: fallback[0], destination: fallback[1] };
   }
   return { origin: 'Pizza', destination: 'Moon' };
 }
 
-async function getRandomTriple() {
-  const articles = await getGoodRandomArticles(3);
+async function getRandomTriple(viewRange) {
+  const articles = await getGoodRandomArticles(3, viewRange);
   if (articles.length >= 3) {
     return { targets: [articles[0], articles[1], articles[2]] };
+  }
+  if (viewRange) {
+    const fallback = await getGoodRandomArticles(3, null);
+    if (fallback.length >= 3) return { targets: [fallback[0], fallback[1], fallback[2]] };
   }
   return { targets: ['Moon', 'Dinosaur', 'Jazz'] };
 }
@@ -251,6 +314,7 @@ function initRoom(code, hostId, hostName) {
     startTime: null,
     winner: null,
     destBacklinks: new Set(), // cached backlinks for distance calc
+    viewRange: null, // [minViews, maxViews] for difficulty filtering
   };
 }
 
@@ -276,9 +340,10 @@ async function startGameForRoom(room, roomCode) {
   room.started = true;
   room.startTime = Date.now();
   room.winner = null;
+  const viewRange = room.viewRange || null;
 
   if (room.mode === 'classic') {
-    room.pair = await getRandomPair();
+    room.pair = await getRandomPair(viewRange);
     for (const [, p] of room.players) {
       Object.assign(p, { path: [room.pair.origin], finished: false, finishTime: null, visited: [], distances: [] });
     }
@@ -300,7 +365,7 @@ async function startGameForRoom(room, roomCode) {
       });
     });
   } else {
-    room.triple = await getRandomTriple();
+    room.triple = await getRandomTriple(viewRange);
     const startArticle = room.triple.targets[0];
     for (const [, p] of room.players) {
       Object.assign(p, { path: [startArticle], finished: false, finishTime: null, visited: [startArticle], distances: [] });
@@ -400,6 +465,22 @@ function handleAction(playerId, msg) {
       const mode = msg.mode === 'tri' ? 'tri' : 'classic';
       room.mode = mode;
       broadcastToRoom(player.roomCode, { type: 'mode_changed', mode });
+      return { ok: true };
+    }
+
+    case 'set_difficulty': {
+      const player = players.get(playerId);
+      if (!player) return { ok: false };
+      const room = rooms.get(player.roomCode);
+      if (!room || room.host !== playerId) return { ok: false, error: 'Only host can change difficulty' };
+      if (room.started) return { ok: false };
+      // msg.viewRange = [minViews, maxViews] (monthly, last 30 days)
+      if (Array.isArray(msg.viewRange) && msg.viewRange.length === 2) {
+        room.viewRange = [Number(msg.viewRange[0]), Number(msg.viewRange[1])];
+      } else {
+        room.viewRange = null;
+      }
+      broadcastToRoom(player.roomCode, { type: 'difficulty_changed', viewRange: room.viewRange });
       return { ok: true };
     }
 

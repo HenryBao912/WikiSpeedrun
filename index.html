@@ -197,6 +197,86 @@
   .mode-btn.active { border-color: var(--accent); color: var(--text); background: var(--surface2); }
   .mode-btn .mode-label { display: block; font-size: 1rem; font-weight: 700; color: var(--text); margin-bottom: 2px; }
   .mode-btn .mode-desc { font-size: 0.75rem; color: var(--text2); }
+
+  /* ─── Difficulty Slider ─── */
+  .diff-section {
+    width: 100%;
+    max-width: 420px;
+    margin-top: 4px;
+  }
+  .diff-label {
+    font-size: 0.85rem;
+    color: var(--text2);
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .diff-label-title { font-weight: 600; color: var(--text); }
+  .diff-range-wrap {
+    position: relative;
+    height: 36px;
+    display: flex;
+    align-items: center;
+  }
+  .diff-track {
+    position: absolute;
+    left: 0; right: 0;
+    height: 6px;
+    background: var(--surface2);
+    border-radius: 3px;
+  }
+  .diff-fill {
+    position: absolute;
+    height: 6px;
+    border-radius: 3px;
+    background: linear-gradient(90deg, var(--red), var(--gold), var(--green));
+  }
+  .diff-range-wrap input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    position: absolute;
+    left: 0; right: 0;
+    width: 100%;
+    height: 36px;
+    background: transparent;
+    pointer-events: none;
+    margin: 0;
+  }
+  .diff-range-wrap input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--text);
+    border: 3px solid var(--accent);
+    cursor: pointer;
+    pointer-events: all;
+    position: relative;
+    z-index: 2;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+  }
+  .diff-range-wrap input[type="range"]::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--text);
+    border: 3px solid var(--accent);
+    cursor: pointer;
+    pointer-events: all;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+  }
+  .diff-ends {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.8rem;
+    font-weight: 700;
+    margin-top: 2px;
+  }
+  .diff-end-tf { color: var(--red); }
+  .diff-end-ez { color: var(--green); }
+
   /* Tri-mode header targets */
   .tri-targets { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   .target-tag {
@@ -701,6 +781,22 @@
       <span class="mode-desc">Visit all 3</span>
     </div>
   </div>
+  <div class="diff-section" id="diffSection">
+    <div class="diff-label">
+      <span class="diff-label-title">Difficulty</span>
+      <span id="diffDesc" style="font-size:0.75rem;opacity:0.7;">all articles</span>
+    </div>
+    <div class="diff-range-wrap">
+      <div class="diff-track"></div>
+      <div class="diff-fill" id="diffFill"></div>
+      <input type="range" id="diffMin" min="0" max="100" value="0" oninput="updateDiffSlider()" />
+      <input type="range" id="diffMax" min="0" max="100" value="100" oninput="updateDiffSlider()" />
+    </div>
+    <div class="diff-ends">
+      <span class="diff-end-tf">tf</span>
+      <span class="diff-end-ez">ez</span>
+    </div>
+  </div>
   <ul class="player-list" id="playerList"></ul>
   <p class="waiting-text" id="waitingText">Waiting for players...</p>
   <button class="btn btn-primary" id="startBtn" onclick="startGame()" style="display:none;padding:14px 48px;flex:none;width:auto;">Start Game</button>
@@ -911,6 +1007,25 @@ function handleServerMessage(msg) {
       document.getElementById('modeTri').classList.toggle('active', msg.mode === 'tri');
       break;
 
+    case 'difficulty_changed':
+      // Non-host receives difficulty update — sync slider visually
+      if (!isHost && msg.viewRange) {
+        // Reverse map views to slider value for display
+        function viewsToSlider(v) {
+          if (v <= DIFF_VIEW_MIN) return 0;
+          if (v >= DIFF_VIEW_MAX) return 100;
+          return Math.round(100 * Math.log(v / DIFF_VIEW_MIN) / Math.log(DIFF_VIEW_MAX / DIFF_VIEW_MIN));
+        }
+        document.getElementById('diffMin').value = viewsToSlider(msg.viewRange[0]);
+        document.getElementById('diffMax').value = viewsToSlider(msg.viewRange[1]);
+        updateDiffSlider();
+      } else if (!isHost && !msg.viewRange) {
+        document.getElementById('diffMin').value = 0;
+        document.getElementById('diffMax').value = 100;
+        updateDiffSlider();
+      }
+      break;
+
     case 'game_start':
       if (msg.mode === 'tri') {
         startTriGameUI(msg.origin, msg.targets);
@@ -961,10 +1076,14 @@ function renderPlayerList(players, hostId) {
   }).join('');
   document.getElementById('waitingText').style.display = players.length < 2 ? '' : 'none';
   document.getElementById('startBtn').style.display = isHost && players.length >= 2 ? '' : 'none';
-  // Only host can change mode
+  // Only host can change mode and difficulty
   const modeSelector = document.getElementById('modeSelector');
   modeSelector.style.opacity = isHost ? '1' : '0.5';
   modeSelector.style.pointerEvents = isHost ? 'auto' : 'none';
+  const diffSection = document.getElementById('diffSection');
+  diffSection.style.opacity = isHost ? '1' : '0.5';
+  diffSection.style.pointerEvents = isHost ? 'auto' : 'none';
+  initDiffSlider();
 }
 
 function startGame() { send({ type: 'start_game' }); }
@@ -975,6 +1094,77 @@ function setMode(mode) {
   document.getElementById('modeClassic').classList.toggle('active', mode === 'classic');
   document.getElementById('modeTri').classList.toggle('active', mode === 'tri');
   send({ type: 'set_mode', mode });
+}
+
+// ─── Difficulty slider ───
+// Slider 0-100 maps to page views.
+// 0 = tf (obscure, <100 views/month) → 100 = ez (famous, >500K views/month)
+// We use an exponential scale so the slider feels natural.
+const DIFF_VIEW_MIN = 50;       // monthly views at slider=0
+const DIFF_VIEW_MAX = 1000000;  // monthly views at slider=100
+
+function sliderToViews(val) {
+  // Exponential: 0→DIFF_VIEW_MIN, 100→DIFF_VIEW_MAX
+  const t = val / 100;
+  return Math.round(DIFF_VIEW_MIN * Math.pow(DIFF_VIEW_MAX / DIFF_VIEW_MIN, t));
+}
+
+function getDiffDescription(minVal, maxVal) {
+  if (minVal === 0 && maxVal === 100) return 'all articles';
+  const minV = sliderToViews(minVal);
+  const maxV = sliderToViews(maxVal);
+  function fmt(n) {
+    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+    if (n >= 1000) return (n / 1000).toFixed(0) + 'K';
+    return String(n);
+  }
+  return fmt(minV) + ' – ' + fmt(maxV) + ' views/mo';
+}
+
+let diffDebounce = null;
+function updateDiffSlider() {
+  const minEl = document.getElementById('diffMin');
+  const maxEl = document.getElementById('diffMax');
+  let lo = parseInt(minEl.value);
+  let hi = parseInt(maxEl.value);
+
+  // Enforce minimum gap of 15 so range isn't too narrow
+  if (lo > hi) { const tmp = lo; lo = hi; hi = tmp; }
+  if (hi - lo < 15) {
+    hi = Math.min(100, lo + 15);
+    if (hi - lo < 15) lo = Math.max(0, hi - 15);
+    minEl.value = lo;
+    maxEl.value = hi;
+  }
+
+  // Update fill bar position
+  const fill = document.getElementById('diffFill');
+  fill.style.left = lo + '%';
+  fill.style.width = (hi - lo) + '%';
+
+  // Update description
+  document.getElementById('diffDesc').textContent = getDiffDescription(lo, hi);
+
+  // Debounce sending to server
+  clearTimeout(diffDebounce);
+  diffDebounce = setTimeout(() => {
+    if (!isHost) return;
+    const minViews = sliderToViews(lo);
+    const maxViews = sliderToViews(hi);
+    // If full range, send null (no filtering)
+    if (lo === 0 && hi === 100) {
+      send({ type: 'set_difficulty', viewRange: null });
+    } else {
+      send({ type: 'set_difficulty', viewRange: [minViews, maxViews] });
+    }
+  }, 300);
+}
+
+// Initialize slider fill on load
+function initDiffSlider() {
+  const fill = document.getElementById('diffFill');
+  fill.style.left = '0%';
+  fill.style.width = '100%';
 }
 
 // ─── Game ───
