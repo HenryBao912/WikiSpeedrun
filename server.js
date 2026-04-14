@@ -18,48 +18,100 @@ function generatePlayerId() {
 }
 
 // ─── Random article fetching from Wikipedia ───
-async function getRandomArticles(count) {
-  const articles = [];
+
+// Quick title-based filter (no API call needed)
+function isBadTitle(title) {
+  const lower = title.toLowerCase().replace(/_/g, ' ');
+  // Lists, indexes, outlines, drafts
+  if (/^(list of|lists of|index of|outline of|draft:|wikipedia:|template:|category:|portal:|module:)/.test(lower)) return true;
+  // Disambiguation
+  if (lower.includes('(disambiguation)')) return true;
+  // Chemical formulas like C11H15NO2, C2H6O, etc.
+  if (/^c\d+h\d+/i.test(title)) return true;
+  // Pure numbers or dates like "1945" or "1800s"
+  if (/^\d{3,4}(s)?$/.test(title)) return true;
+  if (/^\d+(st|nd|rd|th)_century/.test(lower)) return true;
+  // Very short titles (1-2 chars) — usually abbreviations
+  if (title.replace(/_/g, '').length <= 2) return true;
+  // ISO codes, technical strings with mostly digits/special chars
+  if (/^[A-Z]{1,3}-?\d+/.test(title)) return true;
+  return false;
+}
+
+// Validate articles via API: check they're real content pages (not disambig/stubs)
+async function validateArticles(titles) {
+  if (titles.length === 0) return [];
   try {
     const params = {
       action: 'query',
-      list: 'random',
-      rnnamespace: '0',
-      rnlimit: String(count),
+      titles: titles.join('|'),
+      prop: 'pageprops|info',
+      ppprop: 'disambiguation',
+      inprop: 'length',
     };
     const data = await wikiAPI(params);
-    if (data.query?.random) {
-      for (const r of data.query.random) {
-        articles.push(r.title.replace(/ /g, '_'));
-      }
+    const pages = data.query?.pages || {};
+    const good = [];
+    for (const page of Object.values(pages)) {
+      if (!page || page.missing !== undefined) continue;
+      // Skip disambiguation pages
+      if (page.pageprops && 'disambiguation' in page.pageprops) continue;
+      // Skip very short articles (stubs under 5KB are likely not fun)
+      if (page.length && page.length < 5000) continue;
+      good.push(page.title.replace(/ /g, '_'));
     }
+    return good;
   } catch (e) {
-    console.error('Error fetching random articles:', e.message);
+    console.error('Error validating articles:', e.message);
+    return titles; // on error, return unfiltered
   }
-  // Filter out boring/disambiguation/list articles
-  const filtered = articles.filter(a => {
-    const lower = a.toLowerCase();
-    return !lower.startsWith('list_of') &&
-           !lower.includes('(disambiguation)') &&
-           !lower.startsWith('lists_of') &&
-           !lower.startsWith('index_of') &&
-           !lower.startsWith('outline_of');
-  });
-  return filtered;
+}
+
+async function getGoodRandomArticles(count) {
+  const needed = count;
+  const good = [];
+  let attempts = 0;
+
+  while (good.length < needed && attempts < 4) {
+    attempts++;
+    try {
+      // Fetch a batch of random articles
+      const params = {
+        action: 'query',
+        list: 'random',
+        rnnamespace: '0',
+        rnlimit: String(Math.min(20, needed * 5)),
+      };
+      const data = await wikiAPI(params);
+      const batch = (data.query?.random || [])
+        .map(r => r.title.replace(/ /g, '_'))
+        .filter(t => !isBadTitle(t));
+
+      if (batch.length === 0) continue;
+
+      // Validate via API (check for disambig, stub, etc.)
+      const validated = await validateArticles(batch);
+      for (const a of validated) {
+        if (good.length < needed) good.push(a);
+      }
+    } catch (e) {
+      console.error('Error fetching random articles:', e.message);
+    }
+  }
+
+  return good;
 }
 
 async function getRandomPair() {
-  // Fetch extra in case some get filtered out
-  const articles = await getRandomArticles(10);
+  const articles = await getGoodRandomArticles(2);
   if (articles.length >= 2) {
     return { origin: articles[0], destination: articles[1] };
   }
-  // Fallback
   return { origin: 'Pizza', destination: 'Moon' };
 }
 
 async function getRandomTriple() {
-  const articles = await getRandomArticles(10);
+  const articles = await getGoodRandomArticles(3);
   if (articles.length >= 3) {
     return { targets: [articles[0], articles[1], articles[2]] };
   }
