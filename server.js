@@ -136,9 +136,13 @@ async function getTopViewedArticles() {
         if (t === 'Main_Page' || t === 'Special:Search' || t.startsWith('Special:')) return false;
         if (t.startsWith('Wikipedia:') || t.startsWith('Portal:') || t.startsWith('Help:')) return false;
         if (isBadTitle(t)) return false;
+        // Filter out people-like articles that are probably just trending news
+        // Keep only articles with very high daily views (>20K/day = universally known)
+        // Lower-ranked articles are often just news spikes
         return true;
       })
-      .map(a => ({ title: a.article, views: a.views * 30 })); // Approximate monthly from daily
+      .filter(a => a.views >= 5000) // At least 5K daily views = genuinely well-known, not just a news spike
+      .map(a => ({ title: a.article, views: a.views * 30 }));
 
     topArticlesCache = articles;
     topArticlesCacheTime = Date.now();
