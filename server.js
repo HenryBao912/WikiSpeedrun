@@ -555,7 +555,7 @@ function broadcastToRoom(roomCode, msg) {
 function initRoom(code, hostId, hostName) {
   return {
     host: hostId,
-    players: new Map([[hostId, newPlayerState(hostName)]]),
+    players: new Map([[hostId, newPlayerState(hostName, 0)]]),
     mode: 'classic', // 'classic' or 'tri'
     pair: null,       // classic mode
     triple: null,     // tri mode
@@ -567,16 +567,15 @@ function initRoom(code, hostId, hostName) {
     manualArticles: null, // { origin, destination } or { targets: [a,b,c] }
     giveUpVotes: new Set(), // set of playerIds who voted to give up
     singlePlayer: false, // true if room is single-player only
+    colorIndex: 1, // next color index (host already took 0)
   };
 }
 
-// Player colors — assigned in join order
+// Player colors — assigned in join order per room
 const PLAYER_COLORS = ['#7c6fad', '#5a9e8f', '#b07850', '#5a8ab5', '#a86060', '#8a6aaa', '#508f80', '#b08a55'];
-let colorIndex = 0;
 
-function newPlayerState(name) {
-  const color = PLAYER_COLORS[colorIndex % PLAYER_COLORS.length];
-  colorIndex++;
+function newPlayerState(name, roomColorIndex) {
+  const color = PLAYER_COLORS[(roomColorIndex || 0) % PLAYER_COLORS.length];
   return {
     name,
     color,
@@ -602,9 +601,12 @@ async function startGameForRoom(room, roomCode) {
     } else {
       room.pair = await getRandomPair(viewRange);
     }
-    // Resolve redirects to canonical titles
+    // Resolve redirects to canonical titles, keep originals for fallback matching
+    const origOrigin = room.pair.origin;
+    const origDest = room.pair.destination;
     room.pair.origin = await resolveRedirect(room.pair.origin);
     room.pair.destination = await resolveRedirect(room.pair.destination);
+    room.pair.destinationOriginal = origDest;
     for (const [, p] of room.players) {
       Object.assign(p, { path: [room.pair.origin], finished: false, finishTime: null, visited: [], distances: [] });
     }
@@ -658,9 +660,14 @@ function getDistanceMap(room) {
 
 function checkWin(room, rp, article) {
   if (room.mode === 'classic') {
-    const dest = normalizeArticle(room.pair.destination);
     const current = normalizeArticle(article);
-    return current === dest;
+    // Check against both resolved and original destination
+    const destResolved = normalizeArticle(room.pair.destination);
+    const destOriginal = room.pair.destinationOriginal ? normalizeArticle(room.pair.destinationOriginal) : null;
+    if (current === destResolved || (destOriginal && current === destOriginal)) return true;
+    // Also check if the navigated article redirects to the destination
+    // (async check stored for next comparison)
+    return false;
   } else {
     // Tri mode: check if this article matches any unvisited target
     const current = normalizeArticle(article);
@@ -711,7 +718,8 @@ async function handleAction(playerId, msg) {
         player.name = name;
         player.roomCode = code;
       }
-      room.players.set(playerId, newPlayerState(name));
+      room.players.set(playerId, newPlayerState(name, room.colorIndex));
+      room.colorIndex++;
       sendSSE(playerId, { type: 'room_joined', code, playerId });
       sendSSE(playerId, { type: 'mode_changed', mode: room.mode });
       broadcastToRoom(code, {
@@ -775,10 +783,8 @@ async function handleAction(playerId, msg) {
       const rp = room.players.get(playerId);
       if (!rp || rp.finished) return { ok: false };
 
-      const rawArticle = msg.article;
-      if (!rawArticle) return { ok: false };
-      // Resolve redirect to canonical title for accurate win detection
-      const article = await resolveRedirect(rawArticle);
+      const article = msg.article;
+      if (!article) return { ok: false };
       rp.path.push(article);
 
       // For tri mode, include visited count in progress
@@ -793,8 +799,15 @@ async function handleAction(playerId, msg) {
         mode: room.mode,
       });
 
-      // Check win
-      const won = checkWin(room, rp, article);
+      // Check win — first quick check, then resolve redirect if needed
+      let won = checkWin(room, rp, article);
+      if (!won && room.mode === 'classic') {
+        // Try resolving the article in case it's a redirect to the destination
+        const resolved = await resolveRedirect(article);
+        if (normalizeArticle(resolved) !== normalizeArticle(article)) {
+          won = checkWin(room, rp, resolved);
+        }
+      }
       if (won) {
         rp.finished = true;
         rp.finishTime = Date.now() - room.startTime;

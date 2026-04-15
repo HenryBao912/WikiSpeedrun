@@ -435,8 +435,6 @@
     color: white;
     border: none;
     border-radius: 6px;
-    font-size: 0.75rem;
-    font-weight: 600;
     font-size: 0.85rem;
     font-weight: 600;
     cursor: pointer;
@@ -463,6 +461,20 @@
   .origin-tag { background: var(--accent); color: white; }
   .dest-tag { background: var(--green); color: white; }
   .nav-info .arrow { color: var(--text2); font-size: 1.2rem; }
+  .target-tag {
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-weight: 700;
+    font-size: 0.85rem;
+    display: inline-block;
+    background: var(--surface2);
+    color: var(--text2);
+    transition: all 0.3s;
+  }
+  .target-tag.current { background: var(--accent); color: white; }
+  .target-tag.reached { background: var(--green); color: white; }
+  .target-tag.unreached { background: var(--surface2); color: var(--text2); opacity: 0.6; }
+  .target-sep { color: var(--text2); font-size: 0.85rem; margin: 0 4px; }
   .game-stats {
     display: flex;
     gap: 16px;
@@ -1051,6 +1063,7 @@
   <div class="results-grid" id="resultsGrid"></div>
   <div class="result-actions">
     <button class="btn btn-primary btn-small" id="playAgainBtn" onclick="playAgain()" style="display:none;">Play Again</button>
+    <button class="btn btn-primary btn-small" id="newWordsBtn" onclick="newWords()" style="display:none;">New Words</button>
     <button class="btn btn-secondary btn-small" onclick="backToHome()">Back to Home</button>
   </div>
 </div>
@@ -1629,8 +1642,17 @@ async function loadArticle(title) {
       '.geo-default, .geo-dms, .geo-dec, #coordinates'
     ).forEach(el => el.remove());
 
-    // Remove images
-    doc.querySelectorAll('img, figure, .thumb, .image, .mw-file-element, .mw-file-description').forEach(el => el.remove());
+    // Style images to fit nicely (keep them visible)
+    doc.querySelectorAll('img').forEach(img => {
+      img.style.maxWidth = '100%';
+      img.style.height = 'auto';
+      img.style.borderRadius = '8px';
+    });
+    // Remove file description links but keep the images themselves
+    doc.querySelectorAll('.mw-file-description').forEach(el => {
+      el.removeAttribute('href');
+      el.style.cursor = 'default';
+    });
 
     // Remove infobox/sidebar tables
     doc.querySelectorAll('table').forEach(table => {
@@ -1989,6 +2011,7 @@ function showResults(msg) {
   }
 
   document.getElementById('playAgainBtn').style.display = isHost ? '' : 'none';
+  document.getElementById('newWordsBtn').style.display = isHost ? '' : 'none';
   showScreen('results');
 
   // Animate results
@@ -2019,6 +2042,21 @@ function formatTime(ms) {
 
 function playAgain() {
   send({ type: 'play_again' });
+}
+
+function newWords() {
+  if (isSinglePlayer) {
+    // For single player, go back to setup screen
+    eventSource?.close();
+    eventSource = null;
+    clearInterval(timerInterval);
+    resultsAnimationTimeouts.forEach(t => clearTimeout(t));
+    resultsAnimationTimeouts = [];
+    currentRoomCode = null;
+    showScreen('sp-setup');
+  } else {
+    send({ type: 'back_to_lobby' });
+  }
 }
 
 function backToHome() {
