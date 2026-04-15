@@ -300,6 +300,27 @@
   .room-code-input { text-transform: uppercase; letter-spacing: 4px; text-align: center; font-weight: 700; }
   .btn-row { display: flex; gap: 12px; width: 100%; }
   .btn-row .btn { flex: 1; }
+  .mp-join-row {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+    align-items: center;
+  }
+  .mp-join-name {
+    flex: 1;
+    min-width: 0;
+  }
+  .mp-join-code {
+    width: 100px;
+    flex-shrink: 0;
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    text-align: center;
+    font-weight: 700;
+  }
+  .mp-join-row .btn {
+    flex-shrink: 0;
+  }
   .divider {
     display: flex;
     align-items: center;
@@ -1070,19 +1091,13 @@
   <button class="back-btn" onclick="showScreen('home')">← Back</button>
   <h1 class="setup-title">Multiplayer</h1>
   <div class="setup-form">
-    <div class="form-group">
-      <label class="form-label">Your Name</label>
-      <input type="text" id="mpName" placeholder="Enter your name" maxlength="20" />
+    <div class="mp-join-row">
+      <input type="text" id="mpName" placeholder="Name" maxlength="20" class="mp-join-name" />
+      <input type="text" id="mpRoomCode" placeholder="CODE" class="mp-join-code" maxlength="5" />
+      <button class="btn btn-secondary btn-small" onclick="joinMultiplayerRoom()">Join</button>
     </div>
-    <button class="btn btn-primary" onclick="createMultiplayerRoom()" style="width:100%;">Create Room</button>
     <div class="divider">or</div>
-    <div class="form-group">
-      <label class="form-label">Room Code</label>
-      <div class="btn-row">
-        <input type="text" id="mpRoomCode" placeholder="CODE" class="room-code-input" maxlength="5" />
-        <button class="btn btn-secondary" onclick="joinMultiplayerRoom()">Join</button>
-      </div>
-    </div>
+    <button class="btn btn-primary" onclick="createMultiplayerRoom()" style="width:100%;">Create Room</button>
     <div class="error-msg" id="mpError"></div>
   </div>
 </div>
@@ -1758,6 +1773,11 @@ function startGameUI(msg) {
   }
 
   document.getElementById('giveUpStatus').textContent = '';
+  const surrenderBtn = document.querySelector('.surrender-btn');
+  surrenderBtn.disabled = false;
+  surrenderBtn.style.opacity = '';
+  surrenderBtn.style.cursor = '';
+  surrenderBtn.textContent = 'Surrender';
   latestDistData = null;
   prevPositions.clear();
   document.getElementById('lbRiders').innerHTML = '';
