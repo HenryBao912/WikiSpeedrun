@@ -180,21 +180,23 @@
   .diff-label-title { font-weight: 600; color: var(--text); }
   .diff-range-wrap {
     position: relative;
-    height: 36px;
+    height: 40px;
     display: flex;
     align-items: center;
+    width: 100%;
+    max-width: 420px;
   }
   .diff-track {
     position: absolute;
     left: 0; right: 0;
-    height: 6px;
+    height: 8px;
     background: var(--surface2);
-    border-radius: 3px;
+    border-radius: 4px;
   }
   .diff-fill {
     position: absolute;
-    height: 6px;
-    border-radius: 3px;
+    height: 8px;
+    border-radius: 4px;
     background: linear-gradient(90deg, var(--red), var(--gold), var(--green));
   }
   .diff-range-wrap input[type="range"] {
@@ -203,16 +205,17 @@
     position: absolute;
     left: 0; right: 0;
     width: 100%;
-    height: 36px;
+    height: 40px;
     background: transparent;
     pointer-events: none;
     margin: 0;
+    outline: none;
   }
   .diff-range-wrap input[type="range"]::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    width: 20px;
-    height: 20px;
+    width: 24px;
+    height: 24px;
     border-radius: 50%;
     background: var(--text);
     border: 3px solid var(--accent);
@@ -221,10 +224,24 @@
     position: relative;
     z-index: 2;
     box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    transition: none;
+  }
+  .diff-range-wrap input[type="range"]:focus::-webkit-slider-thumb {
+    width: 24px;
+    height: 24px;
+  }
+  .diff-range-wrap input[type="range"]:active::-webkit-slider-thumb {
+    width: 24px;
+    height: 24px;
+  }
+  .diff-range-wrap input[type="range"]::-webkit-slider-runnable-track {
+    background: transparent;
+    border: none;
+    height: 40px;
   }
   .diff-range-wrap input[type="range"]::-moz-range-thumb {
-    width: 20px;
-    height: 20px;
+    width: 24px;
+    height: 24px;
     border-radius: 50%;
     background: var(--text);
     border: 3px solid var(--accent);
@@ -232,7 +249,13 @@
     pointer-events: all;
     box-shadow: 0 2px 6px rgba(0,0,0,0.4);
   }
-  .diff-range-wide { width: 100%; max-width: 360px; }
+  .diff-range-wrap input[type="range"]::-moz-range-track {
+    background: transparent;
+    border: none;
+  }
+  .diff-range-wrap input[type="range"]:focus {
+    outline: none;
+  }
   .diff-ends {
     display: flex;
     justify-content: space-between;
@@ -690,40 +713,33 @@
   .lb-track {
     position: relative;
     width: 100%;
-    height: 4px;
+    height: 6px;
     background: var(--surface2);
-    border-radius: 2px;
+    border-radius: 3px;
     margin-bottom: 4px;
+    overflow: hidden;
   }
   .lb-track-fill {
     position: absolute;
     left: 0; top: 0; bottom: 0;
     background: linear-gradient(90deg, var(--surface2), var(--accent), var(--green));
-    border-radius: 2px;
-    opacity: 0.2;
+    border-radius: 3px;
+    opacity: 0.25;
     width: 100%;
   }
-  .lb-ticks {
+  .lb-checkered {
     position: absolute;
-    top: 0; left: 0; right: 0; bottom: 0;
-    display: flex;
-    justify-content: space-between;
-    padding: 0 2px;
-    pointer-events: none;
-  }
-  .lb-tick {
-    width: 1px;
-    height: 100%;
-    background: rgba(255,255,255,0.05);
-  }
-  .lb-goal {
-    position: absolute;
-    right: -6px;
-    top: 50%;
-    transform: translateY(-50%);
-    font-size: 18px;
-    line-height: 1;
-    filter: drop-shadow(0 0 4px rgba(0,184,148,0.6));
+    right: 0; top: 0; bottom: 0;
+    width: 24px;
+    background-image:
+      linear-gradient(45deg, #fff 25%, transparent 25%),
+      linear-gradient(-45deg, #fff 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #fff 75%),
+      linear-gradient(-45deg, transparent 75%, #fff 75%);
+    background-size: 6px 6px;
+    background-position: 0 0, 0 3px, 3px -3px, -3px 0;
+    opacity: 0.5;
+    border-radius: 0 3px 3px 0;
   }
   .lb-riders {
     position: relative;
@@ -1150,11 +1166,7 @@
   <div class="players-bar" id="playersBar">
     <div class="lb-track">
       <div class="lb-track-fill"></div>
-      <div class="lb-ticks">
-        <span class="lb-tick"></span><span class="lb-tick"></span><span class="lb-tick"></span>
-        <span class="lb-tick"></span><span class="lb-tick"></span><span class="lb-tick"></span>
-      </div>
-      <span class="lb-goal">🏁</span>
+      <div class="lb-checkered"></div>
     </div>
     <div class="lb-riders" id="lbRiders"></div>
   </div>
