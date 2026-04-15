@@ -341,99 +341,93 @@
   .waiting-text { color: var(--text2); animation: pulse 2s infinite; }
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
 
-  /* ─── Word Preview ─── */
-  .word-preview {
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* ─── Round Words Section (Lobby) ─── */
+  .round-words-section {
     width: 100%;
-    max-width: 400px;
-    margin: 16px auto 0;
+    max-width: 420px;
     padding: 20px;
     background: var(--surface2);
     border-radius: var(--radius);
-    text-align: center;
-    animation: fadeIn 0.3s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
   }
-  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-  .word-preview-title {
+  .round-words-title {
     font-size: 0.85rem;
     color: var(--text2);
     text-transform: uppercase;
     letter-spacing: 1px;
-    margin-bottom: 14px;
   }
-  .word-preview-words {
+  .round-words-inputs {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .rw-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .rw-label {
+    font-size: 0.75rem;
+    color: var(--text2);
+    min-width: 40px;
+    text-align: right;
+  }
+  .rw-input-wrap {
+    flex: 1;
+    position: relative;
+  }
+  .rw-input {
+    width: 100%;
+    padding: 10px 14px;
+    background: var(--surface);
+    border: 2px solid transparent;
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 0.95rem;
+    font-weight: 600;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .rw-input:focus {
+    border-color: var(--accent);
+  }
+  .rw-input:disabled {
+    opacity: 0.8;
+    cursor: default;
+  }
+  .rw-random-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    border: none;
+    background: var(--accent);
+    color: white;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform 0.15s, opacity 0.2s;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 10px;
-    flex-wrap: wrap;
-    margin-bottom: 16px;
+    flex-shrink: 0;
   }
-  .preview-word {
-    padding: 8px 16px;
-    background: var(--surface);
-    border-radius: 8px;
-    font-weight: 700;
-    font-size: 1.05rem;
-    color: var(--text);
-  }
-  .preview-arrow {
+  .rw-random-btn:hover { transform: scale(1.1); }
+  .rw-random-btn:active { transform: scale(0.95); }
+  .rw-random-btn:disabled { opacity: 0.4; cursor: default; transform: none; }
+  .rw-random-btn.loading { animation: spin 0.6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .rw-arrow {
+    text-align: center;
     color: var(--accent2);
-    font-size: 1.2rem;
+    font-size: 1.1rem;
+    margin: -4px 0;
   }
-  .word-preview-actions {
-    display: flex;
-    gap: 10px;
-    justify-content: center;
-  }
-  .word-preview-waiting {
-    color: var(--text2);
-    font-size: 0.85rem;
-    animation: pulse 2s infinite;
-  }
-
-  /* ─── Word Input Section (Lobby) ─── */
-  .word-section {
-    width: 100%;
-    max-width: 420px;
-    padding: 16px;
-    background: var(--surface2);
-    border-radius: var(--radius);
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-  .word-section-title {
-    font-weight: 600;
-    font-size: 0.9rem;
-    color: var(--text);
-  }
-  .word-toggle {
-    display: flex;
-    gap: 8px;
-  }
-  .toggle-btn {
-    flex: 1;
-    padding: 8px 12px;
-    border: 2px solid var(--surface);
-    border-radius: 6px;
-    background: transparent;
-    color: var(--text2);
-    font-size: 0.8rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-  .toggle-btn.active {
-    border-color: var(--accent);
-    background: var(--accent);
-    color: white;
-  }
-  .manual-input {
-    display: none;
-    flex-direction: column;
-    gap: 10px;
-  }
-  .manual-input.show { display: flex; }
   .autocomplete-list {
     max-height: 200px;
     overflow-y: auto;
@@ -1016,7 +1010,6 @@
     <span class="copy-hint">click to copy</span>
   </div>
   <div class="form-group">
-    <label class="form-label">Mode (Host Only)</label>
     <div class="mode-selector" id="mpModeSelector">
       <div class="mode-btn active" id="mpModeClassic" onclick="setMultiplayerMode('classic')">
         <span class="mode-label">Classic</span>
@@ -1029,7 +1022,6 @@
     </div>
   </div>
   <div class="form-group">
-    <label class="form-label">Difficulty (Host Only)</label>
     <div class="diff-section" id="mpDiffSection">
       <div class="diff-label">
         <span class="diff-label-title">Difficulty</span>
@@ -1047,28 +1039,15 @@
       </div>
     </div>
   </div>
-  <div class="word-section" id="wordSection" style="display:none;">
-    <div class="word-section-title">Words</div>
-    <div class="word-toggle">
-      <button class="toggle-btn active" onclick="setWordMode('auto')">Auto-generate</button>
-      <button class="toggle-btn" onclick="setWordMode('manual')">Manual Input</button>
-    </div>
-    <div id="manualInputSection" class="manual-input"></div>
-  </div>
   <div style="text-align:center;">
     <p style="color:var(--text2);margin-bottom:12px;">Players:</p>
     <ul class="player-list" id="playerList"></ul>
     <p class="waiting-text" id="waitingText">Waiting for players...</p>
   </div>
-  <button class="btn btn-primary" id="mpStartBtn" onclick="previewWords()" style="display:none;">Start Game</button>
-  <div id="wordPreview" class="word-preview" style="display:none;">
-    <div class="word-preview-title">Round Words</div>
-    <div class="word-preview-words" id="previewWordsDisplay"></div>
-    <div class="word-preview-actions" id="previewActions" style="display:none;">
-      <button class="btn btn-secondary btn-small" onclick="previewWords()">New Words</button>
-      <button class="btn btn-primary btn-small" onclick="confirmStart()">Start!</button>
-    </div>
-    <p class="word-preview-waiting" id="previewWaiting" style="display:none;">Waiting for host to start...</p>
+  <div class="round-words-section" id="roundWordsSection" style="display:none;">
+    <div class="round-words-title">Round Words</div>
+    <div class="round-words-inputs" id="roundWordsInputs"></div>
+    <button class="btn btn-primary btn-small" id="mpStartBtn" onclick="startMultiplayerGame()" style="display:none;">Start!</button>
   </div>
 </div>
 
@@ -1156,7 +1135,6 @@ let spDifficulty = null;
 let mpIsHost = false;
 let mpCurrentMode = 'classic';
 let mpCurrentDifficulty = null;
-let mpWordMode = 'auto'; // 'auto' or 'manual'
 
 const DIFF_VIEW_MIN = 1000;
 const DIFF_VIEW_MAX = 1000000;
@@ -1314,59 +1292,94 @@ function updateMultiplayerDiffSlider() {
   }, 300);
 }
 
-function setWordMode(mode) {
-  mpWordMode = mode;
-  const btn1 = document.querySelectorAll('.word-toggle .toggle-btn')[0];
-  const btn2 = document.querySelectorAll('.word-toggle .toggle-btn')[1];
-  if (mode === 'auto') {
-    btn1.classList.add('active');
-    btn2.classList.remove('active');
-    document.getElementById('manualInputSection').classList.remove('show');
-  } else {
-    btn1.classList.remove('active');
-    btn2.classList.add('active');
-    document.getElementById('manualInputSection').classList.add('show');
-    renderManualInputSection();
-  }
-}
+// ─── Round Words ───
+function renderRoundWords() {
+  const container = document.getElementById('roundWordsInputs');
+  const section = document.getElementById('roundWordsSection');
+  section.style.display = 'flex';
 
-function renderManualInputSection() {
-  const container = document.getElementById('manualInputSection');
+  const disabled = !isHost ? 'disabled' : '';
+  const btnStyle = !isHost ? 'style="display:none;"' : '';
+
   if (mpCurrentMode === 'classic') {
     container.innerHTML = `
-      <div style="position:relative;">
-        <input type="text" id="manualOrigin" placeholder="From (e.g., Pizza)" style="margin-bottom:8px;" />
-        <ul class="autocomplete-list" id="autocompleteOrigin"></ul>
+      <div class="rw-row">
+        <span class="rw-label">From</span>
+        <div class="rw-input-wrap">
+          <input type="text" class="rw-input" id="rwOrigin" placeholder="e.g. Pizza" ${disabled} />
+          <ul class="autocomplete-list" id="acRwOrigin"></ul>
+        </div>
+        <button class="rw-random-btn" id="rwRandOrigin" onclick="randomizeWord('rwOrigin')" ${btnStyle}>?</button>
       </div>
-      <div style="position:relative;">
-        <input type="text" id="manualDest" placeholder="To (e.g., Moon)" />
-        <ul class="autocomplete-list" id="autocompleteDest"></ul>
+      <div class="rw-arrow">→</div>
+      <div class="rw-row">
+        <span class="rw-label">To</span>
+        <div class="rw-input-wrap">
+          <input type="text" class="rw-input" id="rwDest" placeholder="e.g. Moon" ${disabled} />
+          <ul class="autocomplete-list" id="acRwDest"></ul>
+        </div>
+        <button class="rw-random-btn" id="rwRandDest" onclick="randomizeWord('rwDest')" ${btnStyle}>?</button>
       </div>
     `;
-    document.getElementById('manualOrigin')?.addEventListener('input', (e) => fetchAutocomplete(e.target.value, 'autocompleteOrigin'));
-    document.getElementById('manualDest')?.addEventListener('input', (e) => fetchAutocomplete(e.target.value, 'autocompleteDest'));
+    if (isHost) {
+      document.getElementById('rwOrigin')?.addEventListener('input', (e) => fetchAutocomplete(e.target.value, 'acRwOrigin', 'rwOrigin'));
+      document.getElementById('rwDest')?.addEventListener('input', (e) => fetchAutocomplete(e.target.value, 'acRwDest', 'rwDest'));
+    }
   } else {
-    container.innerHTML = `
-      <div style="position:relative;">
-        <input type="text" id="manualTarget1" placeholder="Target 1" style="margin-bottom:8px;" />
-        <ul class="autocomplete-list" id="autocompleteTarget1"></ul>
-      </div>
-      <div style="position:relative;">
-        <input type="text" id="manualTarget2" placeholder="Target 2" style="margin-bottom:8px;" />
-        <ul class="autocomplete-list" id="autocompleteTarget2"></ul>
-      </div>
-      <div style="position:relative;">
-        <input type="text" id="manualTarget3" placeholder="Target 3" />
-        <ul class="autocomplete-list" id="autocompleteTarget3"></ul>
-      </div>
-    `;
-    document.getElementById('manualTarget1')?.addEventListener('input', (e) => fetchAutocomplete(e.target.value, 'autocompleteTarget1'));
-    document.getElementById('manualTarget2')?.addEventListener('input', (e) => fetchAutocomplete(e.target.value, 'autocompleteTarget2'));
-    document.getElementById('manualTarget3')?.addEventListener('input', (e) => fetchAutocomplete(e.target.value, 'autocompleteTarget3'));
+    container.innerHTML = [1, 2, 3].map((n, i) => {
+      let html = `
+        <div class="rw-row">
+          <span class="rw-label">${n}</span>
+          <div class="rw-input-wrap">
+            <input type="text" class="rw-input" id="rwTarget${n}" placeholder="Target ${n}" ${disabled} />
+            <ul class="autocomplete-list" id="acRwTarget${n}"></ul>
+          </div>
+          <button class="rw-random-btn" id="rwRandTarget${n}" onclick="randomizeWord('rwTarget${n}')" ${btnStyle}>?</button>
+        </div>`;
+      if (i < 2) html += '<div class="rw-arrow">→</div>';
+      return html;
+    }).join('');
+    if (isHost) {
+      [1, 2, 3].forEach(n => {
+        document.getElementById(`rwTarget${n}`)?.addEventListener('input', (e) => fetchAutocomplete(e.target.value, `acRwTarget${n}`, `rwTarget${n}`));
+      });
+    }
   }
 }
 
-async function fetchAutocomplete(query, listId) {
+async function randomizeWord(inputId) {
+  const btn = document.getElementById(inputId.replace('rw', 'rwRand'));
+  if (!btn) return;
+  btn.disabled = true;
+  btn.classList.add('loading');
+  try {
+    const result = await send({ type: 'random_word' });
+    if (result.ok && result.word) {
+      document.getElementById(inputId).value = result.word.replace(/_/g, ' ');
+      broadcastWordUpdate();
+    }
+  } catch(e) {
+    console.error('Random word error:', e);
+  }
+  btn.disabled = false;
+  btn.classList.remove('loading');
+}
+
+function broadcastWordUpdate() {
+  if (!isHost) return;
+  if (mpCurrentMode === 'classic') {
+    const origin = document.getElementById('rwOrigin')?.value || '';
+    const dest = document.getElementById('rwDest')?.value || '';
+    send({ type: 'set_articles', origin, destination: dest });
+  } else {
+    const t1 = document.getElementById('rwTarget1')?.value || '';
+    const t2 = document.getElementById('rwTarget2')?.value || '';
+    const t3 = document.getElementById('rwTarget3')?.value || '';
+    send({ type: 'set_articles', targets: [t1, t2, t3] });
+  }
+}
+
+async function fetchAutocomplete(query, listId, inputId) {
   if (query.length < 2) {
     document.getElementById(listId).classList.remove('show');
     return;
@@ -1375,37 +1388,17 @@ async function fetchAutocomplete(query, listId) {
     const resp = await fetch(`https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(query)}&limit=5&namespace=0&origin=*`);
     const [, titles] = await resp.json();
     const list = document.getElementById(listId);
-    list.innerHTML = titles.map(t => `<div class="autocomplete-item" onclick="selectArticle('${listId}', '${t}')">${esc(t)}</div>`).join('');
+    list.innerHTML = titles.map(t => `<div class="autocomplete-item" onclick="selectArticle('${inputId}', '${listId}', '${t.replace(/'/g, "\\'")}')">${esc(t)}</div>`).join('');
     list.classList.add('show');
   } catch(e) {
     console.error('Autocomplete error:', e);
   }
 }
 
-function selectArticle(listId, title) {
-  const fieldId = listId.replace('autocomplete', 'manual');
-  document.getElementById(fieldId).value = title;
+function selectArticle(inputId, listId, title) {
+  document.getElementById(inputId).value = title;
   document.getElementById(listId).classList.remove('show');
-  if (isHost && mpWordMode === 'manual') {
-    sendManualArticles();
-  }
-}
-
-function sendManualArticles() {
-  if (mpCurrentMode === 'classic') {
-    const origin = document.getElementById('manualOrigin')?.value;
-    const dest = document.getElementById('manualDest')?.value;
-    if (origin && dest) {
-      send({ type: 'set_articles', origin, destination: dest });
-    }
-  } else {
-    const t1 = document.getElementById('manualTarget1')?.value;
-    const t2 = document.getElementById('manualTarget2')?.value;
-    const t3 = document.getElementById('manualTarget3')?.value;
-    if (t1 && t2 && t3) {
-      send({ type: 'set_articles', targets: [t1, t2, t3] });
-    }
-  }
+  broadcastWordUpdate();
 }
 
 async function createMultiplayerRoom() {
@@ -1451,57 +1444,35 @@ function copyCode() {
 }
 
 function startMultiplayerGame() {
-  send({ type: 'start_game' });
-}
-
-function previewWords() {
-  const btn = document.getElementById('mpStartBtn');
-  btn.disabled = true;
-  btn.textContent = 'Generating...';
-  btn.style.opacity = '0.5';
-  send({ type: 'preview_words' });
-}
-
-function confirmStart() {
-  send({ type: 'confirm_start' });
-}
-
-function showWordPreview(msg) {
-  const container = document.getElementById('previewWordsDisplay');
-  const preview = document.getElementById('wordPreview');
-  const btn = document.getElementById('mpStartBtn');
-  btn.style.display = 'none'; // hide the original start button
-
-  if (msg.mode === 'classic') {
-    container.innerHTML = `
-      <span class="preview-word">${esc(msg.origin.replace(/_/g, ' '))}</span>
-      <span class="preview-arrow">→</span>
-      <span class="preview-word">${esc(msg.destination.replace(/_/g, ' '))}</span>
-    `;
+  // Gather words from the input fields
+  if (mpCurrentMode === 'classic') {
+    const origin = document.getElementById('rwOrigin')?.value.trim();
+    const dest = document.getElementById('rwDest')?.value.trim();
+    if (!origin || !dest) {
+      // Shake the empty fields
+      if (!origin) document.getElementById('rwOrigin').style.borderColor = 'var(--red)';
+      if (!dest) document.getElementById('rwDest').style.borderColor = 'var(--red)';
+      setTimeout(() => {
+        document.getElementById('rwOrigin').style.borderColor = '';
+        document.getElementById('rwDest').style.borderColor = '';
+      }, 1500);
+      return;
+    }
+    send({ type: 'start_game', origin, destination: dest });
   } else {
-    container.innerHTML = msg.targets.map((t, i) => {
-      let html = `<span class="preview-word">${esc(t.replace(/_/g, ' '))}</span>`;
-      if (i < msg.targets.length - 1) html += '<span class="preview-arrow">→</span>';
-      return html;
-    }).join('');
-  }
-
-  // Host sees action buttons, non-host sees waiting text
-  document.getElementById('previewActions').style.display = isHost ? 'flex' : 'none';
-  document.getElementById('previewWaiting').style.display = isHost ? 'none' : '';
-  preview.style.display = '';
-}
-
-function resetWordPreview() {
-  document.getElementById('wordPreview').style.display = 'none';
-  const btn = document.getElementById('mpStartBtn');
-  btn.disabled = false;
-  btn.textContent = 'Start Game';
-  btn.style.opacity = '1';
-  // Show start button again if host with enough players
-  if (isHost) {
-    const playerCount = document.getElementById('playerList').children.length;
-    btn.style.display = playerCount >= 2 ? '' : 'none';
+    const targets = [1, 2, 3].map(n => document.getElementById(`rwTarget${n}`)?.value.trim());
+    const empty = targets.some(t => !t);
+    if (empty) {
+      [1, 2, 3].forEach(n => {
+        const el = document.getElementById(`rwTarget${n}`);
+        if (!el.value.trim()) el.style.borderColor = 'var(--red)';
+      });
+      setTimeout(() => {
+        [1, 2, 3].forEach(n => document.getElementById(`rwTarget${n}`).style.borderColor = '');
+      }, 1500);
+      return;
+    }
+    send({ type: 'start_game', targets });
   }
 }
 
@@ -1563,7 +1534,7 @@ function handleServerMessage(msg) {
         document.getElementById('mpModeSelector').style.pointerEvents = 'auto';
         document.getElementById('mpDiffSection').style.opacity = '1';
         document.getElementById('mpDiffSection').style.pointerEvents = 'auto';
-        document.getElementById('wordSection').style.display = 'flex';
+        renderRoundWords();
         showScreen('lobby');
       }
       break;
@@ -1577,7 +1548,7 @@ function handleServerMessage(msg) {
       document.getElementById('mpModeSelector').style.pointerEvents = 'none';
       document.getElementById('mpDiffSection').style.opacity = '0.5';
       document.getElementById('mpDiffSection').style.pointerEvents = 'none';
-      document.getElementById('wordSection').style.display = 'flex';
+      renderRoundWords();
       showScreen('lobby');
       break;
 
@@ -1590,6 +1561,7 @@ function handleServerMessage(msg) {
       currentGameMode = msg.mode;
       document.getElementById('mpModeClassic').classList.toggle('active', msg.mode === 'classic');
       document.getElementById('mpModeTri').classList.toggle('active', msg.mode === 'tri');
+      renderRoundWords();
       break;
 
     case 'difficulty_changed':
@@ -1609,8 +1581,21 @@ function handleServerMessage(msg) {
       }
       break;
 
-    case 'words_preview':
-      showWordPreview(msg);
+    case 'articles_updated':
+      // Non-host: update word inputs when host changes them
+      if (!isHost && msg.manualArticles) {
+        if (mpCurrentMode === 'classic') {
+          const o = document.getElementById('rwOrigin');
+          const d = document.getElementById('rwDest');
+          if (o && msg.manualArticles.origin) o.value = msg.manualArticles.origin.replace(/_/g, ' ');
+          if (d && msg.manualArticles.destination) d.value = msg.manualArticles.destination.replace(/_/g, ' ');
+        } else if (msg.manualArticles.targets) {
+          msg.manualArticles.targets.forEach((t, i) => {
+            const el = document.getElementById(`rwTarget${i + 1}`);
+            if (el && t) el.value = t.replace(/_/g, ' ');
+          });
+        }
+      }
       break;
 
     case 'game_start':
@@ -1651,7 +1636,7 @@ function handleServerMessage(msg) {
     case 'returned_to_lobby':
       if (!isSinglePlayer) {
         playerProgress.clear();
-        resetWordPreview();
+        renderRoundWords();
         showScreen('lobby');
       }
       break;

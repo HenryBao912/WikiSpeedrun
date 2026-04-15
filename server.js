@@ -769,58 +769,16 @@ async function handleAction(playerId, msg) {
       } else {
         if (room.players.size < 2) return { ok: false, error: 'Need at least 2 players' };
       }
+      // Accept words from the client if provided
+      if (msg.origin && msg.destination) {
+        room.manualArticles = { origin: msg.origin, destination: msg.destination };
+      } else if (msg.targets && msg.targets.length === 3) {
+        room.manualArticles = { targets: msg.targets };
+      }
       startGameForRoom(room, player.roomCode);
       return { ok: true };
     }
 
-    case 'preview_words': {
-      const player = players.get(playerId);
-      if (!player) return { ok: false };
-      const room = rooms.get(player.roomCode);
-      if (!room || room.host !== playerId) return { ok: false, error: 'Only host can preview' };
-      if (room.singlePlayer) {
-        if (room.players.size < 1) return { ok: false, error: 'Need at least 1 player' };
-      } else {
-        if (room.players.size < 2) return { ok: false, error: 'Need at least 2 players' };
-      }
-      const viewRange = room.viewRange || null;
-      let preview;
-      if (room.mode === 'classic') {
-        if (room.manualArticles && room.manualArticles.origin && room.manualArticles.destination) {
-          preview = { mode: 'classic', origin: room.manualArticles.origin, destination: room.manualArticles.destination };
-        } else {
-          const pair = await getRandomPair(viewRange);
-          preview = { mode: 'classic', origin: pair.origin, destination: pair.destination };
-        }
-      } else {
-        if (room.manualArticles && room.manualArticles.targets && room.manualArticles.targets.length === 3) {
-          preview = { mode: 'tri', targets: room.manualArticles.targets };
-        } else {
-          const triple = await getRandomTriple(viewRange);
-          preview = { mode: 'tri', targets: triple.targets };
-        }
-      }
-      room.previewWords = preview;
-      broadcastToRoom(player.roomCode, { type: 'words_preview', ...preview });
-      return { ok: true };
-    }
-
-    case 'confirm_start': {
-      const player = players.get(playerId);
-      if (!player) return { ok: false };
-      const room = rooms.get(player.roomCode);
-      if (!room || room.host !== playerId) return { ok: false, error: 'Only host can start' };
-      if (!room.previewWords) return { ok: false, error: 'No words previewed' };
-      // Use the previewed words as manual articles so startGameForRoom picks them up
-      if (room.previewWords.mode === 'classic') {
-        room.manualArticles = { origin: room.previewWords.origin, destination: room.previewWords.destination };
-      } else {
-        room.manualArticles = { targets: room.previewWords.targets };
-      }
-      room.previewWords = null;
-      startGameForRoom(room, player.roomCode);
-      return { ok: true };
-    }
 
     case 'navigate': {
       const player = players.get(playerId);
@@ -926,6 +884,17 @@ async function handleAction(playerId, msg) {
         broadcastToRoom(player.roomCode, { type: 'returned_to_lobby' });
       }
       return { ok: true };
+    }
+
+    case 'random_word': {
+      const player = players.get(playerId);
+      if (!player) return { ok: false };
+      const room = rooms.get(player.roomCode);
+      if (!room) return { ok: false };
+      const viewRange = room.viewRange || null;
+      const articles = await getGoodRandomArticles(1, viewRange);
+      const word = articles.length > 0 ? articles[0] : 'Wikipedia';
+      return { ok: true, word };
     }
 
     case 'set_articles': {
