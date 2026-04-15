@@ -180,23 +180,22 @@
   .diff-label-title { font-weight: 600; color: var(--text); }
   .diff-range-wrap {
     position: relative;
-    height: 40px;
+    height: 28px;
     display: flex;
     align-items: center;
     width: 100%;
-    max-width: 420px;
   }
   .diff-track {
     position: absolute;
     left: 0; right: 0;
-    height: 8px;
+    height: 6px;
     background: var(--surface2);
-    border-radius: 4px;
+    border-radius: 3px;
   }
   .diff-fill {
     position: absolute;
-    height: 8px;
-    border-radius: 4px;
+    height: 6px;
+    border-radius: 3px;
     background: linear-gradient(90deg, var(--red), var(--gold), var(--green));
   }
   .diff-range-wrap input[type="range"] {
@@ -205,56 +204,66 @@
     position: absolute;
     left: 0; right: 0;
     width: 100%;
-    height: 40px;
-    background: transparent;
+    height: 28px;
+    background: transparent !important;
     pointer-events: none;
     margin: 0;
-    outline: none;
+    padding: 0;
+    outline: none !important;
+    border: none !important;
+  }
+  .diff-range-wrap input[type="range"]::-webkit-slider-container {
+    background: transparent !important;
+  }
+  .diff-range-wrap input[type="range"]::-webkit-slider-runnable-track {
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent !important;
+    border: none !important;
+    height: 6px;
   }
   .diff-range-wrap input[type="range"]::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    width: 24px;
-    height: 24px;
+    width: 16px;
+    height: 16px;
     border-radius: 50%;
     background: var(--text);
-    border: 3px solid var(--accent);
+    border: 2px solid var(--accent);
     cursor: pointer;
     pointer-events: all;
     position: relative;
     z-index: 2;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.4);
-    transition: none;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+    margin-top: -5px;
   }
-  .diff-range-wrap input[type="range"]:focus::-webkit-slider-thumb {
-    width: 24px;
-    height: 24px;
-  }
+  .diff-range-wrap input[type="range"]:focus::-webkit-slider-thumb,
   .diff-range-wrap input[type="range"]:active::-webkit-slider-thumb {
-    width: 24px;
-    height: 24px;
-  }
-  .diff-range-wrap input[type="range"]::-webkit-slider-runnable-track {
-    background: transparent;
-    border: none;
-    height: 40px;
-  }
-  .diff-range-wrap input[type="range"]::-moz-range-thumb {
-    width: 24px;
-    height: 24px;
-    border-radius: 50%;
-    background: var(--text);
-    border: 3px solid var(--accent);
-    cursor: pointer;
-    pointer-events: all;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    width: 16px;
+    height: 16px;
+    outline: none;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.4);
   }
   .diff-range-wrap input[type="range"]::-moz-range-track {
-    background: transparent;
-    border: none;
+    background: transparent !important;
+    border: none !important;
+    height: 6px;
+  }
+  .diff-range-wrap input[type="range"]::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--text);
+    border: 2px solid var(--accent);
+    cursor: pointer;
+    pointer-events: all;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.4);
   }
   .diff-range-wrap input[type="range"]:focus {
-    outline: none;
+    outline: none !important;
+  }
+  .diff-range-wrap input[type="range"]:focus-visible {
+    outline: none !important;
   }
   .diff-ends {
     display: flex;
@@ -709,37 +718,23 @@
     z-index: 50;
     padding: 6px 24px 4px;
     flex-shrink: 0;
-  }
-  .lb-track {
     position: relative;
-    width: 100%;
-    height: 6px;
-    background: var(--surface2);
-    border-radius: 3px;
-    margin-bottom: 4px;
     overflow: hidden;
   }
-  .lb-track-fill {
-    position: absolute;
-    left: 0; top: 0; bottom: 0;
-    background: linear-gradient(90deg, var(--surface2), var(--accent), var(--green));
-    border-radius: 3px;
-    opacity: 0.25;
-    width: 100%;
-  }
-  .lb-checkered {
+  .players-bar::after {
+    content: '';
     position: absolute;
     right: 0; top: 0; bottom: 0;
-    width: 24px;
+    width: 30px;
     background-image:
-      linear-gradient(45deg, #fff 25%, transparent 25%),
-      linear-gradient(-45deg, #fff 25%, transparent 25%),
-      linear-gradient(45deg, transparent 75%, #fff 75%),
-      linear-gradient(-45deg, transparent 75%, #fff 75%);
-    background-size: 6px 6px;
-    background-position: 0 0, 0 3px, 3px -3px, -3px 0;
-    opacity: 0.5;
-    border-radius: 0 3px 3px 0;
+      linear-gradient(45deg, rgba(255,255,255,0.12) 25%, transparent 25%),
+      linear-gradient(-45deg, rgba(255,255,255,0.12) 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, rgba(255,255,255,0.12) 75%),
+      linear-gradient(-45deg, transparent 75%, rgba(255,255,255,0.12) 75%);
+    background-size: 8px 8px;
+    background-position: 0 0, 0 4px, 4px -4px, -4px 0;
+    pointer-events: none;
+    z-index: 1;
   }
   .lb-riders {
     position: relative;
@@ -1113,7 +1108,7 @@
         <span class="mode-desc">A → B</span>
       </div>
       <div class="mode-btn" id="mpModeTri" onclick="setMultiplayerMode('tri')">
-        <span class="mode-label">Tri Mode</span>
+        <span class="mode-label">Tri<br>Mode</span>
         <span class="mode-desc">Visit all 3</span>
       </div>
     </div>
@@ -1164,10 +1159,6 @@
   </div>
   <div class="breadcrumb-bar" id="breadcrumbs"></div>
   <div class="players-bar" id="playersBar">
-    <div class="lb-track">
-      <div class="lb-track-fill"></div>
-      <div class="lb-checkered"></div>
-    </div>
     <div class="lb-riders" id="lbRiders"></div>
   </div>
   <div class="wiki-container" id="wikiContainer">
