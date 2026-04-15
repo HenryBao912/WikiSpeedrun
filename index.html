@@ -121,19 +121,23 @@
     justify-content: center;
     gap: 8px;
     margin-bottom: 4px;
+    max-width: 90vw;
   }
   .logo-link {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     padding: 5px 12px;
     border-radius: 6px;
     font-size: 0.8rem;
     font-weight: 700;
-    min-width: 50px;
+    width: 100px;
     text-align: center;
     color: white;
     overflow: hidden;
-    height: 1.6em;
+    height: 1.7em;
     position: relative;
+    flex-shrink: 0;
   }
   .logo-link.origin { background: var(--accent); }
   .logo-link.mid { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.7); }
@@ -141,6 +145,10 @@
   .logo-link-inner {
     display: block;
     transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.35s ease;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
   }
   .logo-link-inner.roll-out {
     transform: translateY(-110%);
@@ -151,15 +159,10 @@
     opacity: 0;
     transition: none;
   }
-  .hero-dist {
-    font-size: 0.7rem;
-    font-weight: 800;
-    min-width: 16px;
-    text-align: center;
-  }
   .logo-arrow {
     color: rgba(255,255,255,0.25);
     font-size: 0.9rem;
+    flex-shrink: 0;
   }
   .logo {
     font-size: 3.2rem;
@@ -1183,11 +1186,7 @@
     <div class="logo-row" id="heroLinkRow">
       <span class="logo-link origin" id="heroLink1"><span class="logo-link-inner">Cat</span></span>
       <span class="logo-arrow">→</span>
-      <span class="hero-dist dist-mid" id="heroDist1">3</span>
-      <span class="logo-arrow">→</span>
       <span class="logo-link mid" id="heroLink2"><span class="logo-link-inner">Mammal</span></span>
-      <span class="logo-arrow">→</span>
-      <span class="hero-dist dist-close" id="heroDist2">1</span>
       <span class="logo-arrow">→</span>
       <span class="logo-link dest" id="heroLink3"><span class="logo-link-inner">Evolution</span></span>
     </div>
@@ -1389,7 +1388,7 @@ function initBgWords() {
 }
 
 function scheduleWordChange(el) {
-  const delay = 800 + Math.random() * 700; // 0.8 - 1.5s
+  const delay = 1000 + Math.random() * 900; // 1.0 - 1.9s
   setTimeout(() => {
     el.classList.add('fading');
     setTimeout(() => {
@@ -1402,38 +1401,25 @@ function scheduleWordChange(el) {
 
 // Hero link row cycling with roll animation
 function initHeroLinks() {
-  const links = [
-    { el: document.getElementById('heroLink1'), dist: null },
-    { el: document.getElementById('heroLink2'), dist: document.getElementById('heroDist1') },
-    { el: document.getElementById('heroLink3'), dist: document.getElementById('heroDist2') },
-  ];
-  for (const link of links) {
-    if (link.el) scheduleHeroRoll(link.el, link.dist);
-  }
+  ['heroLink1', 'heroLink2', 'heroLink3'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) scheduleHeroRoll(el);
+  });
 }
 
-function scheduleHeroRoll(el, distEl) {
-  const delay = 800 + Math.random() * 700;
+function scheduleHeroRoll(el) {
+  const delay = 1000 + Math.random() * 900;
   setTimeout(() => {
     const inner = el.querySelector('.logo-link-inner');
     if (!inner) return;
-    // Roll out current word
     inner.classList.add('roll-out');
-    // Also update the distance number before this link
-    if (distEl) {
-      const d = Math.floor(Math.random() * 8) + 1;
-      distEl.textContent = d;
-      distEl.className = 'hero-dist ' + (d <= 2 ? 'dist-close' : d <= 4 ? 'dist-mid' : 'dist-far');
-    }
     setTimeout(() => {
-      // Swap text, position below
       inner.textContent = WIKI_WORDS[Math.floor(Math.random() * WIKI_WORDS.length)];
       inner.classList.remove('roll-out');
       inner.classList.add('roll-in');
-      // Force reflow then roll in
       void inner.offsetWidth;
       inner.classList.remove('roll-in');
-      scheduleHeroRoll(el, distEl);
+      scheduleHeroRoll(el);
     }, 350);
   }, delay);
 }
