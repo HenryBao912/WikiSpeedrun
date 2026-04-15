@@ -169,9 +169,13 @@
     font-weight: 900;
     letter-spacing: -1px;
   }
-  .logo .wiki { color: #a78bfa; }
-  .logo .speed { color: #60a5fa; }
-  .logo .run { color: #4ade80; }
+  .logo .wiki { color: var(--accent); }
+  .logo .speed {
+    background: linear-gradient(90deg, #7dd3fc, #c084fc, #fbbf24);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .logo .run { color: var(--green); }
   .logo-sub {
     font-size: 1.05rem;
     color: var(--text2);
@@ -1183,14 +1187,16 @@
 <div id="home" class="screen active">
   <div class="bg-words" id="bgWords"></div>
   <div class="hero-content">
+    <div class="logo"><span class="wiki">Wiki</span><span class="speed">Speed</span><span class="run">run</span></div>
     <div class="logo-row" id="heroLinkRow">
       <span class="logo-link origin" id="heroLink1"><span class="logo-link-inner">Cat</span></span>
       <span class="logo-arrow">→</span>
       <span class="logo-link mid" id="heroLink2"><span class="logo-link-inner">Mammal</span></span>
       <span class="logo-arrow">→</span>
-      <span class="logo-link dest" id="heroLink3"><span class="logo-link-inner">Evolution</span></span>
+      <span class="logo-link mid" id="heroLink3"><span class="logo-link-inner">Biology</span></span>
+      <span class="logo-arrow">→</span>
+      <span class="logo-link dest" id="heroLink4"><span class="logo-link-inner">Evolution</span></span>
     </div>
-    <div class="logo"><span class="wiki">Wiki</span><span class="speed">Speed</span><span class="run">run</span></div>
     <p class="logo-sub">Navigate Wikipedia links. Race to the destination.</p>
     <div class="home-buttons">
       <button class="btn btn-primary" onclick="showScreen('sp-setup')">Single Player</button>
@@ -1401,7 +1407,7 @@ function scheduleWordChange(el) {
 
 // Hero link row cycling with roll animation
 function initHeroLinks() {
-  ['heroLink1', 'heroLink2', 'heroLink3'].forEach(id => {
+  ['heroLink1', 'heroLink2', 'heroLink3', 'heroLink4'].forEach(id => {
     const el = document.getElementById(id);
     if (el) scheduleHeroRoll(el);
   });
