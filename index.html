@@ -1066,7 +1066,7 @@ let mpCurrentMode = 'classic';
 let mpCurrentDifficulty = null;
 let mpWordMode = 'auto'; // 'auto' or 'manual'
 
-const DIFF_VIEW_MIN = 50;
+const DIFF_VIEW_MIN = 1000;
 const DIFF_VIEW_MAX = 1000000;
 
 // ─── Screen Management ───
@@ -1506,6 +1506,10 @@ function handleServerMessage(msg) {
 }
 
 function renderPlayerList(players, hostId) {
+  // Store colors from server
+  for (const p of players) {
+    if (p.color) playerColors.set(p.id, p.color);
+  }
   const ul = document.getElementById('playerList');
   ul.innerHTML = players.map(p => {
     const color = playerColors.get(p.id) || '#7c6fad';

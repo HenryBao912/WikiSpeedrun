@@ -82,8 +82,8 @@ async function validateArticles(titles) {
       const isBio = isBioByCat || isBioByTitle;
 
       if (isBio) {
-        // Biographies need 50KB+ — only mega-famous people (Obama, Taylor Swift, etc.)
-        if (page.length && page.length < 50000) continue;
+        // Biographies need 100KB+ — only the most famous people (Obama, etc.)
+        if (page.length && page.length < 100000) continue;
       } else {
         // Normal articles: skip stubs under 5KB
         if (page.length && page.length < 5000) continue;
@@ -182,12 +182,12 @@ async function getTopViewedArticles() {
         if (isBadTitle(t)) return false;
         return true;
       })
-      .filter(a => a.views >= 5000)
+      .filter(a => a.views >= 1000)
       .map(a => ({ title: a.article, views: a.views * 30 }));
 
     topArticlesCache = filtered;
     topArticlesCacheTime = Date.now();
-    console.log(`[top-articles] Cached ${filtered.length} popular articles (5K+ daily views)`);
+    console.log(`[top-articles] Cached ${filtered.length} popular articles (1K+ daily views)`);
     return filtered;
   } catch (e) {
     console.error('Error fetching top articles:', e.message);
@@ -235,9 +235,9 @@ async function getGoodRandomArticles(count, viewRange) {
 
   const [minViews, maxViews] = viewRange;
 
-  // High views (easy): pull from top-viewed articles
-  // Threshold: if min views > 30K, use the top-viewed pool
-  if (minViews >= 30000) {
+  // High views (easy/mid): pull from top-viewed articles
+  // Threshold: if min views > 5K, use the top-viewed pool
+  if (minViews >= 5000) {
     const fromTop = await pickFromTopArticles(needed, viewRange);
     if (fromTop.length >= needed) return fromTop;
     // Fallback: try random with filtering
@@ -993,7 +993,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (parsed.pathname === '/' || parsed.pathname === '/index.html') {
-    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.writeHead(200, { 'Content-Type': 'text/html', 'Cache-Control': 'no-cache, no-store, must-revalidate' });
     fs.createReadStream(path.join(__dirname, 'index.html')).pipe(res);
     return;
   }
