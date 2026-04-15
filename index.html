@@ -565,13 +565,9 @@
     font-size: 0.85rem;
   }
   .origin-tag { background: var(--accent); color: white; }
-  .dest-tag { background: var(--green); color: white; cursor: pointer; position: relative; }
-  .dest-tag:hover { opacity: 0.85; }
+  .dest-tag { background: var(--green); color: white; cursor: pointer; }
   .summary-tooltip {
-    position: absolute;
-    top: calc(100% + 8px);
-    left: 50%;
-    transform: translateX(-50%);
+    position: fixed;
     background: var(--surface);
     border: 1px solid var(--surface2);
     border-radius: 8px;
@@ -581,12 +577,13 @@
     color: var(--text);
     width: 280px;
     max-width: 80vw;
-    z-index: 100;
+    z-index: 9999;
     box-shadow: 0 4px 16px rgba(0,0,0,0.4);
     line-height: 1.4;
     white-space: normal;
     text-align: left;
     animation: tooltipIn 0.2s ease;
+    pointer-events: none;
   }
   .summary-tooltip::before {
     content: '';
@@ -601,8 +598,8 @@
     border-top: 1px solid var(--surface2);
   }
   @keyframes tooltipIn {
-    from { opacity: 0; transform: translateX(-50%) translateY(4px); }
-    to { opacity: 1; transform: translateX(-50%) translateY(0); }
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
   }
   .nav-info .arrow { color: var(--text2); font-size: 1.2rem; }
   .target-tag {
@@ -1903,21 +1900,28 @@ function startTimer() {
 const summaryCache = new Map();
 let activeTooltip = null;
 
+let activeTooltipOwner = null;
+
 async function toggleSummary(el, title) {
   // If tooltip already showing on this element, close it
-  if (activeTooltip && activeTooltip.parentElement === el) {
+  if (activeTooltip && activeTooltipOwner === el) {
     activeTooltip.remove();
     activeTooltip = null;
+    activeTooltipOwner = null;
     return;
   }
   // Close any existing tooltip
-  if (activeTooltip) { activeTooltip.remove(); activeTooltip = null; }
+  if (activeTooltip) { activeTooltip.remove(); activeTooltip = null; activeTooltipOwner = null; }
 
+  const rect = el.getBoundingClientRect();
   const tooltip = document.createElement('div');
   tooltip.className = 'summary-tooltip';
   tooltip.textContent = 'Loading...';
-  el.appendChild(tooltip);
+  tooltip.style.top = (rect.bottom + 8) + 'px';
+  tooltip.style.left = (rect.left + rect.width / 2 - 140) + 'px'; // 140 = half of 280px width
+  document.body.appendChild(tooltip);
   activeTooltip = tooltip;
+  activeTooltipOwner = el;
 
   // Stop click from propagating (so doc listener doesn't immediately close it)
   try {
@@ -1926,10 +1930,18 @@ async function toggleSummary(el, title) {
     if (!summary) {
       const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(articleTitle)}`);
       const data = await res.json();
-      // Get first sentence only
+      // Get first sentence — handle abbreviations, decimals, etc.
       const full = data.extract || '';
-      const firstSentence = full.match(/^[^.!?]*[.!?]/)?.[0] || full;
-      summary = firstSentence;
+      const abbr = /(?:Mr|Mrs|Ms|Dr|Prof|Sr|Jr|St|Mt|Ft|Lt|Gen|Gov|Sgt|Cpl|Pvt|Rev|Hon|Pres|Inc|Corp|Ltd|Co|vs|etc|approx|dept|est|vol|no|op|al|e\.g|i\.e|U\.S|U\.K|U\.N)\./gi;
+      // Replace abbreviation dots with a placeholder
+      const safe = full.replace(abbr, m => m.slice(0, -1) + '\x00')
+                       .replace(/\d+\.\d+/g, m => m.replace('.', '\x00')); // protect decimals
+      const endMatch = safe.match(/[.!?]/);
+      if (endMatch) {
+        summary = full.substring(0, endMatch.index + 1);
+      } else {
+        summary = full;
+      }
       summaryCache.set(articleTitle, summary);
     }
     if (activeTooltip === tooltip) tooltip.textContent = summary || 'No summary available.';
@@ -1943,6 +1955,7 @@ document.addEventListener('click', (e) => {
   if (activeTooltip && !e.target.closest('.dest-tag, .target-tag')) {
     activeTooltip.remove();
     activeTooltip = null;
+    activeTooltipOwner = null;
   }
 });
 
