@@ -955,6 +955,12 @@
     -webkit-text-fill-color: #f87171;
     animation: none;
   }
+  .winner-name.loser {
+    background: none;
+    -webkit-background-clip: unset;
+    -webkit-text-fill-color: var(--text);
+    animation: none;
+  }
   @keyframes goldShine {
     0% { background-position: 200% center; }
     100% { background-position: -200% center; }
@@ -2225,10 +2231,13 @@ function showResults(msg) {
       winSub = msg.winner + ' beat you!';
     }
   }
-  document.getElementById('resultIcon').textContent = msg.gaveUp ? '🏳️' : '🏆';
+  const iAmLoser = !msg.gaveUp && !isSinglePlayer && msg.results && !msg.results.some(r => r.isWinner && r.id === myPlayerId);
+  document.getElementById('resultIcon').textContent = msg.gaveUp ? '🏳️' : (iAmLoser ? '😂' : '🏆');
   const nameEl = document.getElementById('winnerName');
   nameEl.textContent = winTitle;
-  nameEl.classList.toggle('surrendered', !!msg.gaveUp);
+  nameEl.classList.remove('surrendered', 'loser');
+  if (msg.gaveUp) nameEl.classList.add('surrendered');
+  else if (iAmLoser) nameEl.classList.add('loser');
   document.getElementById('winnerSub').textContent = winSub;
 
   const grid = document.getElementById('resultsGrid');
