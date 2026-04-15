@@ -232,6 +232,7 @@
     pointer-events: all;
     box-shadow: 0 2px 6px rgba(0,0,0,0.4);
   }
+  .diff-range-wide { width: 100%; max-width: 360px; }
   .diff-ends {
     display: flex;
     justify-content: space-between;
@@ -371,12 +372,6 @@
     display: flex;
     align-items: center;
     gap: 8px;
-  }
-  .rw-label {
-    font-size: 0.75rem;
-    color: var(--text2);
-    min-width: 40px;
-    text-align: right;
   }
   .rw-input-wrap {
     flex: 1;
@@ -557,6 +552,14 @@
     font-family: 'Linux Libertine', Georgia, serif;
     font-size: 0.95rem;
     line-height: 1.7;
+  }
+  .wiki-page-title {
+    font-size: 2rem;
+    font-family: 'Linux Libertine', Georgia, serif;
+    border-bottom: 1px solid #444;
+    padding-bottom: 8px;
+    margin-bottom: 20px;
+    color: var(--text);
   }
   .wiki-content h1 {
     font-size: 1.8rem;
@@ -1009,14 +1012,19 @@
     <span id="codeText"></span>
     <span class="copy-hint">click to copy</span>
   </div>
+  <div style="text-align:center;">
+    <p style="color:var(--text2);margin-bottom:12px;">Players:</p>
+    <ul class="player-list" id="playerList"></ul>
+    <p class="waiting-text" id="waitingText">Waiting for players...</p>
+  </div>
   <div class="form-group">
     <div class="mode-selector" id="mpModeSelector">
       <div class="mode-btn active" id="mpModeClassic" onclick="setMultiplayerMode('classic')">
-        <span class="mode-label">Classic</span>
+        <span class="mode-label">Classic Mode</span>
         <span class="mode-desc">A → B</span>
       </div>
       <div class="mode-btn" id="mpModeTri" onclick="setMultiplayerMode('tri')">
-        <span class="mode-label">Tri Speedrun</span>
+        <span class="mode-label">Tri Mode</span>
         <span class="mode-desc">Visit all 3</span>
       </div>
     </div>
@@ -1027,7 +1035,7 @@
         <span class="diff-label-title">Difficulty</span>
         <span id="mpDiffDesc" style="font-size:0.75rem;opacity:0.7;">all articles</span>
       </div>
-      <div class="diff-range-wrap">
+      <div class="diff-range-wrap diff-range-wide">
         <div class="diff-track"></div>
         <div class="diff-fill" id="mpDiffFill"></div>
         <input type="range" id="mpDiffMin" min="0" max="100" value="0" oninput="updateMultiplayerDiffSlider()" />
@@ -1038,11 +1046,6 @@
         <span class="diff-end-ez">ez</span>
       </div>
     </div>
-  </div>
-  <div style="text-align:center;">
-    <p style="color:var(--text2);margin-bottom:12px;">Players:</p>
-    <ul class="player-list" id="playerList"></ul>
-    <p class="waiting-text" id="waitingText">Waiting for players...</p>
   </div>
   <div class="round-words-section" id="roundWordsSection" style="display:none;">
     <div class="round-words-title">Round Words</div>
@@ -1304,18 +1307,16 @@ function renderRoundWords() {
   if (mpCurrentMode === 'classic') {
     container.innerHTML = `
       <div class="rw-row">
-        <span class="rw-label">From</span>
         <div class="rw-input-wrap">
-          <input type="text" class="rw-input" id="rwOrigin" placeholder="e.g. Pizza" ${disabled} />
+          <input type="text" class="rw-input" id="rwOrigin" placeholder="e.g. Pizza" ${disabled} onfocus="this.select()" />
           <ul class="autocomplete-list" id="acRwOrigin"></ul>
         </div>
         <button class="rw-random-btn" id="rwRandOrigin" onclick="randomizeWord('rwOrigin')" ${btnStyle}>?</button>
       </div>
-      <div class="rw-arrow">→</div>
+      <div class="rw-arrow">↓</div>
       <div class="rw-row">
-        <span class="rw-label">To</span>
         <div class="rw-input-wrap">
-          <input type="text" class="rw-input" id="rwDest" placeholder="e.g. Moon" ${disabled} />
+          <input type="text" class="rw-input" id="rwDest" placeholder="e.g. Moon" ${disabled} onfocus="this.select()" />
           <ul class="autocomplete-list" id="acRwDest"></ul>
         </div>
         <button class="rw-random-btn" id="rwRandDest" onclick="randomizeWord('rwDest')" ${btnStyle}>?</button>
@@ -1329,14 +1330,13 @@ function renderRoundWords() {
     container.innerHTML = [1, 2, 3].map((n, i) => {
       let html = `
         <div class="rw-row">
-          <span class="rw-label">${n}</span>
           <div class="rw-input-wrap">
-            <input type="text" class="rw-input" id="rwTarget${n}" placeholder="Target ${n}" ${disabled} />
+            <input type="text" class="rw-input" id="rwTarget${n}" placeholder="Target ${n}" ${disabled} onfocus="this.select()" />
             <ul class="autocomplete-list" id="acRwTarget${n}"></ul>
           </div>
           <button class="rw-random-btn" id="rwRandTarget${n}" onclick="randomizeWord('rwTarget${n}')" ${btnStyle}>?</button>
         </div>`;
-      if (i < 2) html += '<div class="rw-arrow">→</div>';
+      if (i < 2) html += '<div class="rw-arrow">↓</div>';
       return html;
     }).join('');
     if (isHost) {
@@ -1808,7 +1808,8 @@ async function loadArticle(title) {
       }
     });
 
-    content.innerHTML = doc.body.innerHTML;
+    const titleHtml = `<h1 class="wiki-page-title">${esc(title.replace(/_/g, ' '))}</h1>`;
+    content.innerHTML = titleHtml + doc.body.innerHTML;
     content.style.display = 'block';
     loading.style.display = 'none';
 
