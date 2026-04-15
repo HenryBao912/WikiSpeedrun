@@ -820,10 +820,15 @@
     background: var(--surface2);
     border-radius: 6px;
     white-space: nowrap;
+    opacity: 0;
+    transform: scale(0.8);
+    transition: opacity 0.25s, transform 0.25s;
   }
+  .path-node.revealed { opacity: 1; transform: scale(1); }
   .path-node.start { background: var(--accent); color: white; }
   .path-node.end { background: var(--green); color: white; }
-  .path-arrow { color: var(--text2); font-size: 0.7rem; }
+  .path-arrow { color: var(--text2); font-size: 0.7rem; opacity: 0; transition: opacity 0.2s; }
+  .path-arrow.revealed { opacity: 1; }
   .winner-banner { opacity: 0; transform: scale(0.8); transition: opacity 0.6s, transform 0.6s; }
   .winner-banner.visible { opacity: 1; transform: scale(1); }
   .result-card { opacity: 0; transform: translateY(20px); transition: opacity 0.4s, transform 0.4s; }
@@ -1923,7 +1928,13 @@ function showResults(msg) {
 
   const resultCards = document.querySelectorAll('.result-card');
   for (const card of resultCards) {
-    resultsAnimationTimeouts.push(setTimeout(() => card.classList.add('visible'), delay));
+    resultsAnimationTimeouts.push(setTimeout(() => {
+      card.classList.add('visible');
+      const pathEls = card.querySelectorAll('.path-node, .path-arrow');
+      pathEls.forEach((el, i) => {
+        resultsAnimationTimeouts.push(setTimeout(() => el.classList.add('revealed'), 300 + i * 300));
+      });
+    }, delay));
     delay += 400;
   }
 }
