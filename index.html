@@ -1928,7 +1928,15 @@ function showResults(msg) {
 
   const resultCards = document.querySelectorAll('.result-card');
   for (const card of resultCards) {
-    resultsAnimationTimeouts.push(setTimeout(() => card.classList.add('visible'), delay));
+    resultsAnimationTimeouts.push(setTimeout(() => {
+      card.classList.add('visible');
+      // Stagger path node reveal inside this card
+      let pathDelay = 150;
+      card.querySelectorAll('.path-node, .path-arrow').forEach(el => {
+        resultsAnimationTimeouts.push(setTimeout(() => el.classList.add('visible'), pathDelay));
+        pathDelay += 100;
+      });
+    }, delay));
     delay += 400;
   }
 }

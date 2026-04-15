@@ -34,6 +34,8 @@ function isBadTitle(title) {
   if (/^\d+(st|nd|rd|th)_century/.test(lower)) return true;
   // Very short titles (1-2 chars) — usually abbreviations
   if (title.replace(/_/g, '').length <= 2) return true;
+  // Titles longer than 3 words — tend to be obscure or overly specific
+  if (lower.split(/\s+/).length > 3) return true;
   // ISO codes, technical strings with mostly digits/special chars
   if (/^[A-Z]{1,3}-?\d+/.test(title)) return true;
   return false;
