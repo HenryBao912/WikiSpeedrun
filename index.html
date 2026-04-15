@@ -29,6 +29,52 @@
   .screen { display: none; min-height: 100vh; }
   .screen.active { display: flex; }
 
+  /* ─── Common button styles ─── */
+  .btn {
+    padding: 14px 24px;
+    border: none;
+    border-radius: var(--radius);
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.2s;
+  }
+  .btn:hover { transform: translateY(-2px); }
+  .btn:active { transform: translateY(0); }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--accent), #7c6cf0);
+    color: white;
+    box-shadow: 0 4px 20px rgba(108, 92, 231, 0.4);
+  }
+  .btn-secondary {
+    background: var(--surface2);
+    color: var(--text);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  }
+  .btn-small {
+    padding: 10px 24px;
+    font-size: 0.9rem;
+  }
+
+  /* ─── Back button ─── */
+  .back-btn {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    background: none;
+    border: none;
+    color: var(--text2);
+    font-size: 1rem;
+    cursor: pointer;
+    padding: 8px 12px;
+    border-radius: var(--radius);
+    transition: color 0.2s, background 0.2s;
+  }
+  .back-btn:hover {
+    color: var(--text);
+    background: var(--surface2);
+  }
+
   /* ─── Home Screen ─── */
   #home {
     flex-direction: column;
@@ -52,133 +98,52 @@
     margin-top: -16px;
     max-width: 420px;
   }
-  .home-form {
+  .home-buttons {
     display: flex;
     flex-direction: column;
-    align-items: center;
     gap: 16px;
     width: 100%;
     max-width: 360px;
   }
-  input[type="text"] {
+  .home-buttons .btn {
     width: 100%;
-    padding: 14px 20px;
-    border: 2px solid var(--surface2);
-    border-radius: var(--radius);
-    background: var(--surface);
-    color: var(--text);
-    font-size: 1rem;
-    outline: none;
-    transition: border-color 0.2s;
-  }
-  input[type="text"]:focus { border-color: var(--accent); }
-  input[type="text"]::placeholder { color: var(--text2); }
-  .btn-row { display: flex; gap: 12px; width: 100%; }
-  .btn-row .btn { flex: 1; }
-  .btn {
-    padding: 14px 24px;
-    border: none;
-    border-radius: var(--radius);
-    font-size: 1rem;
-    font-weight: 700;
-    cursor: pointer;
-    transition: transform 0.15s, box-shadow 0.2s;
-  }
-  .btn:hover { transform: translateY(-2px); }
-  .btn:active { transform: translateY(0); }
-  .btn-primary {
-    background: linear-gradient(135deg, var(--accent), #7c6cf0);
-    color: white;
-    box-shadow: 0 4px 20px rgba(108, 92, 231, 0.4);
-  }
-  .btn-secondary {
-    background: var(--surface2);
-    color: var(--text);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-  }
-  .join-section {
-    display: flex;
-    gap: 10px;
-    width: 100%;
-  }
-  .join-section input { flex: 1; text-transform: uppercase; letter-spacing: 4px; text-align: center; font-weight: 700; }
-  .divider {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    width: 100%;
-    color: var(--text2);
-    font-size: 0.85rem;
-  }
-  .divider::before, .divider::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: var(--surface2);
-  }
-  .error-msg {
-    color: var(--red);
-    font-size: 0.9rem;
-    min-height: 1.2em;
+    padding: 16px 24px;
+    font-size: 1.1rem;
   }
 
-  /* ─── Lobby Screen ─── */
-  #lobby {
+  /* ─── Single Player Setup Screen ─── */
+  #sp-setup {
     flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: 24px;
-    padding: 40px 20px;
-    text-align: center;
-  }
-  .room-code-display {
-    font-size: 3rem;
-    font-weight: 800;
-    letter-spacing: 8px;
-    color: var(--accent2);
-    padding: 16px 32px;
-    border: 3px dashed var(--accent);
-    border-radius: var(--radius);
-    cursor: pointer;
-    transition: background 0.2s;
+    padding: 60px 20px 40px;
     position: relative;
   }
-  .room-code-display:hover { background: var(--surface2); }
-  .room-code-display .copy-hint {
-    position: absolute;
-    bottom: -24px;
-    left: 50%;
-    transform: translateX(-50%);
-    font-size: 0.75rem;
-    color: var(--text2);
-    letter-spacing: 0;
-    font-weight: 400;
+  .setup-title {
+    font-size: 2rem;
+    font-weight: 800;
   }
-  .player-list {
-    list-style: none;
+  .setup-form {
     display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 12px;
-    margin-top: 8px;
+    flex-direction: column;
+    gap: 20px;
+    width: 100%;
+    max-width: 420px;
   }
-  .player-list li {
-    padding: 10px 20px;
-    border-radius: 99px;
-    font-weight: 600;
+  .form-group {
     display: flex;
-    align-items: center;
+    flex-direction: column;
     gap: 8px;
-    color: white;
   }
-  .player-list li.host::before { content: '👑'; }
-  .waiting-text { color: var(--text2); animation: pulse 2s infinite; }
+  .form-label {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text);
+  }
   .mode-selector {
     display: flex;
     gap: 10px;
-    margin-top: 8px;
-    width: 100%;
-    max-width: 420px;
   }
   .mode-btn {
     flex: 1;
@@ -201,8 +166,6 @@
   /* ─── Difficulty Slider ─── */
   .diff-section {
     width: 100%;
-    max-width: 420px;
-    margin-top: 4px;
   }
   .diff-label {
     font-size: 0.85rem;
@@ -277,67 +240,169 @@
   .diff-end-tf { color: var(--red); }
   .diff-end-ez { color: var(--green); }
 
-  /* Tri-mode header targets */
-  .tri-targets { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-  .target-tag {
-    padding: 4px 12px;
-    border-radius: 6px;
-    font-weight: 700;
-    font-size: 0.85rem;
-    background: var(--surface2);
-    color: var(--text2);
-    transition: background 0.3s, color 0.3s;
+  /* ─── Multiplayer Setup Screen ─── */
+  #mp-setup {
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+    padding: 60px 20px 40px;
+    position: relative;
   }
-  .target-tag.current { background: var(--accent); color: white; }
-  .target-tag.reached { background: var(--green); color: white; }
-  .target-tag.unreached { background: var(--surface2); color: var(--text2); }
-  .target-sep { color: var(--text2); font-size: 0.7rem; }
-  /* Checkpoint toast */
-  .checkpoint-toast {
-    position: fixed;
-    top: 80px;
-    left: 50%;
-    transform: translateX(-50%) translateY(-20px);
-    background: var(--green);
-    color: white;
-    padding: 12px 28px;
+  input[type="text"] {
+    width: 100%;
+    padding: 14px 20px;
+    border: 2px solid var(--surface2);
     border-radius: var(--radius);
-    font-weight: 700;
-    font-size: 1.1rem;
-    z-index: 200;
-    opacity: 0;
-    transition: opacity 0.3s, transform 0.3s;
-    pointer-events: none;
-    box-shadow: 0 4px 20px rgba(0,184,148,0.4);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 1rem;
+    outline: none;
+    transition: border-color 0.2s;
   }
-  .checkpoint-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-  /* Distance tracker bar */
-  /* Distance colors for numbers */
-  .dist-c0, .dist-c1 { color: #fdcb6e; }
-  .dist-c2 { color: #e17055; }
-  .dist-c3, .dist-c4 { color: #a29bfe; }
-  .dist-cfar { color: #74b9ff; }
-  /* Distance badge on path nodes in results */
-  .path-dist {
-    font-size: 0.65rem;
-    font-weight: 700;
-    padding: 1px 5px;
-    border-radius: 4px;
-    margin-left: 3px;
-    vertical-align: middle;
+  input[type="text"]:focus { border-color: var(--accent); }
+  input[type="text"]::placeholder { color: var(--text2); }
+  .room-code-input { text-transform: uppercase; letter-spacing: 4px; text-align: center; font-weight: 700; }
+  .btn-row { display: flex; gap: 12px; width: 100%; }
+  .btn-row .btn { flex: 1; }
+  .divider {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+    color: var(--text2);
+    font-size: 0.85rem;
   }
-  .path-dist.pd-hot { background: rgba(253,203,110,0.2); color: #fdcb6e; }
-  .path-dist.pd-warm { background: rgba(225,112,85,0.2); color: #e17055; }
-  .path-dist.pd-cool { background: rgba(162,155,254,0.2); color: #a29bfe; }
-  .path-dist.pd-cold { background: rgba(116,185,255,0.2); color: #74b9ff; }
-  .path-dist-arrow {
-    font-size: 0.55rem;
-    margin-left: 2px;
-    vertical-align: middle;
+  .divider::before, .divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--surface2);
   }
-  .path-dist-arrow.better { color: #00b894; }
-  .path-dist-arrow.worse { color: #e17055; }
+  .error-msg {
+    color: var(--red);
+    font-size: 0.9rem;
+    min-height: 1.2em;
+    text-align: center;
+  }
+
+  /* ─── Lobby Screen ─── */
+  #lobby {
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+    padding: 60px 20px 40px;
+    position: relative;
+    overflow-y: auto;
+  }
+  .room-code-display {
+    font-size: 3rem;
+    font-weight: 800;
+    letter-spacing: 8px;
+    color: var(--accent2);
+    padding: 16px 32px;
+    border: 3px dashed var(--accent);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: background 0.2s;
+    position: relative;
+  }
+  .room-code-display:hover { background: var(--surface2); }
+  .room-code-display .copy-hint {
+    position: absolute;
+    bottom: -24px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.75rem;
+    color: var(--text2);
+    letter-spacing: 0;
+    font-weight: 400;
+  }
+  .player-list {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px;
+  }
+  .player-list li {
+    padding: 10px 20px;
+    border-radius: 99px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: white;
+  }
+  .player-list li.host::before { content: '👑'; }
+  .waiting-text { color: var(--text2); animation: pulse 2s infinite; }
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+  /* ─── Word Input Section (Lobby) ─── */
+  .word-section {
+    width: 100%;
+    max-width: 420px;
+    padding: 16px;
+    background: var(--surface2);
+    border-radius: var(--radius);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .word-section-title {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--text);
+  }
+  .word-toggle {
+    display: flex;
+    gap: 8px;
+  }
+  .toggle-btn {
+    flex: 1;
+    padding: 8px 12px;
+    border: 2px solid var(--surface);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text2);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .toggle-btn.active {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: white;
+  }
+  .manual-input {
+    display: none;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .manual-input.show { display: flex; }
+  .autocomplete-list {
+    max-height: 200px;
+    overflow-y: auto;
+    border: 2px solid var(--surface);
+    border-radius: 6px;
+    background: var(--surface);
+    display: none;
+    position: absolute;
+    width: 100%;
+    z-index: 100;
+  }
+  .autocomplete-list.show { display: block; }
+  .autocomplete-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--surface2);
+    font-size: 0.85rem;
+    transition: background 0.15s;
+  }
+  .autocomplete-item:hover { background: var(--surface2); }
+  .autocomplete-item:last-child { border-bottom: none; }
 
   /* ─── Game Screen ─── */
   #game {
@@ -354,6 +419,30 @@
     border-bottom: 2px solid var(--surface2);
     flex-shrink: 0;
     flex-wrap: wrap;
+    position: relative;
+  }
+  .game-header-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex: 1;
+  }
+  .give-up-btn {
+    padding: 8px 16px;
+    background: var(--red);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+  .give-up-btn:hover { opacity: 0.9; }
+  .give-up-status {
+    font-size: 0.75rem;
+    color: var(--text2);
+    margin-top: 4px;
   }
   .nav-info {
     display: flex;
@@ -361,7 +450,7 @@
     gap: 8px;
     font-size: 0.95rem;
   }
-  .nav-info .origin-tag, .nav-info .dest-tag {
+  .origin-tag, .dest-tag {
     padding: 4px 12px;
     border-radius: 6px;
     font-weight: 700;
@@ -506,7 +595,6 @@
     width: 100%;
     min-height: 56px;
   }
-  /* Full pill rider */
   .lb-rider {
     position: absolute;
     top: 0;
@@ -517,8 +605,7 @@
     border-radius: 99px;
     font-size: 0.75rem;
     white-space: nowrap;
-    transition: left 0.8s cubic-bezier(0.22, 1, 0.36, 1),
-                top 0.3s ease;
+    transition: left 0.8s cubic-bezier(0.22, 1, 0.36, 1), top 0.3s ease;
     transform: translateX(-50%);
     z-index: 1;
     cursor: default;
@@ -545,21 +632,6 @@
   .lb-arrow.up { color: #b8fce4; animation: arrowBounceUp 0.6s ease-out; }
   .lb-arrow.down { color: #ffb8a8; animation: arrowBounceDown 0.6s ease-out; }
   .lb-arrow.flat { opacity: 0.3; }
-  .lb-step-flash {
-    font-size: 0.65rem;
-    font-weight: 700;
-    color: #b8fce4;
-    opacity: 0;
-    margin-left: 2px;
-  }
-  .lb-step-flash.show {
-    animation: stepFlash 0.8s ease-out forwards;
-  }
-  @keyframes stepFlash {
-    0% { opacity: 1; transform: translateY(0); }
-    70% { opacity: 1; transform: translateY(-4px); }
-    100% { opacity: 0; transform: translateY(-8px); }
-  }
   @keyframes arrowBounceUp {
     0% { transform: translateY(4px); opacity: 0; }
     40% { transform: translateY(-3px); opacity: 1; }
@@ -570,7 +642,6 @@
     40% { transform: translateY(3px); opacity: 1; }
     100% { transform: translateY(0); opacity: 1; }
   }
-  /* Collapsed grouped dot: overlapping colored circles */
   .lb-rider.collapsed {
     padding: 0;
     height: auto;
@@ -596,7 +667,6 @@
     flex-shrink: 0;
   }
   .lb-stack-circle:first-child { margin-left: 0; }
-  /* Tooltip for collapsed dots */
   .lb-rider .lb-tip {
     position: absolute;
     bottom: calc(100% + 6px);
@@ -620,20 +690,32 @@
   .lb-tip .tip-name { font-weight: 700; }
   .lb-tip .tip-steps { opacity: 0.8; }
   .lb-tip .tip-dist { font-weight: 800; color: white; }
-  .lb-tip .tip-dist.dist-c0 { color: #fdcb6e; }
-  .lb-tip .tip-dist.dist-c2 { color: #e17055; }
-  .lb-tip .tip-dist.dist-c3 { color: #a29bfe; }
-  .lb-tip .tip-dist.dist-cfar { color: #74b9ff; }
-  .lb-tip .tip-arrow { font-size: 0.6rem; font-weight: 800; }
-  .lb-tip .tip-arrow.up { color: #b8fce4; }
-  .lb-tip .tip-arrow.down { color: #ffb8a8; }
-  .lb-tip .tip-arrow.flat { opacity: 0.3; }
   .lb-rider.pulse { animation: dotPulse 0.6s ease-out; }
   @keyframes dotPulse {
     0% { transform: translateX(-50%) scale(1); }
     30% { transform: translateX(-50%) scale(1.3); }
     100% { transform: translateX(-50%) scale(1); }
   }
+
+  /* ─── Checkpoint toast ─── */
+  .checkpoint-toast {
+    position: fixed;
+    top: 80px;
+    left: 50%;
+    transform: translateX(-50%) translateY(-20px);
+    background: var(--green);
+    color: white;
+    padding: 12px 28px;
+    border-radius: var(--radius);
+    font-weight: 700;
+    font-size: 1.1rem;
+    z-index: 200;
+    opacity: 0;
+    transition: opacity 0.3s, transform 0.3s;
+    pointer-events: none;
+    box-shadow: 0 4px 20px rgba(0,184,148,0.4);
+  }
+  .checkpoint-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
   /* ─── Results Screen ─── */
   #results {
@@ -686,7 +768,7 @@
     text-transform: uppercase;
   }
   .badge-winner { background: var(--gold); color: #333; }
-  .badge-dnf { background: var(--surface2); color: var(--text2); }
+  .badge-abandoned { background: var(--surface2); color: var(--text2); }
   .result-stats {
     display: flex;
     gap: 20px;
@@ -716,7 +798,6 @@
   .path-node.end { background: var(--green); color: white; }
   .path-arrow { color: var(--text2); font-size: 0.7rem; opacity: 0; transition: opacity 0.2s; }
   .path-arrow.visible { opacity: 1; }
-  /* Winner announcement animation */
   .winner-banner { opacity: 0; transform: scale(0.8); transition: opacity 0.6s, transform 0.6s; }
   .winner-banner.visible { opacity: 1; transform: scale(1); }
   .result-card { opacity: 0; transform: translateY(20px); transition: opacity 0.4s, transform 0.4s; }
@@ -724,16 +805,9 @@
   .result-actions {
     display: flex;
     gap: 12px;
-    margin-top: 8px;
+    margin-top: 24px;
   }
-  .btn-small {
-    padding: 10px 24px;
-    border: none;
-    border-radius: var(--radius);
-    font-size: 0.9rem;
-    font-weight: 700;
-    cursor: pointer;
-  }
+  .result-actions .btn { padding: 12px 32px; }
 
   /* Responsive */
   @media (max-width: 600px) {
@@ -741,7 +815,6 @@
     .room-code-display { font-size: 2rem; letter-spacing: 4px; }
     .game-header { padding: 8px 12px; }
     .wiki-content { padding: 16px; }
-    .players-sidebar { bottom: 8px; right: 8px; left: 8px; min-width: auto; }
   }
 </style>
 </head>
@@ -750,68 +823,148 @@
 <!-- ─── Home Screen ─── -->
 <div id="home" class="screen active">
   <div class="logo">WikiSpeedrun</div>
-  <p class="logo-sub">Race your friends through Wikipedia. Click links to navigate from one article to another. First to reach the destination wins!</p>
-  <div class="home-form">
-    <input type="text" id="playerName" placeholder="Your name" maxlength="20" />
-    <button class="btn btn-primary" onclick="createRoom()" style="width:100%">Create Room</button>
-    <div class="divider">or join a friend</div>
-    <div class="join-section">
-      <input type="text" id="roomCodeInput" placeholder="ROOM CODE" maxlength="5" />
-      <button class="btn btn-secondary" onclick="joinRoom()">Join</button>
+  <p class="logo-sub">Race through Wikipedia. Click links to navigate from one article to another. First to reach the destination wins!</p>
+  <div class="home-buttons">
+    <button class="btn btn-primary" onclick="showScreen('sp-setup')">Single Player</button>
+    <button class="btn btn-primary" onclick="showScreen('mp-setup')">Multiplayer</button>
+  </div>
+</div>
+
+<!-- ─── Single Player Setup Screen ─── -->
+<div id="sp-setup" class="screen">
+  <button class="back-btn" onclick="showScreen('home')">← Back</button>
+  <h1 class="setup-title">Single Player</h1>
+  <div class="setup-form">
+    <div class="form-group">
+      <label class="form-label">Mode</label>
+      <div class="mode-selector">
+        <div class="mode-btn active" id="spModeClassic" onclick="setSinglePlayerMode('classic')">
+          <span class="mode-label">Classic</span>
+          <span class="mode-desc">A → B</span>
+        </div>
+        <div class="mode-btn" id="spModeTri" onclick="setSinglePlayerMode('tri')">
+          <span class="mode-label">Tri Speedrun</span>
+          <span class="mode-desc">Visit all 3</span>
+        </div>
+      </div>
     </div>
-    <div class="error-msg" id="homeError"></div>
+    <div class="form-group">
+      <div class="diff-section">
+        <div class="diff-label">
+          <span class="diff-label-title">Difficulty</span>
+          <span id="spDiffDesc" style="font-size:0.75rem;opacity:0.7;">all articles</span>
+        </div>
+        <div class="diff-range-wrap">
+          <div class="diff-track"></div>
+          <div class="diff-fill" id="spDiffFill"></div>
+          <input type="range" id="spDiffMin" min="0" max="100" value="0" oninput="updateSinglePlayerDiffSlider()" />
+          <input type="range" id="spDiffMax" min="0" max="100" value="100" oninput="updateSinglePlayerDiffSlider()" />
+        </div>
+        <div class="diff-ends">
+          <span class="diff-end-tf">tf</span>
+          <span class="diff-end-ez">ez</span>
+        </div>
+      </div>
+    </div>
+    <button class="btn btn-primary" onclick="startSinglePlayer()" style="width:100%;">Start Game</button>
+  </div>
+</div>
+
+<!-- ─── Multiplayer Setup Screen ─── -->
+<div id="mp-setup" class="screen">
+  <button class="back-btn" onclick="showScreen('home')">← Back</button>
+  <h1 class="setup-title">Multiplayer</h1>
+  <div class="setup-form">
+    <div class="form-group">
+      <label class="form-label">Your Name</label>
+      <input type="text" id="mpName" placeholder="Enter your name" maxlength="20" />
+    </div>
+    <button class="btn btn-primary" onclick="createMultiplayerRoom()" style="width:100%;">Create Room</button>
+    <div class="divider">or</div>
+    <div class="form-group">
+      <label class="form-label">Room Code</label>
+      <div class="btn-row">
+        <input type="text" id="mpRoomCode" placeholder="CODE" class="room-code-input" maxlength="5" />
+        <button class="btn btn-secondary" onclick="joinMultiplayerRoom()">Join</button>
+      </div>
+    </div>
+    <div class="error-msg" id="mpError"></div>
   </div>
 </div>
 
 <!-- ─── Lobby Screen ─── -->
 <div id="lobby" class="screen">
+  <button class="back-btn" onclick="backToMultiplayerSetup()">← Back</button>
   <div class="logo" style="font-size:2rem;">WikiSpeedrun</div>
   <p style="color:var(--text2)">Share this room code with friends:</p>
   <div class="room-code-display" id="roomCodeDisplay" onclick="copyCode()">
     <span id="codeText"></span>
     <span class="copy-hint">click to copy</span>
   </div>
-  <div class="mode-selector" id="modeSelector">
-    <div class="mode-btn active" id="modeClassic" onclick="setMode('classic')">
-      <span class="mode-label">Classic</span>
-      <span class="mode-desc">A &rarr; B</span>
-    </div>
-    <div class="mode-btn" id="modeTri" onclick="setMode('tri')">
-      <span class="mode-label">Tri Speedrun</span>
-      <span class="mode-desc">Visit all 3</span>
-    </div>
-  </div>
-  <div class="diff-section" id="diffSection">
-    <div class="diff-label">
-      <span class="diff-label-title">Difficulty</span>
-      <span id="diffDesc" style="font-size:0.75rem;opacity:0.7;">all articles</span>
-    </div>
-    <div class="diff-range-wrap">
-      <div class="diff-track"></div>
-      <div class="diff-fill" id="diffFill"></div>
-      <input type="range" id="diffMin" min="0" max="100" value="0" oninput="updateDiffSlider()" />
-      <input type="range" id="diffMax" min="0" max="100" value="100" oninput="updateDiffSlider()" />
-    </div>
-    <div class="diff-ends">
-      <span class="diff-end-tf">tf</span>
-      <span class="diff-end-ez">ez</span>
+  <div class="form-group">
+    <label class="form-label">Mode (Host Only)</label>
+    <div class="mode-selector" id="mpModeSelector">
+      <div class="mode-btn active" id="mpModeClassic" onclick="setMultiplayerMode('classic')">
+        <span class="mode-label">Classic</span>
+        <span class="mode-desc">A → B</span>
+      </div>
+      <div class="mode-btn" id="mpModeTri" onclick="setMultiplayerMode('tri')">
+        <span class="mode-label">Tri Speedrun</span>
+        <span class="mode-desc">Visit all 3</span>
+      </div>
     </div>
   </div>
-  <ul class="player-list" id="playerList"></ul>
-  <p class="waiting-text" id="waitingText">Waiting for players...</p>
-  <button class="btn btn-primary" id="startBtn" onclick="startGame()" style="display:none;padding:14px 48px;flex:none;width:auto;">Start Game</button>
+  <div class="form-group">
+    <label class="form-label">Difficulty (Host Only)</label>
+    <div class="diff-section" id="mpDiffSection">
+      <div class="diff-label">
+        <span class="diff-label-title">Difficulty</span>
+        <span id="mpDiffDesc" style="font-size:0.75rem;opacity:0.7;">all articles</span>
+      </div>
+      <div class="diff-range-wrap">
+        <div class="diff-track"></div>
+        <div class="diff-fill" id="mpDiffFill"></div>
+        <input type="range" id="mpDiffMin" min="0" max="100" value="0" oninput="updateMultiplayerDiffSlider()" />
+        <input type="range" id="mpDiffMax" min="0" max="100" value="100" oninput="updateMultiplayerDiffSlider()" />
+      </div>
+      <div class="diff-ends">
+        <span class="diff-end-tf">tf</span>
+        <span class="diff-end-ez">ez</span>
+      </div>
+    </div>
+  </div>
+  <div class="word-section" id="wordSection" style="display:none;">
+    <div class="word-section-title">Words</div>
+    <div class="word-toggle">
+      <button class="toggle-btn active" onclick="setWordMode('auto')">Auto-generate</button>
+      <button class="toggle-btn" onclick="setWordMode('manual')">Manual Input</button>
+    </div>
+    <div id="manualInputSection" class="manual-input"></div>
+  </div>
+  <div style="text-align:center;">
+    <p style="color:var(--text2);margin-bottom:12px;">Players:</p>
+    <ul class="player-list" id="playerList"></ul>
+    <p class="waiting-text" id="waitingText">Waiting for players...</p>
+  </div>
+  <button class="btn btn-primary" id="mpStartBtn" onclick="startMultiplayerGame()" style="display:none;">Start Game</button>
 </div>
 
 <!-- ─── Game Screen ─── -->
 <div id="game" class="screen">
   <div class="checkpoint-toast" id="checkpointToast"></div>
   <div class="game-header">
-    <div class="nav-info" id="classicNav">
-      <span class="origin-tag" id="gameOrigin"></span>
-      <span class="arrow">&rarr;</span>
-      <span class="dest-tag" id="gameDest"></span>
+    <div class="game-header-left">
+      <div class="nav-info" id="classicNav">
+        <span class="origin-tag" id="gameOrigin"></span>
+        <span class="arrow">→</span>
+        <span class="dest-tag" id="gameDest"></span>
+      </div>
+      <div id="triNav" style="display:none;"></div>
+      <div style="display:flex;flex-direction:column;">
+        <button class="give-up-btn" onclick="sendGiveUpVote()">Give Up</button>
+        <div class="give-up-status" id="giveUpStatus"></div>
+      </div>
     </div>
-    <div class="tri-targets" id="triNav" style="display:none;"></div>
     <div class="game-stats">
       <span>Steps: <span class="stat-val" id="stepCount">0</span></span>
       <span>Time: <span class="stat-val" id="timerDisplay">0:00</span></span>
@@ -847,28 +1000,45 @@
   </div>
   <div class="results-grid" id="resultsGrid"></div>
   <div class="result-actions">
-    <button class="btn-small btn-primary" id="playAgainBtn" onclick="playAgain()" style="display:none;">Play Again</button>
-    <button class="btn-small btn-secondary" onclick="backToHome()">Leave</button>
+    <button class="btn btn-primary btn-small" id="playAgainBtn" onclick="playAgain()" style="display:none;">Play Again</button>
+    <button class="btn btn-secondary btn-small" onclick="backToHome()">Back to Home</button>
   </div>
 </div>
 
 <script>
-// ─── State ───
+// ─── Global State ───
 let eventSource = null;
 let myPlayerId = null;
 let currentRoomCode = null;
 let isHost = false;
+let currentGameMode = 'classic';
+let currentGameDifficulty = null; // [minViews, maxViews] or null
+let isSinglePlayer = false;
 let currentArticle = '';
 let myPath = [];
 let gameOrigin = '';
 let gameDestination = '';
-let timerInterval = null;
 let gameStartTime = 0;
+let timerInterval = null;
 let playerProgress = new Map();
-let playerColors = new Map(); // pid -> color hex
-let currentMode = 'classic';
+let playerColors = new Map();
 let triTargets = [];
 let myVisited = [];
+let latestDistData = null;
+let prevPositions = new Map();
+let resultsAnimationTimeouts = [];
+
+// Single player difficulty state
+let spDifficulty = null;
+
+// Multiplayer state
+let mpIsHost = false;
+let mpCurrentMode = 'classic';
+let mpCurrentDifficulty = null;
+let mpWordMode = 'auto'; // 'auto' or 'manual'
+
+const DIFF_VIEW_MIN = 50;
+const DIFF_VIEW_MAX = 1000000;
 
 // ─── Screen Management ───
 function showScreen(id) {
@@ -879,11 +1049,8 @@ function showScreen(id) {
 // ─── SSE Connection ───
 function connectSSE() {
   return new Promise((resolve, reject) => {
-    if (eventSource) {
-      eventSource.close();
-    }
+    if (eventSource) eventSource.close();
     const url = myPlayerId ? `/events?playerId=${myPlayerId}` : '/events';
-    console.log('[SSE] Connecting to', url);
     eventSource = new EventSource(url);
 
     eventSource.onopen = () => {
@@ -891,12 +1058,10 @@ function connectSSE() {
     };
 
     eventSource.onmessage = (e) => {
-      console.log('[SSE] Message:', e.data.slice(0, 120));
       try {
         const msg = JSON.parse(e.data);
         if (msg.type === 'connected') {
           myPlayerId = msg.playerId;
-          console.log('[SSE] Player ID:', myPlayerId);
           resolve();
           return;
         }
@@ -909,7 +1074,7 @@ function connectSSE() {
     eventSource.onerror = (e) => {
       console.error('[SSE] Error:', e);
       if (eventSource.readyState === EventSource.CLOSED) {
-        showError('Connection lost. Please refresh.');
+        showError('mpError', 'Connection lost. Please refresh.');
       }
       reject(new Error('SSE connection failed'));
     };
@@ -928,42 +1093,233 @@ async function send(msg) {
     });
     const result = await resp.json();
     if (!result.ok && result.error) {
-      showError(result.error);
+      showError('mpError', result.error);
     }
     return result;
   } catch(e) {
     console.error('[HTTP] Send error:', e);
-    showError('Failed to send action. Is the server running?');
+    showError('mpError', 'Failed to send action. Is the server running?');
   }
 }
 
-// ─── Home Actions ───
-async function createRoom() {
-  const name = document.getElementById('playerName').value.trim() || 'Player';
+// ─── Single Player ───
+function setSinglePlayerMode(mode) {
+  currentGameMode = mode;
+  document.getElementById('spModeClassic').classList.toggle('active', mode === 'classic');
+  document.getElementById('spModeTri').classList.toggle('active', mode === 'tri');
+}
+
+function updateSinglePlayerDiffSlider() {
+  const minEl = document.getElementById('spDiffMin');
+  const maxEl = document.getElementById('spDiffMax');
+  let lo = parseInt(minEl.value);
+  let hi = parseInt(maxEl.value);
+
+  if (lo > hi) { const tmp = lo; lo = hi; hi = tmp; }
+  if (hi - lo < 15) {
+    hi = Math.min(100, lo + 15);
+    if (hi - lo < 15) lo = Math.max(0, hi - 15);
+    minEl.value = lo;
+    maxEl.value = hi;
+  }
+
+  const fill = document.getElementById('spDiffFill');
+  fill.style.left = lo + '%';
+  fill.style.width = (hi - lo) + '%';
+  document.getElementById('spDiffDesc').textContent = getDiffDescription(lo, hi);
+
+  if (lo === 0 && hi === 100) {
+    spDifficulty = null;
+  } else {
+    spDifficulty = [sliderToViews(lo), sliderToViews(hi)];
+  }
+}
+
+async function startSinglePlayer() {
   try {
     await connectSSE();
-    await send({ type: 'create_room', name });
+    isSinglePlayer = true;
+    const result = await send({
+      type: 'start_single',
+      name: 'Single Player',
+      mode: currentGameMode,
+      viewRange: spDifficulty,
+    });
+    if (result.ok) {
+      currentRoomCode = result.code;
+      isHost = true;
+    }
   } catch(e) {
-    showError('Could not connect to server. Is it running?');
+    showError('mpError', 'Could not connect to server.');
   }
 }
 
-async function joinRoom() {
-  const name = document.getElementById('playerName').value.trim() || 'Player';
-  const code = document.getElementById('roomCodeInput').value.trim();
-  if (!code) { showError('Enter a room code'); return; }
+// ─── Multiplayer ───
+function setMultiplayerMode(mode) {
+  if (!isHost) return;
+  mpCurrentMode = mode;
+  document.getElementById('mpModeClassic').classList.toggle('active', mode === 'classic');
+  document.getElementById('mpModeTri').classList.toggle('active', mode === 'tri');
+  send({ type: 'set_mode', mode });
+}
+
+function updateMultiplayerDiffSlider() {
+  const minEl = document.getElementById('mpDiffMin');
+  const maxEl = document.getElementById('mpDiffMax');
+  let lo = parseInt(minEl.value);
+  let hi = parseInt(maxEl.value);
+
+  if (lo > hi) { const tmp = lo; lo = hi; hi = tmp; }
+  if (hi - lo < 15) {
+    hi = Math.min(100, lo + 15);
+    if (hi - lo < 15) lo = Math.max(0, hi - 15);
+    minEl.value = lo;
+    maxEl.value = hi;
+  }
+
+  const fill = document.getElementById('mpDiffFill');
+  fill.style.left = lo + '%';
+  fill.style.width = (hi - lo) + '%';
+  document.getElementById('mpDiffDesc').textContent = getDiffDescription(lo, hi);
+
+  if (!isHost) return;
+  clearTimeout(window.mpDiffDebounce);
+  window.mpDiffDebounce = setTimeout(() => {
+    if (lo === 0 && hi === 100) {
+      send({ type: 'set_difficulty', viewRange: null });
+    } else {
+      send({ type: 'set_difficulty', viewRange: [sliderToViews(lo), sliderToViews(hi)] });
+    }
+  }, 300);
+}
+
+function setWordMode(mode) {
+  mpWordMode = mode;
+  const btn1 = document.querySelectorAll('.word-toggle .toggle-btn')[0];
+  const btn2 = document.querySelectorAll('.word-toggle .toggle-btn')[1];
+  if (mode === 'auto') {
+    btn1.classList.add('active');
+    btn2.classList.remove('active');
+    document.getElementById('manualInputSection').classList.remove('show');
+  } else {
+    btn1.classList.remove('active');
+    btn2.classList.add('active');
+    document.getElementById('manualInputSection').classList.add('show');
+    renderManualInputSection();
+  }
+}
+
+function renderManualInputSection() {
+  const container = document.getElementById('manualInputSection');
+  if (mpCurrentMode === 'classic') {
+    container.innerHTML = `
+      <div style="position:relative;">
+        <input type="text" id="manualOrigin" placeholder="From (e.g., Pizza)" style="margin-bottom:8px;" />
+        <ul class="autocomplete-list" id="autocompleteOrigin"></ul>
+      </div>
+      <div style="position:relative;">
+        <input type="text" id="manualDest" placeholder="To (e.g., Moon)" />
+        <ul class="autocomplete-list" id="autocompleteDest"></ul>
+      </div>
+    `;
+    document.getElementById('manualOrigin')?.addEventListener('input', (e) => fetchAutocomplete(e.target.value, 'autocompleteOrigin'));
+    document.getElementById('manualDest')?.addEventListener('input', (e) => fetchAutocomplete(e.target.value, 'autocompleteDest'));
+  } else {
+    container.innerHTML = `
+      <div style="position:relative;">
+        <input type="text" id="manualTarget1" placeholder="Target 1" style="margin-bottom:8px;" />
+        <ul class="autocomplete-list" id="autocompleteTarget1"></ul>
+      </div>
+      <div style="position:relative;">
+        <input type="text" id="manualTarget2" placeholder="Target 2" style="margin-bottom:8px;" />
+        <ul class="autocomplete-list" id="autocompleteTarget2"></ul>
+      </div>
+      <div style="position:relative;">
+        <input type="text" id="manualTarget3" placeholder="Target 3" />
+        <ul class="autocomplete-list" id="autocompleteTarget3"></ul>
+      </div>
+    `;
+    document.getElementById('manualTarget1')?.addEventListener('input', (e) => fetchAutocomplete(e.target.value, 'autocompleteTarget1'));
+    document.getElementById('manualTarget2')?.addEventListener('input', (e) => fetchAutocomplete(e.target.value, 'autocompleteTarget2'));
+    document.getElementById('manualTarget3')?.addEventListener('input', (e) => fetchAutocomplete(e.target.value, 'autocompleteTarget3'));
+  }
+}
+
+async function fetchAutocomplete(query, listId) {
+  if (query.length < 2) {
+    document.getElementById(listId).classList.remove('show');
+    return;
+  }
+  try {
+    const resp = await fetch(`https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(query)}&limit=5&namespace=0&origin=*`);
+    const [, titles] = await resp.json();
+    const list = document.getElementById(listId);
+    list.innerHTML = titles.map(t => `<div class="autocomplete-item" onclick="selectArticle('${listId}', '${t}')">${esc(t)}</div>`).join('');
+    list.classList.add('show');
+  } catch(e) {
+    console.error('Autocomplete error:', e);
+  }
+}
+
+function selectArticle(listId, title) {
+  const fieldId = listId.replace('autocomplete', 'manual');
+  document.getElementById(fieldId).value = title;
+  document.getElementById(listId).classList.remove('show');
+  if (isHost && mpWordMode === 'manual') {
+    sendManualArticles();
+  }
+}
+
+function sendManualArticles() {
+  if (mpCurrentMode === 'classic') {
+    const origin = document.getElementById('manualOrigin')?.value;
+    const dest = document.getElementById('manualDest')?.value;
+    if (origin && dest) {
+      send({ type: 'set_articles', origin, destination: dest });
+    }
+  } else {
+    const t1 = document.getElementById('manualTarget1')?.value;
+    const t2 = document.getElementById('manualTarget2')?.value;
+    const t3 = document.getElementById('manualTarget3')?.value;
+    if (t1 && t2 && t3) {
+      send({ type: 'set_articles', targets: [t1, t2, t3] });
+    }
+  }
+}
+
+async function createMultiplayerRoom() {
+  const name = document.getElementById('mpName').value.trim() || 'Player';
+  try {
+    await connectSSE();
+    mpIsHost = true;
+    isHost = true;
+    await send({ type: 'create_room', name });
+  } catch(e) {
+    showError('mpError', 'Could not connect to server.');
+  }
+}
+
+async function joinMultiplayerRoom() {
+  const name = document.getElementById('mpName').value.trim() || 'Player';
+  const code = document.getElementById('mpRoomCode').value.trim();
+  if (!code) {
+    showError('mpError', 'Enter a room code');
+    return;
+  }
   try {
     await connectSSE();
     await send({ type: 'join_room', code, name });
   } catch(e) {
-    showError('Could not connect to server. Is it running?');
+    showError('mpError', 'Could not connect to server.');
   }
 }
 
-function showError(msg) {
-  const el = document.getElementById('homeError');
-  el.textContent = msg;
-  setTimeout(() => el.textContent = '', 4000);
+function backToMultiplayerSetup() {
+  eventSource?.close();
+  eventSource = null;
+  currentRoomCode = null;
+  isHost = false;
+  showScreen('mp-setup');
 }
 
 function copyCode() {
@@ -973,74 +1329,119 @@ function copyCode() {
   setTimeout(() => hint.textContent = 'click to copy', 1500);
 }
 
+function startMultiplayerGame() {
+  send({ type: 'start_game' });
+}
+
+// ─── Game ───
+function sendGiveUpVote() {
+  send({ type: 'give_up_vote' });
+}
+
+// ─── Helpers ───
+function sliderToViews(val) {
+  const t = val / 100;
+  return Math.round(DIFF_VIEW_MIN * Math.pow(DIFF_VIEW_MAX / DIFF_VIEW_MIN, t));
+}
+
+function getDiffDescription(minVal, maxVal) {
+  if (minVal === 0 && maxVal === 100) return 'all articles';
+  const minV = sliderToViews(minVal);
+  const maxV = sliderToViews(maxVal);
+  function fmt(n) {
+    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+    if (n >= 1000) return (n / 1000).toFixed(0) + 'K';
+    return String(n);
+  }
+  return fmt(minV) + ' – ' + fmt(maxV) + ' views/mo';
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function showError(elementId, msg) {
+  const el = document.getElementById(elementId);
+  if (el) {
+    el.textContent = msg;
+    setTimeout(() => el.textContent = '', 4000);
+  }
+}
+
 // ─── Server Message Handler ───
 function handleServerMessage(msg) {
   switch (msg.type) {
     case 'room_created':
       currentRoomCode = msg.code;
       isHost = true;
+      mpIsHost = true;
+      isSinglePlayer = msg.singlePlayer || false;
       document.getElementById('codeText').textContent = msg.code;
-      showScreen('lobby');
+      if (isSinglePlayer) {
+        // Single player: start immediately
+      } else {
+        document.getElementById('mpModeSelector').style.opacity = '1';
+        document.getElementById('mpModeSelector').style.pointerEvents = 'auto';
+        document.getElementById('mpDiffSection').style.opacity = '1';
+        document.getElementById('mpDiffSection').style.pointerEvents = 'auto';
+        document.getElementById('wordSection').style.display = 'flex';
+        showScreen('lobby');
+      }
       break;
 
     case 'room_joined':
       currentRoomCode = msg.code;
+      isHost = false;
+      mpIsHost = false;
       document.getElementById('codeText').textContent = msg.code;
+      document.getElementById('mpModeSelector').style.opacity = '0.5';
+      document.getElementById('mpModeSelector').style.pointerEvents = 'none';
+      document.getElementById('mpDiffSection').style.opacity = '0.5';
+      document.getElementById('mpDiffSection').style.pointerEvents = 'none';
+      document.getElementById('wordSection').style.display = 'flex';
       showScreen('lobby');
       break;
 
     case 'player_list':
-      for (const p of msg.players) {
-        if (p.color) playerColors.set(p.id, p.color);
-      }
       renderPlayerList(msg.players, msg.host);
-      isHost = msg.host === myPlayerId;
-      break;
-
-    case 'error':
-      showError(msg.message);
       break;
 
     case 'mode_changed':
-      currentMode = msg.mode;
-      document.getElementById('modeClassic').classList.toggle('active', msg.mode === 'classic');
-      document.getElementById('modeTri').classList.toggle('active', msg.mode === 'tri');
+      mpCurrentMode = msg.mode;
+      currentGameMode = msg.mode;
+      document.getElementById('mpModeClassic').classList.toggle('active', msg.mode === 'classic');
+      document.getElementById('mpModeTri').classList.toggle('active', msg.mode === 'tri');
       break;
 
     case 'difficulty_changed':
-      // Non-host receives difficulty update — sync slider visually
       if (!isHost && msg.viewRange) {
-        // Reverse map views to slider value for display
         function viewsToSlider(v) {
           if (v <= DIFF_VIEW_MIN) return 0;
           if (v >= DIFF_VIEW_MAX) return 100;
           return Math.round(100 * Math.log(v / DIFF_VIEW_MIN) / Math.log(DIFF_VIEW_MAX / DIFF_VIEW_MIN));
         }
-        document.getElementById('diffMin').value = viewsToSlider(msg.viewRange[0]);
-        document.getElementById('diffMax').value = viewsToSlider(msg.viewRange[1]);
-        updateDiffSlider();
+        document.getElementById('mpDiffMin').value = viewsToSlider(msg.viewRange[0]);
+        document.getElementById('mpDiffMax').value = viewsToSlider(msg.viewRange[1]);
+        updateMultiplayerDiffSlider();
       } else if (!isHost && !msg.viewRange) {
-        document.getElementById('diffMin').value = 0;
-        document.getElementById('diffMax').value = 100;
-        updateDiffSlider();
+        document.getElementById('mpDiffMin').value = 0;
+        document.getElementById('mpDiffMax').value = 100;
+        updateMultiplayerDiffSlider();
       }
       break;
 
     case 'game_start':
-      if (msg.mode === 'tri') {
-        startTriGameUI(msg.origin, msg.targets);
-      } else {
-        startGameUI(msg.origin, msg.destination);
-      }
+      startGameUI(msg);
       break;
 
     case 'player_progress':
-      if (msg.color) playerColors.set(msg.playerId, msg.color);
       playerProgress.set(msg.playerId, {
-        name: msg.name, steps: msg.steps,
-        currentArticle: msg.currentArticle,
+        name: msg.name, steps: msg.steps, currentArticle: msg.currentArticle,
         visited: msg.visited || 0, mode: msg.mode || 'classic',
       });
+      if (msg.color) playerColors.set(msg.playerId, msg.color);
       renderProgress(msg.playerId);
       break;
 
@@ -1058,16 +1459,23 @@ function handleServerMessage(msg) {
       showCheckpointToast(msg.article, msg.remaining);
       break;
 
+    case 'give_up_update':
+      document.getElementById('giveUpStatus').textContent = `${msg.voted}/${msg.total} voted`;
+      break;
+
     case 'game_over':
       showResults(msg);
       break;
 
-    case 'player_left':
+    case 'returned_to_lobby':
+      if (!isSinglePlayer) {
+        playerProgress.clear();
+        showScreen('lobby');
+      }
       break;
   }
 }
 
-// ─── Lobby ───
 function renderPlayerList(players, hostId) {
   const ul = document.getElementById('playerList');
   ul.innerHTML = players.map(p => {
@@ -1075,602 +1483,156 @@ function renderPlayerList(players, hostId) {
     return `<li class="${p.id === hostId ? 'host' : ''}" style="background:${color}">${esc(p.name)}</li>`;
   }).join('');
   document.getElementById('waitingText').style.display = players.length < 2 ? '' : 'none';
-  document.getElementById('startBtn').style.display = isHost && players.length >= 2 ? '' : 'none';
-  // Only host can change mode and difficulty
-  const modeSelector = document.getElementById('modeSelector');
-  modeSelector.style.opacity = isHost ? '1' : '0.5';
-  modeSelector.style.pointerEvents = isHost ? 'auto' : 'none';
-  const diffSection = document.getElementById('diffSection');
-  diffSection.style.opacity = isHost ? '1' : '0.5';
-  diffSection.style.pointerEvents = isHost ? 'auto' : 'none';
-  initDiffSlider();
+  document.getElementById('mpStartBtn').style.display = isHost && players.length >= 2 ? '' : 'none';
 }
 
-function startGame() { send({ type: 'start_game' }); }
-
-function setMode(mode) {
-  if (!isHost) return;
-  currentMode = mode;
-  document.getElementById('modeClassic').classList.toggle('active', mode === 'classic');
-  document.getElementById('modeTri').classList.toggle('active', mode === 'tri');
-  send({ type: 'set_mode', mode });
-}
-
-// ─── Difficulty slider ───
-// Slider 0-100 maps to page views.
-// 0 = tf (obscure, <100 views/month) → 100 = ez (famous, >500K views/month)
-// We use an exponential scale so the slider feels natural.
-const DIFF_VIEW_MIN = 50;       // monthly views at slider=0
-const DIFF_VIEW_MAX = 1000000;  // monthly views at slider=100
-
-function sliderToViews(val) {
-  // Exponential: 0→DIFF_VIEW_MIN, 100→DIFF_VIEW_MAX
-  const t = val / 100;
-  return Math.round(DIFF_VIEW_MIN * Math.pow(DIFF_VIEW_MAX / DIFF_VIEW_MIN, t));
-}
-
-function getDiffDescription(minVal, maxVal) {
-  if (minVal === 0 && maxVal === 100) return 'all articles';
-  const minV = sliderToViews(minVal);
-  const maxV = sliderToViews(maxVal);
-  function fmt(n) {
-    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
-    if (n >= 1000) return (n / 1000).toFixed(0) + 'K';
-    return String(n);
-  }
-  return fmt(minV) + ' – ' + fmt(maxV) + ' views/mo';
-}
-
-let diffDebounce = null;
-function updateDiffSlider() {
-  const minEl = document.getElementById('diffMin');
-  const maxEl = document.getElementById('diffMax');
-  let lo = parseInt(minEl.value);
-  let hi = parseInt(maxEl.value);
-
-  // Enforce minimum gap of 15 so range isn't too narrow
-  if (lo > hi) { const tmp = lo; lo = hi; hi = tmp; }
-  if (hi - lo < 15) {
-    hi = Math.min(100, lo + 15);
-    if (hi - lo < 15) lo = Math.max(0, hi - 15);
-    minEl.value = lo;
-    maxEl.value = hi;
-  }
-
-  // Update fill bar position
-  const fill = document.getElementById('diffFill');
-  fill.style.left = lo + '%';
-  fill.style.width = (hi - lo) + '%';
-
-  // Update description
-  document.getElementById('diffDesc').textContent = getDiffDescription(lo, hi);
-
-  // Debounce sending to server
-  clearTimeout(diffDebounce);
-  diffDebounce = setTimeout(() => {
-    if (!isHost) return;
-    const minViews = sliderToViews(lo);
-    const maxViews = sliderToViews(hi);
-    // If full range, send null (no filtering)
-    if (lo === 0 && hi === 100) {
-      send({ type: 'set_difficulty', viewRange: null });
-    } else {
-      send({ type: 'set_difficulty', viewRange: [minViews, maxViews] });
-    }
-  }, 300);
-}
-
-// Initialize slider fill on load
-function initDiffSlider() {
-  const fill = document.getElementById('diffFill');
-  fill.style.left = '0%';
-  fill.style.width = '100%';
-}
-
-// ─── Game ───
-function startGameUI(origin, destination) {
-  currentMode = 'classic';
-  gameOrigin = origin;
-  gameDestination = destination;
-  triTargets = [];
-  myVisited = [];
-  myPath = [origin];
-  currentArticle = origin;
-  playerProgress.clear();
+function startGameUI(msg) {
+  currentGameMode = msg.mode;
   gameStartTime = Date.now();
-
-  document.getElementById('classicNav').style.display = '';
-  document.getElementById('triNav').style.display = 'none';
-  document.getElementById('gameOrigin').textContent = origin.replace(/_/g, ' ');
-  document.getElementById('gameDest').textContent = destination.replace(/_/g, ' ');
+  myPath = [msg.origin || msg.targets[0]];
+  currentArticle = msg.origin || msg.targets[0];
+  playerProgress.clear();
   document.getElementById('stepCount').textContent = '0';
 
+  if (msg.mode === 'classic') {
+    gameOrigin = msg.origin;
+    gameDestination = msg.destination;
+    triTargets = [];
+    myVisited = [];
+    document.getElementById('classicNav').style.display = '';
+    document.getElementById('triNav').style.display = 'none';
+    document.getElementById('gameOrigin').textContent = gameOrigin.replace(/_/g, ' ');
+    document.getElementById('gameDest').textContent = gameDestination.replace(/_/g, ' ');
+  } else {
+    triTargets = msg.targets;
+    myVisited = [msg.origin];
+    document.getElementById('classicNav').style.display = 'none';
+    renderTriTargets();
+  }
+
+  document.getElementById('giveUpStatus').textContent = '';
   latestDistData = null;
   prevPositions.clear();
   document.getElementById('lbRiders').innerHTML = '';
   showScreen('game');
   document.getElementById('playersBar').style.display = 'flex';
-  document.getElementById('wikiContent').style.paddingBottom = '0';
   startTimer();
-  loadArticle(origin);
-}
-
-function startTriGameUI(origin, targets) {
-  currentMode = 'tri';
-  triTargets = targets;
-  myVisited = [origin]; // first target is the starting point
-  gameOrigin = origin;
-  gameDestination = '';
-  myPath = [origin];
-  currentArticle = origin;
-  playerProgress.clear();
-  gameStartTime = Date.now();
-
-  document.getElementById('classicNav').style.display = 'none';
-  document.getElementById('triNav').style.display = 'flex';
-  document.getElementById('stepCount').textContent = '0';
-
-  latestDistData = null;
-  renderTriTargets();
-  showScreen('game');
-  document.getElementById('playersBar').style.display = 'flex';
-  document.getElementById('wikiContent').style.paddingBottom = '0';
-  startTimer();
-  loadArticle(origin);
+  loadArticle(currentArticle);
 }
 
 function renderTriTargets() {
   const nav = document.getElementById('triNav');
   nav.innerHTML = triTargets.map((t, i) => {
-    const name = t.replace(/_/g, ' ');
-    const isVisited = myVisited.some(v => v.replace(/_/g, ' ').toLowerCase() === t.replace(/_/g, ' ').toLowerCase());
-    const cls = isVisited ? 'target-tag reached' : 'target-tag unreached';
-    const sep = i < triTargets.length - 1 ? '<span class="target-sep">&bull;</span>' : '';
-    return `<span class="${cls}">${esc(name)}${isVisited ? ' ✓' : ''}</span>${sep}`;
-  }).join('');
-}
-
-function showCheckpointToast(article, remaining) {
-  const toast = document.getElementById('checkpointToast');
-  const name = article.replace(/_/g, ' ');
-  toast.textContent = `✓ ${name} reached! ${remaining} left`;
-  toast.classList.add('show');
-  setTimeout(() => toast.classList.remove('show'), 2500);
-}
-
-function distColorClass(d) {
-  if (d === null || d === undefined) return 'dist-cfar';
-  if (d <= 1) return 'dist-c0';
-  if (d <= 2) return 'dist-c2';
-  if (d <= 4) return 'dist-c3';
-  return 'dist-cfar';
-}
-
-// Track previous state for animation
-const prevPositions = new Map(); // pid -> { distance, steps }
-const MAX_DIST = 6;
-const COLLAPSE_THRESHOLD = 3; // collapse to grouped dot when this many overlap
-
-function renderPlayersBar(distData) {
-  const container = document.getElementById('lbRiders');
-
-  // Build entries
-  const entries = [];
-  const allPids = new Set([...playerProgress.keys(), ...(distData ? Object.keys(distData) : [])]);
-
-  for (const pid of allPids) {
-    const prog = playerProgress.get(pid);
-    const dist = distData ? distData[pid] : null;
-    const name = pid === myPlayerId ? 'You' : (prog?.name || dist?.name || '?');
-    const steps = dist?.steps ?? (prog ? prog.steps - 1 : 0);
-    const d = dist?.distance ?? null;
-    const prev = dist?.prev ?? null;
-    const color = playerColors.get(pid) || '#7c6fad';
-    const triInfo = prog?.mode === 'tri' ? ` · ${prog.visited || 0}/3` : '';
-    entries.push({ pid, name, steps, d, prev, color, triInfo });
-  }
-
-  // Calculate left % based on distance
-  entries.forEach(e => {
-    if (e.d !== null && e.d !== undefined) {
-      const clamped = Math.min(e.d, MAX_DIST);
-      e.leftPct = 93 - (clamped / MAX_DIST) * 86;
-    } else {
-      e.leftPct = 7;
-    }
-  });
-
-  // Group entries by proximity on the track
-  const groups = [];
-  const assigned = new Set();
-  for (let i = 0; i < entries.length; i++) {
-    if (assigned.has(i)) continue;
-    const group = [entries[i]];
-    assigned.add(i);
-    for (let j = i + 1; j < entries.length; j++) {
-      if (assigned.has(j)) continue;
-      if (Math.abs(entries[i].leftPct - entries[j].leftPct) < 8) {
-        group.push(entries[j]);
-        assigned.add(j);
-      }
-    }
-    groups.push(group);
-  }
-
-  // Track which pids we've rendered so we can clean up stale elements
-  const renderedIds = new Set();
-
-  for (const group of groups) {
-    if (group.length >= COLLAPSE_THRESHOLD) {
-      // === COLLAPSED GROUP: single dot with multi-player tooltip ===
-      const groupId = 'grp-' + group.map(e => e.pid).sort().join('-');
-      renderedIds.add(groupId);
-
-      // Remove individual riders that are now in this group
-      for (const e of group) {
-        const old = container.querySelector(`[data-pid="${e.pid}"]`);
-        if (old) old.remove();
-      }
-
-      let dot = container.querySelector(`[data-gid="${groupId}"]`);
-      if (!dot) {
-        dot = document.createElement('div');
-        dot.className = 'lb-rider collapsed';
-        dot.setAttribute('data-gid', groupId);
-        container.appendChild(dot);
-      }
-
-      const avgLeft = group.reduce((s, e) => s + e.leftPct, 0) / group.length;
-
-      // Overlapping colored circles
-      const circles = group.map(e =>
-        `<span class="lb-stack-circle" style="background:${e.color}"></span>`
-      ).join('');
-
-      // Combined tooltip rows
-      const tipRows = group.map(e => {
-        let arrow = '';
-        if (e.d !== null && e.prev !== null && e.prev !== undefined && currentMode === 'classic') {
-          if (e.d < e.prev) arrow = '<span class="tip-arrow up">▲</span>';
-          else if (e.d > e.prev) arrow = '<span class="tip-arrow down">▼</span>';
-        }
-        let dHtml = '';
-        if (e.d !== null && e.d !== undefined && currentMode === 'classic') {
-          const dcls = distColorClass(e.d);
-          dHtml = `<span class="tip-dist ${dcls}">${e.d}</span>${arrow}`;
-        }
-        return `<div style="display:flex;align-items:center;gap:6px;">
-          <span style="width:8px;height:8px;border-radius:50%;background:${e.color};flex-shrink:0;"></span>
-          ${dHtml}
-          <span class="tip-name">${esc(e.name)}</span>
-          <span class="tip-steps">${e.steps}</span>
-        </div>`;
-      }).join('');
-
-      dot.innerHTML = `
-        <div class="lb-stack">${circles}</div>
-        <div class="lb-tip" style="background:var(--surface);flex-direction:column;gap:4px;padding:8px 12px;">
-          ${tipRows}
-        </div>
-      `;
-      dot.style.left = avgLeft + '%';
-      dot.style.top = '0px';
-      dot.style.width = 'auto';
-
-    } else {
-      // === NORMAL: full pills, stack if 2 overlap ===
-      // Remove any group dot that contained these players
-      container.querySelectorAll('[data-gid]').forEach(el => {
-        const gid = el.getAttribute('data-gid');
-        if (group.some(e => gid.includes(e.pid))) el.remove();
-      });
-
-      let rowUsed = [];
-      for (const e of group) {
-        renderedIds.add(e.pid);
-        let rider = container.querySelector(`[data-pid="${e.pid}"]`);
-        const isNew = !rider;
-
-        if (isNew) {
-          rider = document.createElement('div');
-          rider.className = 'lb-rider';
-          rider.setAttribute('data-pid', e.pid);
-          if (e.pid === myPlayerId) rider.classList.add('is-me');
-          container.appendChild(rider);
-        }
-        rider.classList.remove('collapsed');
-
-        let arrowHtml = '';
-        if (e.d !== null && e.prev !== null && e.prev !== undefined && currentMode === 'classic') {
-          if (e.d < e.prev) arrowHtml = '<span class="lb-arrow up">▲</span>';
-          else if (e.d > e.prev) arrowHtml = '<span class="lb-arrow down">▼</span>';
-          else arrowHtml = '<span class="lb-arrow flat">=</span>';
-        }
-
-        let distHtml = '';
-        if (e.d !== null && e.d !== undefined && currentMode === 'classic') {
-          const cls = distColorClass(e.d);
-          distHtml = `${arrowHtml}<span class="lb-dist ${cls}">${e.d}</span>`;
-        }
-
-        // Detect step increase for +1 flash
-        const prevData = prevPositions.get(e.pid);
-        const steppedUp = prevData && prevData.steps !== undefined && e.steps > prevData.steps && !isNew;
-        const stepFlash = steppedUp ? '<span class="lb-step-flash show">+</span>' : '<span class="lb-step-flash"></span>';
-
-        rider.style.background = e.color;
-        rider.innerHTML = `
-          ${distHtml}
-          <span class="lb-name">${esc(e.name)}</span>
-          <span class="lb-steps">${e.steps}${e.triInfo}</span>
-          ${stepFlash}
-        `;
-
-        // Stack vertically if overlapping
-        let row = 0;
-        for (const u of rowUsed) {
-          if (Math.abs(u.left - e.leftPct) < 12 && u.row === row) row++;
-        }
-        rider.style.top = (row * 28) + 'px';
-        rider.style.left = e.leftPct + '%';
-        rowUsed.push({ left: e.leftPct, row });
-
-        // Pulse on distance change
-        if (prevData && prevData.distance !== null && e.d !== null && prevData.distance !== e.d && !isNew) {
-          rider.classList.remove('pulse');
-          void rider.offsetWidth;
-          rider.classList.add('pulse');
-        }
-        prevPositions.set(e.pid, { distance: e.d, steps: e.steps });
-      }
-    }
-  }
-
-  // Clean up stale elements
-  container.querySelectorAll('.lb-rider').forEach(el => {
-    const pid = el.getAttribute('data-pid');
-    const gid = el.getAttribute('data-gid');
-    if (pid && !renderedIds.has(pid)) el.remove();
-    if (gid && !renderedIds.has(gid)) el.remove();
-  });
-}
-
-function distBadge(d, prev) {
-  if (d === null || d === undefined) return '';
-  let cls;
-  if (d <= 1) cls = 'pd-hot';
-  else if (d <= 2) cls = 'pd-warm';
-  else if (d <= 4) cls = 'pd-cool';
-  else cls = 'pd-cold';
-  let arrow = '';
-  if (prev !== null && prev !== undefined) {
-    if (d < prev) arrow = '<span class="path-dist-arrow better">▼</span>';
-    else if (d > prev) arrow = '<span class="path-dist-arrow worse">▲</span>';
-  }
-  return `<span class="path-dist ${cls}">${d}${arrow}</span>`;
+    const visited = myVisited.includes(t);
+    const current = i === 0 && myVisited.length === 0 ? ' current' : visited ? ' reached' : ' unreached';
+    return `<span class="target-tag${current}">${t.replace(/_/g, ' ')}</span>`;
+  }).join('<span class="target-sep">→</span>');
 }
 
 function startTimer() {
   clearInterval(timerInterval);
   timerInterval = setInterval(() => {
-    const elapsed = Math.floor((Date.now() - gameStartTime) / 1000);
-    const m = Math.floor(elapsed / 60);
-    const s = (elapsed % 60).toString().padStart(2, '0');
-    document.getElementById('timerDisplay').textContent = `${m}:${s}`;
-  }, 1000);
+    const elapsed = Date.now() - gameStartTime;
+    const s = Math.floor(elapsed / 1000);
+    const m = Math.floor(s / 60);
+    const sec = (s % 60).toString().padStart(2, '0');
+    document.getElementById('timerDisplay').textContent = `${m}:${sec}`;
+  }, 100);
 }
 
-function updateBreadcrumbs() {
-  const bar = document.getElementById('breadcrumbs');
-  bar.innerHTML = myPath.map((p, i) => {
-    const name = p.replace(/_/g, ' ');
-    const arrow = i < myPath.length - 1 ? '<span class="bc-arrow"> \u203A </span>' : '';
-    return `<span>${esc(name)}</span>${arrow}`;
-  }).join('');
-  bar.scrollLeft = bar.scrollWidth;
-  document.getElementById('stepCount').textContent = myPath.length - 1;
-}
-
-let latestDistData = null;
-
-function renderProgress(flashPlayerId) {
-  renderPlayersBar(latestDistData);
-}
-
-// ─── Wikipedia API ───
+// ─── Wikipedia Article Loading ─── (simplified, kept from original)
 async function loadArticle(title) {
-  const container = document.getElementById('wikiContainer');
-  const loading = document.getElementById('wikiLoading');
-  const content = document.getElementById('wikiContent');
-
-  loading.style.display = 'flex';
-  content.style.display = 'none';
-  container.scrollTop = 0;
-
+  document.getElementById('wikiLoading').style.display = 'flex';
+  document.getElementById('wikiContent').innerHTML = '';
   try {
-    const apiUrl = `https://en.wikipedia.org/api/rest_v1/page/html/${encodeURIComponent(title)}`;
-    const resp = await fetch(apiUrl);
-    if (!resp.ok) throw new Error('Article not found');
-    let html = await resp.text();
+    const resp = await fetch(`https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(title)}&prop=extracts&explaintext&format=json&origin=*`);
+    const data = await resp.json();
+    const pages = data.query?.pages || {};
+    const page = Object.values(pages)[0] || {};
+    const extract = page.extract || 'Article not found.';
 
-    // Parse and clean the HTML
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, 'text/html');
-
-    // Remove edit links, references, navboxes, sidebars, and other non-content
-    doc.querySelectorAll(
-      '.mw-editsection, .reference, .reflist, .navbox, .sistersitebox, ' +
-      '.metadata, .mw-empty-elt, .noprint, style, .mw-kartographer-container, ' +
-      'sup.reference, .mw-references-wrap, link, meta, .hatnote, ' +
-      '.shortdescription, .mw-indicators, .ambox, .tmbox, .ombox, .cmbox, ' +
-      '.dmbox, .fmbox, .imbox, .portal, .side-box, .authority-control, ' +
-      // Remove sidebar navigation boxes (e.g. "Part of a series on...")
-      '.sidebar, .sidebar-collapse, .sidebar-content, ' +
-      'table.sidebar, div.sidebar, ' +
-      // Remove vertical/horizontal navboxes and series boxes
-      '.vcard, .vertical-navbox, .hlist, ' +
-      'table.vertical-navbox, ' +
-      // Remove "Part of a series" and similar template boxes
-      '[role="navigation"], .mw-collapsible, ' +
-      // Remove table of contents
-      '#toc, .toc, .toccolours, ' +
-      // Remove geographic/coordinate info
-      '.geo-default, .geo-dms, .geo-dec, #coordinates'
-    ).forEach(el => el.remove());
-
-    // Remove images to keep it clean and fast
-    doc.querySelectorAll('img, figure, .thumb, .image, .mw-file-element, .mw-file-description').forEach(el => el.remove());
-
-    // Remove any remaining infobox/sidebar tables (Wikipedia uses various classes)
-    doc.querySelectorAll('table').forEach(table => {
-      const cls = (table.className || '').toLowerCase();
-      const style = (table.getAttribute('style') || '').toLowerCase();
-      if (cls.includes('infobox') || cls.includes('sidebar') || cls.includes('vcard') ||
-          cls.includes('vertical-navbox') || cls.includes('wikitable plainrowheaders') ||
-          style.includes('float') && (style.includes('right') || style.includes('left')) && table.querySelector('th')) {
-        table.remove();
-      }
-    });
-
-    // Remove References, Bibliography, Further reading, External links, and everything after
-    const removeHeadings = ['references', 'citations', 'bibliography', 'further_reading',
-      'further reading', 'external_links', 'external links', 'see_also', 'see also', 'notes'];
-    doc.querySelectorAll('h2, h3').forEach(heading => {
-      const id = (heading.id || '').toLowerCase().replace(/_/g, ' ');
-      const text = (heading.textContent || '').toLowerCase().trim();
-      if (removeHeadings.some(r => id.includes(r) || text.includes(r))) {
-        // Remove this heading and all siblings after it
-        let el = heading;
-        while (el) {
-          const next = el.nextElementSibling;
-          el.remove();
-          el = next;
-        }
-      }
-    });
-
-    // Process links: only keep Wikipedia internal article links
-    doc.querySelectorAll('a').forEach(a => {
-      const href = a.getAttribute('href') || '';
-      // Match internal wiki links like ./Article_Name or /wiki/Article_Name
-      const wikiMatch = href.match(/^\.\/([^#?]+)/) || href.match(/^\/wiki\/([^#?]+)/);
-      if (wikiMatch) {
-        const target = decodeURIComponent(wikiMatch[1]);
-        // Skip non-article namespaces
-        if (target.includes(':') && !target.startsWith('The_') && target.indexOf(':') < 15) {
-          a.removeAttribute('href');
-          a.style.color = '#666';
-          a.style.cursor = 'default';
-          return;
-        }
-        a.removeAttribute('href');
-        a.setAttribute('data-article', target);
-        a.style.cursor = 'pointer';
-        a.style.color = '#3366cc';
-      } else {
-        // External or anchor link — disable
-        a.removeAttribute('href');
-        a.style.color = '#666';
-        a.style.cursor = 'default';
-      }
-    });
-
-    content.innerHTML = doc.body.innerHTML;
-    content.style.display = 'block';
-    loading.style.display = 'none';
-
-    // Attach click handlers to wiki links
-    content.querySelectorAll('a[data-article]').forEach(a => {
-      a.addEventListener('click', (e) => {
-        e.preventDefault();
-        const article = a.getAttribute('data-article');
-        navigateTo(article);
-      });
-    });
-
-    updateBreadcrumbs();
-
-  } catch (err) {
-    content.innerHTML = `<h1>Error loading article</h1><p>Could not load "${title.replace(/_/g, ' ')}". This article may not exist.</p>`;
-    content.style.display = 'block';
-    loading.style.display = 'none';
+    document.getElementById('wikiLoading').style.display = 'none';
+    document.getElementById('wikiContent').innerHTML = extract
+      .split('\n')
+      .map(p => p.trim() ? `<p>${esc(p)}</p>` : '')
+      .join('');
+  } catch(e) {
+    document.getElementById('wikiLoading').style.display = 'none';
+    document.getElementById('wikiContent').innerHTML = '<p>Error loading article.</p>';
   }
 }
 
-function navigateTo(article) {
-  currentArticle = article;
-  myPath.push(article);
-  send({ type: 'navigate', article });
-  loadArticle(article);
+function showCheckpointToast(article, remaining) {
+  const toast = document.getElementById('checkpointToast');
+  toast.textContent = `✓ Reached ${article.replace(/_/g, ' ')}`;
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 2000);
 }
 
-// ─── Results ───
-let resultsAnimationTimeouts = [];
+function renderProgress(playerId) {
+  if (playerId === myPlayerId) {
+    const p = playerProgress.get(playerId);
+    if (p) {
+      document.getElementById('stepCount').textContent = p.steps - 1;
+    }
+  }
+}
+
+function renderPlayersBar(distData) {
+  const riders = document.getElementById('lbRiders');
+  if (!distData || Object.keys(distData).length === 0) return;
+
+  const entries = Object.entries(distData).map(([pid, info]) => ({
+    pid,
+    name: info.name,
+    color: info.color,
+    distance: info.distance,
+    steps: info.steps,
+    prev: info.prev,
+  }));
+
+  const maxDist = Math.max(...entries.map(e => e.distance || 0), 1);
+  riders.innerHTML = entries.map(e => {
+    const pos = e.distance !== null ? (100 * e.distance / maxDist) : 0;
+    const isMe = e.pid === myPlayerId;
+    const arrow = e.distance !== null && e.prev !== null
+      ? (e.distance < e.prev ? '↓' : e.distance > e.prev ? '↑' : '→')
+      : '→';
+    return `
+      <div class="lb-rider ${isMe ? 'is-me' : ''}" style="left:${pos}%;background:${e.color};">
+        <span class="lb-name">${esc(e.name)}</span>
+        <span class="lb-steps">${e.steps} steps</span>
+        <span class="lb-dist">${e.distance ?? '?'}</span>
+        <span class="lb-arrow">${arrow}</span>
+      </div>
+    `;
+  }).join('');
+}
 
 function showResults(msg) {
   clearInterval(timerInterval);
-  document.getElementById('playersBar').style.display = 'none';
-  // Clear any previous animation timeouts
-  resultsAnimationTimeouts.forEach(t => clearTimeout(t));
-  resultsAnimationTimeouts = [];
-
-  showScreen('results');
-
-  // Reset banner visibility
-  const banner = document.querySelector('.winner-banner');
-  banner.classList.remove('visible');
-
-  document.getElementById('winnerName').textContent = msg.winner + ' wins!';
-  const winnerData = msg.results.find(r => r.isWinner);
-  const time = winnerData ? formatTime(winnerData.time) : '';
-  const steps = winnerData ? winnerData.path.length - 1 : 0;
-  const modeLabel = msg.mode === 'tri' ? 'Tri Speedrun · ' : '';
-  document.getElementById('winnerSub').textContent = `${modeLabel}${steps} steps in ${time}`;
+  document.getElementById('winnerName').textContent = msg.gaveUp ? 'Game Abandoned' : msg.winner + ' Wins!';
+  document.getElementById('winnerSub').textContent = msg.gaveUp ? 'Everyone gave up' : 'Congratulations!';
 
   const grid = document.getElementById('resultsGrid');
   grid.innerHTML = '';
-
-  // Sort: winner first, then by steps
-  const sorted = [...msg.results].sort((a, b) => {
-    if (a.isWinner) return -1;
-    if (b.isWinner) return 1;
-    if (a.finished && !b.finished) return -1;
-    if (!a.finished && b.finished) return 1;
-    return a.path.length - b.path.length;
-  });
-
-  // Build all cards (hidden)
   const cards = [];
-  for (const r of sorted) {
-    const card = document.createElement('div');
-    card.className = `result-card ${r.isWinner ? 'winner-card' : ''}`;
-    const badge = r.isWinner
-      ? '<span class="r-badge badge-winner">Winner</span>'
-      : r.finished
-        ? '<span class="r-badge" style="background:var(--green);color:white;">Finished</span>'
-        : '<span class="r-badge badge-dnf">DNF</span>';
 
-    // In tri mode, highlight checkpoint articles
-    const triTgts = msg.targets || [];
-    const dists = r.distances || [];
+  for (const r of msg.results) {
+    const card = document.createElement('div');
+    card.className = 'result-card ' + (r.isWinner ? 'winner-card' : '');
     const pathHtml = r.path.map((p, i) => {
-      const norm = p.replace(/_/g, ' ').toLowerCase();
-      const isCheckpoint = msg.mode === 'tri' && triTgts.some(t => t.replace(/_/g, ' ').toLowerCase() === norm);
-      let cls;
-      if (i === 0) cls = 'path-node start';
-      else if (i === r.path.length - 1 && r.finished) cls = 'path-node end';
-      else if (isCheckpoint) cls = 'path-node end'; // green for checkpoints
-      else cls = 'path-node';
-      const prevDist = (i > 0 && dists[i - 1] !== undefined) ? dists[i - 1] : null;
-      const badge = (msg.mode !== 'tri' && dists[i] !== undefined) ? distBadge(dists[i], prevDist) : '';
-      const arrow = i < r.path.length - 1 ? '<span class="path-arrow">&rarr;</span>' : '';
-      return `<span class="${cls}" data-step="${i}">${esc(p.replace(/_/g, ' '))}${badge}</span>${arrow}`;
+      const isStart = i === 0;
+      const isEnd = i === r.path.length - 1;
+      const nodeCls = isStart ? 'start' : isEnd ? 'end' : '';
+      return (i > 0 ? '<span class="path-arrow">→</span>' : '') +
+             `<span class="path-node ${nodeCls}">${esc(p.replace(/_/g, ' '))}</span>`;
     }).join('');
 
     card.innerHTML = `
       <div class="result-header">
-        <span class="r-name">${r.id === myPlayerId ? 'You' : esc(r.name)}</span>
-        ${badge}
+        <div class="r-name">${esc(r.name)}</div>
+        <div class="r-badge ${r.isWinner ? 'badge-winner' : 'badge-abandoned'}">${r.isWinner ? 'Winner' : 'Participated'}</div>
       </div>
       <div class="result-stats">
         <span>Steps: <span class="stat-val">${r.path.length - 1}</span></span>
@@ -1679,63 +1641,22 @@ function showResults(msg) {
       <div class="path-display">${pathHtml}</div>
     `;
     grid.appendChild(card);
-    cards.push({ card, pathLength: r.path.length });
   }
 
-  // ─── Animate sequence ───
-  let delay = 100;
+  document.getElementById('playAgainBtn').style.display = isHost ? '' : 'none';
+  showScreen('results');
 
-  // Step 1: Winner banner fades in
-  resultsAnimationTimeouts.push(setTimeout(() => {
-    banner.classList.add('visible');
-  }, delay));
+  // Animate results
+  let delay = 100;
+  const banner = document.querySelector('.winner-banner');
+  resultsAnimationTimeouts.push(setTimeout(() => banner.classList.add('visible'), delay));
   delay += 800;
 
-  // Step 2: Cards appear one by one, then their paths animate
-  for (let c = 0; c < cards.length; c++) {
-    const { card, pathLength } = cards[c];
-
-    // Show the card
-    resultsAnimationTimeouts.push(setTimeout(() => {
-      card.classList.add('visible');
-    }, delay));
+  const resultCards = document.querySelectorAll('.result-card');
+  for (const card of resultCards) {
+    resultsAnimationTimeouts.push(setTimeout(() => card.classList.add('visible'), delay));
     delay += 400;
-
-    // Animate each step in the path
-    const nodes = card.querySelectorAll('.path-node');
-    const arrows = card.querySelectorAll('.path-arrow');
-    for (let i = 0; i < nodes.length; i++) {
-      resultsAnimationTimeouts.push(setTimeout(() => {
-        nodes[i].classList.add('visible');
-        // Show the arrow before this node (arrows[i-1]) or after (arrows[i])
-        if (i > 0 && arrows[i - 1]) arrows[i - 1].classList.add('visible');
-      }, delay));
-      delay += 500;
-    }
-    delay += 600; // pause between players
   }
-
-  // Step 3: Show play again button after all animations
-  resultsAnimationTimeouts.push(setTimeout(() => {
-    document.getElementById('playAgainBtn').style.display = isHost ? '' : 'none';
-  }, delay));
-}
-
-function playAgain() { send({ type: 'play_again' }); }
-
-function backToHome() {
-  eventSource?.close();
-  eventSource = null;
-  document.getElementById('playersBar').style.display = 'none';
-  latestDistData = null;
-  showScreen('home');
-}
-
-// ─── Helpers ───
-function esc(s) {
-  const d = document.createElement('div');
-  d.textContent = s;
-  return d.innerHTML;
 }
 
 function formatTime(ms) {
@@ -1745,29 +1666,20 @@ function formatTime(ms) {
   return `${m}:${sec}`;
 }
 
-// Enter key support
-document.getElementById('roomCodeInput').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') joinRoom();
-});
-document.getElementById('playerName').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') createRoom();
-});
+function playAgain() {
+  send({ type: 'play_again' });
+}
 
-// ─── Startup check: warn if opened as a file instead of via the server ───
-if (location.protocol === 'file:') {
-  document.getElementById('homeError').textContent = '';
-  const warn = document.createElement('div');
-  warn.style.cssText = 'background:var(--surface);border:2px solid var(--red);border-radius:12px;padding:20px;max-width:420px;text-align:left;margin-top:8px;';
-  warn.innerHTML = `
-    <div style="color:var(--red);font-weight:700;margin-bottom:8px;">Not connected to server</div>
-    <div style="color:var(--text2);font-size:0.9rem;line-height:1.6;">
-      You opened this file directly. To play, run the server first:<br><br>
-      <code style="background:var(--surface2);padding:8px 12px;border-radius:6px;display:block;color:var(--accent2);font-size:0.95rem;">
-        cd wikispeedrun<br>node server.js
-      </code><br>
-      Then open <a href="http://localhost:3000" style="color:var(--accent2);">http://localhost:3000</a> in your browser.
-    </div>`;
-  document.querySelector('.home-form').appendChild(warn);
+function backToHome() {
+  eventSource?.close();
+  eventSource = null;
+  clearInterval(timerInterval);
+  resultsAnimationTimeouts.forEach(t => clearTimeout(t));
+  resultsAnimationTimeouts = [];
+  currentRoomCode = null;
+  isHost = false;
+  isSinglePlayer = false;
+  showScreen('home');
 }
 </script>
 </body>

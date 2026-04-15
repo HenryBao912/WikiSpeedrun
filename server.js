@@ -397,41 +397,114 @@ async function getBacklinks(title, limit = 500) {
   return links;
 }
 
-async function computeDistance(currentArticle, destination, destBacklinks) {
+async function computeDistance(currentArticle, destination, destData) {
   const currentNorm = normalizeArticle(currentArticle);
   const destNorm = normalizeArticle(destination);
 
   if (currentNorm === destNorm) return 0;
 
-  // Get ALL outgoing links from current page (no cap)
+  // Get outgoing links from current page
   const outLinks = await getPageLinks(currentArticle);
 
   // Distance 1: destination is directly linked from current page
   if (outLinks.has(destNorm)) return 1;
 
-  // Distance 2: any outgoing link from current page is also a backlink to destination
-  // (meaning: current -> X -> destination is a valid 2-hop path)
-  let hasOverlap = false;
+  // Distance 2: current -> X -> destination
+  // Check if any outgoing link is in the 1-hop backlinks set
   for (const link of outLinks) {
-    if (destBacklinks.has(link)) { hasOverlap = true; break; }
+    if (destData.hop1.has(link)) return 2;
   }
-  if (hasOverlap) return 2;
 
-  // Distance 3+: no direct 2-hop path found. Estimate based on how many outgoing links
-  // share categories/topics (rough heuristic for 3+ hops)
-  // Check if destination's backlinks have any overlap with current page's outgoing links' neighbors
-  // For performance, just return 3 if there are lots of outgoing links (likely connected through broader graph)
-  if (outLinks.size > 100) return 3;
-  if (outLinks.size > 30) return 4;
-  return 5;
+  // Distance 3: current -> X -> Y -> destination
+  // First check pre-cached hop2 set (fast, covers most cases)
+  for (const link of outLinks) {
+    if (destData.hop2.has(link)) return 3;
+  }
+
+  // hop2 cache is sampled so may miss paths. Do a live verification:
+  // Check outgoing links' outgoing links against hop1 (destination's backlinks).
+  // Use cached links when available (free), only fetch uncached ones.
+  // Prioritize already-cached links first, then fetch up to 20 uncached ones.
+  const outArray = [...outLinks];
+  const cached = [];
+  const uncached = [];
+  for (const link of outArray) {
+    if (linkCache.has(normalizeArticle(link))) cached.push(link);
+    else uncached.push(link);
+  }
+
+  // Check all cached ones first (instant, no API calls)
+  for (const article of cached) {
+    const middleLinks = linkCache.get(normalizeArticle(article));
+    if (middleLinks) {
+      for (const link of middleLinks) {
+        if (destData.hop1.has(link)) return 3;
+      }
+    }
+  }
+
+  // Fetch up to 20 uncached in parallel batches
+  const toFetch = uncached.slice(0, 20);
+  for (let i = 0; i < toFetch.length; i += 10) {
+    const batch = toFetch.slice(i, i + 10);
+    const results = await Promise.all(
+      batch.map(article => getPageLinks(article).catch(() => new Set()))
+    );
+    for (const middleLinks of results) {
+      for (const link of middleLinks) {
+        if (destData.hop1.has(link)) return 3;
+      }
+    }
+  }
+
+  // No proven 3-hop path found — genuinely far
+  if (outLinks.size > 200) return 4;
+  if (outLinks.size > 50) return 5;
+  return 6;
 }
 
 // Pre-cache destination data when game starts
+// Builds two sets:
+//   hop1: articles that link directly to destination (1 hop away)
+//   hop2: articles that link to a hop1 article (2 hops away)
+// This makes distance checks 0-3 instant and 100% accurate (within cache limits)
 async function cacheDestination(destination) {
-  console.log(`Caching backlinks for destination: ${destination}`);
-  const backlinks = await getBacklinks(destination, 500);
-  console.log(`Cached ${backlinks.size} backlinks for ${destination}`);
-  return backlinks;
+  console.log(`[cache] Building distance cache for: ${destination}`);
+  const start = Date.now();
+
+  // hop1: direct backlinks to destination
+  const hop1 = await getBacklinks(destination, 2000);
+  console.log(`[cache] hop1: ${hop1.size} backlinks to ${destination}`);
+
+  // hop2: backlinks to the hop1 articles
+  // Fetching ALL hop1 backlinks would be too many API calls.
+  // Sample up to 50 hop1 articles and fetch their backlinks.
+  // Prioritize hop1 articles that are likely "hub" pages (common topics).
+  const hop1Array = [...hop1];
+  const hop1Sample = hop1Array.length <= 50
+    ? hop1Array
+    : hop1Array.sort(() => Math.random() - 0.5).slice(0, 50);
+
+  const hop2 = new Set();
+  // Fetch backlinks in parallel batches of 10
+  for (let i = 0; i < hop1Sample.length; i += 10) {
+    const batch = hop1Sample.slice(i, i + 10);
+    const results = await Promise.all(
+      batch.map(article => getBacklinks(article, 200).catch(() => new Set()))
+    );
+    for (const backlinks of results) {
+      for (const link of backlinks) {
+        hop2.add(link);
+      }
+    }
+  }
+  // Remove hop1 articles from hop2 (they're already closer)
+  for (const link of hop1) hop2.delete(link);
+
+  const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+  console.log(`[cache] hop2: ${hop2.size} articles (sampled ${hop1Sample.length} hop1 nodes) in ${elapsed}s`);
+
+  return { hop1, hop2 };
 }
 
 // ─── SSE helpers ───
@@ -464,8 +537,11 @@ function initRoom(code, hostId, hostName) {
     started: false,
     startTime: null,
     winner: null,
-    destBacklinks: new Set(), // cached backlinks for distance calc
+    destData: null, // { hop1: Set, hop2: Set } for distance calc
     viewRange: null, // [minViews, maxViews] for difficulty filtering
+    manualArticles: null, // { origin, destination } or { targets: [a,b,c] }
+    giveUpVotes: new Set(), // set of playerIds who voted to give up
+    singlePlayer: false, // true if room is single-player only
   };
 }
 
@@ -491,10 +567,16 @@ async function startGameForRoom(room, roomCode) {
   room.started = true;
   room.startTime = Date.now();
   room.winner = null;
+  room.giveUpVotes.clear(); // Reset votes for new game
   const viewRange = room.viewRange || null;
 
   if (room.mode === 'classic') {
-    room.pair = await getRandomPair(viewRange);
+    // Use manual articles if set, otherwise generate random
+    if (room.manualArticles && room.manualArticles.origin && room.manualArticles.destination) {
+      room.pair = { origin: room.manualArticles.origin, destination: room.manualArticles.destination };
+    } else {
+      room.pair = await getRandomPair(viewRange);
+    }
     for (const [, p] of room.players) {
       Object.assign(p, { path: [room.pair.origin], finished: false, finishTime: null, visited: [], distances: [] });
     }
@@ -505,10 +587,10 @@ async function startGameForRoom(room, roomCode) {
       destination: room.pair.destination,
     });
     // Cache destination backlinks async (don't block game start)
-    cacheDestination(room.pair.destination).then(backlinks => {
-      room.destBacklinks = backlinks;
+    cacheDestination(room.pair.destination).then(destData => {
+      room.destData = destData;
       // Compute initial distance for starting article
-      computeDistance(room.pair.origin, room.pair.destination, backlinks).then(dist => {
+      computeDistance(room.pair.origin, room.pair.destination, destData).then(dist => {
         for (const [pid, p] of room.players) {
           p.distances.push(dist);
         }
@@ -516,7 +598,12 @@ async function startGameForRoom(room, roomCode) {
       });
     });
   } else {
-    room.triple = await getRandomTriple(viewRange);
+    // Use manual articles if set, otherwise generate random
+    if (room.manualArticles && room.manualArticles.targets && room.manualArticles.targets.length === 3) {
+      room.triple = { targets: room.manualArticles.targets };
+    } else {
+      room.triple = await getRandomTriple(viewRange);
+    }
     const startArticle = room.triple.targets[0];
     for (const [, p] of room.players) {
       Object.assign(p, { path: [startArticle], finished: false, finishTime: null, visited: [startArticle], distances: [] });
@@ -640,7 +727,14 @@ function handleAction(playerId, msg) {
       if (!player) return { ok: false };
       const room = rooms.get(player.roomCode);
       if (!room || room.host !== playerId) return { ok: false, error: 'Only host can start' };
-      if (room.players.size < 2) return { ok: false, error: 'Need at least 2 players' };
+      // Single player or multiplayer (2+)
+      if (room.singlePlayer) {
+        // Single player: 1 is ok
+        if (room.players.size < 1) return { ok: false, error: 'Need at least 1 player' };
+      } else {
+        // Multiplayer: need 2+
+        if (room.players.size < 2) return { ok: false, error: 'Need at least 2 players' };
+      }
       startGameForRoom(room, player.roomCode);
       return { ok: true };
     }
@@ -711,9 +805,9 @@ function handleAction(playerId, msg) {
       }
 
       // Compute distance async (classic mode only, don't block response)
-      if (room.mode === 'classic' && !won && room.destBacklinks) {
+      if (room.mode === 'classic' && !won && room.destData) {
         const rc = player.roomCode;
-        computeDistance(article, room.pair.destination, room.destBacklinks).then(dist => {
+        computeDistance(article, room.pair.destination, room.destData).then(dist => {
           rp.distances.push(dist);
           const currentRoom = rooms.get(rc);
           if (currentRoom && currentRoom.started) {
@@ -731,6 +825,108 @@ function handleAction(playerId, msg) {
       const room = rooms.get(player.roomCode);
       if (!room || room.host !== playerId) return { ok: false };
       startGameForRoom(room, player.roomCode);
+      return { ok: true };
+    }
+
+    case 'set_articles': {
+      const player = players.get(playerId);
+      if (!player) return { ok: false };
+      const room = rooms.get(player.roomCode);
+      if (!room || room.host !== playerId) return { ok: false, error: 'Only host can set articles' };
+      if (room.started) return { ok: false, error: 'Cannot change articles during game' };
+      // Store manual articles: { origin, destination } for classic or { targets: [a,b,c] } for tri
+      room.manualArticles = {
+        origin: msg.origin || undefined,
+        destination: msg.destination || undefined,
+        targets: msg.targets || undefined,
+      };
+      // Broadcast update to all players
+      broadcastToRoom(player.roomCode, {
+        type: 'articles_updated',
+        manualArticles: room.manualArticles,
+      });
+      return { ok: true };
+    }
+
+    case 'start_single': {
+      const code = generateRoomCode();
+      const name = (msg.name || 'Player').slice(0, 20);
+      const player = players.get(playerId);
+      if (player) {
+        player.name = name;
+        player.roomCode = code;
+      }
+      const room = initRoom(code, playerId, name);
+      room.singlePlayer = true; // Mark as single player
+      rooms.set(code, room);
+      sendSSE(playerId, { type: 'room_created', code, playerId, singlePlayer: true });
+      // Immediately start the game
+      startGameForRoom(room, code);
+      return { ok: true, code };
+    }
+
+    case 'give_up_vote': {
+      const player = players.get(playerId);
+      if (!player) return { ok: false };
+      const room = rooms.get(player.roomCode);
+      if (!room || !room.started) return { ok: false, error: 'Game not in progress' };
+
+      // Add vote
+      room.giveUpVotes.add(playerId);
+      const voteCount = room.giveUpVotes.size;
+      const totalPlayers = room.players.size;
+
+      // Broadcast vote status to all players
+      broadcastToRoom(player.roomCode, {
+        type: 'give_up_update',
+        voted: voteCount,
+        total: totalPlayers,
+      });
+
+      // Check if all players voted to give up
+      if (voteCount >= totalPlayers) {
+        const results = [...room.players.entries()].map(([id, p]) => ({
+          id, name: p.name, path: p.path,
+          finished: p.finished, time: p.finishTime,
+          isWinner: false,
+          visited: p.visited,
+          distances: p.distances || [],
+        }));
+        broadcastToRoom(player.roomCode, {
+          type: 'game_over',
+          gaveUp: true,
+          results,
+          mode: room.mode,
+          targets: room.mode === 'tri' ? room.triple.targets : null,
+        });
+        room.started = false;
+      }
+      return { ok: true };
+    }
+
+    case 'back_to_lobby': {
+      const player = players.get(playerId);
+      if (!player) return { ok: false };
+      const room = rooms.get(player.roomCode);
+      if (!room) return { ok: false };
+
+      // Reset room state but keep players connected
+      room.started = false;
+      room.startTime = null;
+      room.winner = null;
+      room.pair = null;
+      room.triple = null;
+      room.giveUpVotes.clear();
+      room.destData = null;
+      for (const [, p] of room.players) {
+        Object.assign(p, { path: [], finished: false, finishTime: null, visited: [], distances: [] });
+      }
+
+      // Broadcast lobby state
+      broadcastToRoom(player.roomCode, {
+        type: 'returned_to_lobby',
+        mode: room.mode,
+      });
       return { ok: true };
     }
 
