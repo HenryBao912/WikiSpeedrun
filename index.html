@@ -553,13 +553,50 @@
     font-size: 0.95rem;
     line-height: 1.7;
   }
+  .wiki-toc {
+    background: #f0f0f4;
+    border: 1px solid #d0d0d8;
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-bottom: 18px;
+  }
+  .wiki-toc-label {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    display: block;
+    margin-bottom: 6px;
+  }
+  .wiki-toc-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .wiki-toc-item {
+    font-size: 0.8rem;
+    padding: 4px 10px;
+    background: #e0e0e8;
+    border-radius: 6px;
+    color: #3366cc !important;
+    cursor: pointer !important;
+    text-decoration: none;
+    transition: background 0.15s;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+  }
+  .wiki-toc-item:hover {
+    background: #6c5ce7;
+    color: white !important;
+    text-decoration: none !important;
+  }
   .wiki-page-title {
     font-size: 2rem;
     font-family: 'Linux Libertine', Georgia, serif;
-    border-bottom: 1px solid #444;
+    border-bottom: 1px solid #ccc;
     padding-bottom: 8px;
     margin-bottom: 20px;
-    color: var(--text);
+    color: #222;
   }
   .wiki-content h1 {
     font-size: 1.8rem;
@@ -586,7 +623,42 @@
   .wiki-content table { border-collapse: collapse; margin: 12px 0; width: 100%; }
   .wiki-content th, .wiki-content td { border: 1px solid #ccc; padding: 6px 10px; font-size: 0.85rem; }
   .wiki-content th { background: #f0f0f0; }
-  .wiki-content .infobox { display: none; }
+  .wiki-content .infobox {
+    float: right;
+    clear: right;
+    width: 280px;
+    margin: 0 0 16px 20px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    background: #f8f8fc;
+    font-size: 0.85rem;
+    overflow: hidden;
+  }
+  .wiki-content .infobox th,
+  .wiki-content .infobox td {
+    padding: 4px 8px;
+    border-color: #ddd;
+    vertical-align: top;
+  }
+  .wiki-content .infobox th {
+    background: #e8e8f0;
+    text-align: left;
+  }
+  .wiki-content .infobox caption,
+  .wiki-content .infobox .infobox-title,
+  .wiki-content .infobox .infobox-above {
+    font-weight: 700;
+    font-size: 1rem;
+    padding: 8px;
+    text-align: center;
+    background: #e0e0ea;
+  }
+  .wiki-content .infobox img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 0 auto;
+  }
   .wiki-loading {
     display: flex;
     align-items: center;
@@ -926,6 +998,7 @@
     .room-code-display { font-size: 2rem; letter-spacing: 4px; }
     .game-header { padding: 8px 12px; }
     .wiki-content { padding: 16px; }
+    .wiki-content .infobox { float: none; width: 100%; margin: 0 0 16px 0; }
   }
 </style>
 </head>
@@ -1737,9 +1810,9 @@ async function loadArticle(title) {
       'sup.reference, .mw-references-wrap, link, meta, .hatnote, ' +
       '.shortdescription, .mw-indicators, .ambox, .tmbox, .ombox, .cmbox, ' +
       '.dmbox, .fmbox, .imbox, .portal, .side-box, .authority-control, ' +
-      '.sidebar, .sidebar-collapse, .sidebar-content, ' +
-      'table.sidebar, div.sidebar, ' +
-      '.vcard, .vertical-navbox, .hlist, ' +
+      '.sidebar:not(.infobox), .sidebar-collapse, .sidebar-content, ' +
+      'table.sidebar:not(.infobox), div.sidebar, ' +
+      '.vertical-navbox, .hlist, ' +
       'table.vertical-navbox, ' +
       '[role="navigation"], .mw-collapsible, ' +
       '#toc, .toc, .toccolours, ' +
@@ -1758,13 +1831,12 @@ async function loadArticle(title) {
       el.style.cursor = 'default';
     });
 
-    // Remove infobox/sidebar tables
+    // Remove sidebar/nav tables but keep infoboxes
     doc.querySelectorAll('table').forEach(table => {
       const cls = (table.className || '').toLowerCase();
-      const style = (table.getAttribute('style') || '').toLowerCase();
-      if (cls.includes('infobox') || cls.includes('sidebar') || cls.includes('vcard') ||
-          cls.includes('vertical-navbox') || cls.includes('wikitable plainrowheaders') ||
-          style.includes('float') && (style.includes('right') || style.includes('left')) && table.querySelector('th')) {
+      if (cls.includes('infobox')) return; // keep infoboxes
+      if (cls.includes('sidebar') || cls.includes('vcard') ||
+          cls.includes('vertical-navbox') || cls.includes('wikitable plainrowheaders')) {
         table.remove();
       }
     });
@@ -1808,8 +1880,25 @@ async function loadArticle(title) {
       }
     });
 
+    // Build table of contents from remaining h2 headings
+    const tocHeadings = doc.querySelectorAll('h2');
+    let tocHtml = '';
+    if (tocHeadings.length > 1) {
+      const tocItems = [];
+      tocHeadings.forEach((h, i) => {
+        const text = h.textContent.trim();
+        if (!text) return;
+        const id = 'toc-section-' + i;
+        h.id = id;
+        tocItems.push(`<a class="wiki-toc-item" href="#${id}">${esc(text)}</a>`);
+      });
+      if (tocItems.length > 0) {
+        tocHtml = `<div class="wiki-toc"><span class="wiki-toc-label">Contents</span><div class="wiki-toc-list">${tocItems.join('')}</div></div>`;
+      }
+    }
+
     const titleHtml = `<h1 class="wiki-page-title">${esc(title.replace(/_/g, ' '))}</h1>`;
-    content.innerHTML = titleHtml + doc.body.innerHTML;
+    content.innerHTML = titleHtml + tocHtml + doc.body.innerHTML;
     content.style.display = 'block';
     loading.style.display = 'none';
 
@@ -1819,6 +1908,16 @@ async function loadArticle(title) {
         e.preventDefault();
         const article = a.getAttribute('data-article');
         navigateTo(article);
+      });
+    });
+
+    // TOC smooth scroll within wiki container
+    content.querySelectorAll('.wiki-toc-item').forEach(a => {
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        const targetId = a.getAttribute('href').slice(1);
+        const target = document.getElementById(targetId);
+        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
     });
 
