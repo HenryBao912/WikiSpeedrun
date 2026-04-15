@@ -86,14 +86,20 @@ async function validateArticles(titles) {
       if (isBio) {
         // Biographies need 100KB+ — only the most famous people (Obama, etc.)
         if (page.length && page.length < 100000) continue;
+        good.push({ title: page.title.replace(/ /g, '_'), isBio: true });
       } else {
         // Normal articles: skip stubs under 5KB
         if (page.length && page.length < 5000) continue;
+        good.push({ title: page.title.replace(/ /g, '_'), isBio: false });
       }
-
-      good.push(page.title.replace(/ /g, '_'));
     }
-    return good;
+    // Prefer non-bio articles — only allow ~1 in 3 to be a biography
+    const nonBios = good.filter(g => !g.isBio).map(g => g.title);
+    const bios = good.filter(g => g.isBio).map(g => g.title);
+    // Shuffle bios so selection is random
+    bios.sort(() => Math.random() - 0.5);
+    const maxBios = Math.max(1, Math.floor(nonBios.length * 0.5));
+    return [...nonBios, ...bios.slice(0, maxBios)];
   } catch (e) {
     console.error('Error validating articles:', e.message);
     return titles; // on error, return unfiltered
