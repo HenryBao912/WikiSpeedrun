@@ -820,15 +820,10 @@
     background: var(--surface2);
     border-radius: 6px;
     white-space: nowrap;
-    opacity: 0;
-    transform: translateY(8px);
-    transition: opacity 0.3s, transform 0.3s;
   }
-  .path-node.visible { opacity: 1; transform: translateY(0); }
   .path-node.start { background: var(--accent); color: white; }
   .path-node.end { background: var(--green); color: white; }
-  .path-arrow { color: var(--text2); font-size: 0.7rem; opacity: 0; transition: opacity 0.2s; }
-  .path-arrow.visible { opacity: 1; }
+  .path-arrow { color: var(--text2); font-size: 0.7rem; }
   .winner-banner { opacity: 0; transform: scale(0.8); transition: opacity 0.6s, transform 0.6s; }
   .winner-banner.visible { opacity: 1; transform: scale(1); }
   .result-card { opacity: 0; transform: translateY(20px); transition: opacity 0.4s, transform 0.4s; }
@@ -1885,7 +1880,7 @@ function renderPlayersBar(distData) {
 
 function showResults(msg) {
   clearInterval(timerInterval);
-  document.getElementById('winnerName').textContent = msg.gaveUp ? 'Game Abandoned' : msg.winner + ' Wins!';
+  document.getElementById('winnerName').textContent = msg.gaveUp ? 'Game Abandoned' : isSinglePlayer ? 'You Won!' : msg.winner + ' Wins!';
   document.getElementById('winnerSub').textContent = msg.gaveUp ? 'Everyone gave up' : 'Congratulations!';
 
   const grid = document.getElementById('resultsGrid');
@@ -1928,15 +1923,7 @@ function showResults(msg) {
 
   const resultCards = document.querySelectorAll('.result-card');
   for (const card of resultCards) {
-    resultsAnimationTimeouts.push(setTimeout(() => {
-      card.classList.add('visible');
-      // Stagger path node reveal inside this card
-      let pathDelay = 150;
-      card.querySelectorAll('.path-node, .path-arrow').forEach(el => {
-        resultsAnimationTimeouts.push(setTimeout(() => el.classList.add('visible'), pathDelay));
-        pathDelay += 100;
-      });
-    }, delay));
+    resultsAnimationTimeouts.push(setTimeout(() => card.classList.add('visible'), delay));
     delay += 400;
   }
 }
