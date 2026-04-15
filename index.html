@@ -80,23 +80,78 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 32px;
+    gap: 24px;
     padding: 40px 20px;
     text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .bg-words {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    z-index: 0;
+    pointer-events: none;
+  }
+  .bg-word {
+    position: absolute;
+    color: rgba(124, 111, 173, 0.09);
+    font-size: 1rem;
+    font-weight: 600;
+    white-space: nowrap;
+    animation: drift linear infinite;
+    transition: opacity 0.4s ease;
+  }
+  .bg-word.fading { opacity: 0; }
+  @keyframes drift {
+    from { transform: translateY(105vh); }
+    to { transform: translateY(-20px); }
+  }
+  .hero-content {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+  .logo-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 4px;
+  }
+  .logo-link {
+    display: inline-block;
+    padding: 5px 12px;
+    background: rgba(124, 111, 173, 0.15);
+    border-radius: 6px;
+    color: #a78bfa;
+    font-size: 0.8rem;
+    font-weight: 600;
+    min-width: 50px;
+    text-align: center;
+    transition: opacity 0.35s ease;
+  }
+  .logo-link.fading { opacity: 0; }
+  .logo-arrow {
+    color: rgba(255,255,255,0.25);
+    font-size: 1rem;
   }
   .logo {
     font-size: 3.2rem;
-    font-weight: 800;
+    font-weight: 900;
     letter-spacing: -1px;
-    background: linear-gradient(135deg, var(--accent), var(--accent2), var(--green));
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
   }
+  .logo .wiki { color: #a78bfa; }
+  .logo .speed { color: #60a5fa; }
+  .logo .run { color: #4ade80; }
   .logo-sub {
-    font-size: 1.1rem;
+    font-size: 1.05rem;
     color: var(--text2);
-    margin-top: -16px;
-    max-width: 420px;
+    max-width: 400px;
+    line-height: 1.5;
   }
   .home-buttons {
     display: flex;
@@ -1101,11 +1156,21 @@
 
 <!-- ─── Home Screen ─── -->
 <div id="home" class="screen active">
-  <div class="logo">WikiSpeedrun</div>
-  <p class="logo-sub">Race through Wikipedia. Click links to navigate from one article to another. First to reach the destination wins!</p>
-  <div class="home-buttons">
-    <button class="btn btn-primary" onclick="showScreen('sp-setup')">Single Player</button>
-    <button class="btn btn-primary" onclick="showScreen('mp-setup')">Multiplayer</button>
+  <div class="bg-words" id="bgWords"></div>
+  <div class="hero-content">
+    <div class="logo-row">
+      <span class="logo-link" id="heroLink1">Cat</span>
+      <span class="logo-arrow">→</span>
+      <span class="logo-link" id="heroLink2">Mammal</span>
+      <span class="logo-arrow">→</span>
+      <span class="logo-link" id="heroLink3">Evolution</span>
+    </div>
+    <div class="logo"><span class="wiki">Wiki</span><span class="speed">Speed</span><span class="run">run</span></div>
+    <p class="logo-sub">Navigate Wikipedia links. Race to the destination.</p>
+    <div class="home-buttons">
+      <button class="btn btn-primary" onclick="showScreen('sp-setup')">Single Player</button>
+      <button class="btn btn-primary" onclick="showScreen('mp-setup')">Multiplayer</button>
+    </div>
   </div>
 </div>
 
@@ -1264,6 +1329,74 @@
 </div>
 
 <script>
+// ─── Floating Background Words ───
+const WIKI_WORDS = [
+  'Philosophy','Cat','United States','Mathematics','Earth','Evolution','Sun',
+  'Albert Einstein','London','Galaxy','DNA','Water','Python','Music','Rome',
+  'Language','Football','Carbon','Oxygen','Mars','Jupiter','History','Science',
+  'Art','Europe','Moon','Ocean','Africa','Chemistry','Newton','Tesla','Amazon',
+  'Democracy','Volcano','Dinosaur','Quantum','Gravity','Photon','Beethoven',
+  'Shakespeare','Pluto','Everest','Sahara','Tsunami','Glacier','Renaissance',
+  'Relativity','Bacteria','Mitochondria','Fibonacci','Cleopatra','Napoleon'
+];
+
+function initBgWords() {
+  const container = document.getElementById('bgWords');
+  if (!container) return;
+  const els = [];
+  for (let i = 0; i < 28; i++) {
+    const el = document.createElement('div');
+    el.className = 'bg-word';
+    el.textContent = WIKI_WORDS[Math.floor(Math.random() * WIKI_WORDS.length)];
+    el.style.left = (Math.random() * 92 + 2) + '%';
+    el.style.animationDuration = (16 + Math.random() * 22) + 's';
+    el.style.animationDelay = (-Math.random() * 30) + 's';
+    el.style.fontSize = (0.7 + Math.random() * 0.5) + 'rem';
+    container.appendChild(el);
+    els.push(el);
+  }
+
+  // Randomly cycle each word
+  for (const el of els) {
+    scheduleWordChange(el);
+  }
+}
+
+function scheduleWordChange(el) {
+  const delay = 800 + Math.random() * 700; // 0.8 - 1.5s
+  setTimeout(() => {
+    el.classList.add('fading');
+    setTimeout(() => {
+      el.textContent = WIKI_WORDS[Math.floor(Math.random() * WIKI_WORDS.length)];
+      el.classList.remove('fading');
+      scheduleWordChange(el);
+    }, 400); // match CSS transition duration
+  }, delay);
+}
+
+// Hero link row cycling
+function initHeroLinks() {
+  const ids = ['heroLink1', 'heroLink2', 'heroLink3'];
+  for (const id of ids) {
+    const el = document.getElementById(id);
+    if (el) scheduleHeroLinkChange(el);
+  }
+}
+
+function scheduleHeroLinkChange(el) {
+  const delay = 1500 + Math.random() * 2000;
+  setTimeout(() => {
+    el.classList.add('fading');
+    setTimeout(() => {
+      el.textContent = WIKI_WORDS[Math.floor(Math.random() * WIKI_WORDS.length)];
+      el.classList.remove('fading');
+      scheduleHeroLinkChange(el);
+    }, 350);
+  }, delay);
+}
+
+document.addEventListener('DOMContentLoaded', () => { initBgWords(); initHeroLinks(); });
+
 // ─── Global State ───
 let eventSource = null;
 let myPlayerId = null;
