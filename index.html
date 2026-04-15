@@ -829,6 +829,18 @@
   .path-node.end { background: var(--green); color: white; }
   .path-arrow { color: var(--text2); font-size: 0.7rem; opacity: 0; transition: opacity 0.2s; }
   .path-arrow.revealed { opacity: 1; }
+  .path-dist {
+    font-size: 0.65rem;
+    font-weight: 800;
+    margin-left: 5px;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+  }
+  .path-dir { font-size: 0.6rem; }
+  .path-dir.closer { color: #4ade80; }
+  .path-dir.further { color: #f87171; }
+  .path-dir.same { color: #888; }
   .winner-banner { opacity: 0; transform: scale(0.8); transition: opacity 0.6s, transform 0.6s; }
   .winner-banner.visible { opacity: 1; transform: scale(1); }
   .result-card { opacity: 0; transform: translateY(20px); transition: opacity 0.4s, transform 0.4s; }
@@ -1895,12 +1907,26 @@ function showResults(msg) {
   for (const r of msg.results) {
     const card = document.createElement('div');
     card.className = 'result-card ' + (r.isWinner ? 'winner-card' : '');
+    const dists = r.distances || [];
     const pathHtml = r.path.map((p, i) => {
       const isStart = i === 0;
       const isEnd = i === r.path.length - 1;
       const nodeCls = isStart ? 'start' : isEnd ? 'end' : '';
+      let distBadge = '';
+      if (!isStart && !isEnd && dists[i - 1] !== undefined && dists[i - 1] !== null) {
+        const d = dists[i - 1];
+        const prev = i >= 2 ? dists[i - 2] : null;
+        const cls = distColorClass(d);
+        let arrow = '';
+        if (prev !== null && prev !== undefined) {
+          if (d < prev) arrow = '<span class="path-dir closer">▲</span>';
+          else if (d > prev) arrow = '<span class="path-dir further">▼</span>';
+          else arrow = '<span class="path-dir same">=</span>';
+        }
+        distBadge = `<span class="path-dist">${arrow}<span class="${cls}">${d}</span></span>`;
+      }
       return (i > 0 ? '<span class="path-arrow">→</span>' : '') +
-             `<span class="path-node ${nodeCls}">${esc(p.replace(/_/g, ' '))}</span>`;
+             `<span class="path-node ${nodeCls}">${esc(p.replace(/_/g, ' '))}${distBadge}</span>`;
     }).join('');
 
     card.innerHTML = `
