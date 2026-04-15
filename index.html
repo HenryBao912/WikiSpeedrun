@@ -764,6 +764,12 @@
     -webkit-text-fill-color: transparent;
     animation: goldShine 2s ease-in-out infinite;
   }
+  .winner-name.surrendered {
+    background: none;
+    -webkit-background-clip: unset;
+    -webkit-text-fill-color: #f87171;
+    animation: none;
+  }
   @keyframes goldShine {
     0% { background-position: 200% center; }
     100% { background-position: -200% center; }
@@ -799,7 +805,8 @@
     text-transform: uppercase;
   }
   .badge-winner { background: var(--gold); color: #333; }
-  .badge-abandoned { background: var(--surface2); color: var(--text2); }
+  .badge-lost { background: #3a2a2a; color: #f87171; }
+  .r-icon { margin-right: 4px; }
   .result-stats {
     display: flex;
     gap: 20px;
@@ -1035,7 +1042,7 @@
 <!-- ─── Results Screen ─── -->
 <div id="results" class="screen">
   <div class="winner-banner">
-    <span class="trophy">🏆</span>
+    <span class="trophy" id="resultIcon">🏆</span>
     <div class="winner-name" id="winnerName"></div>
     <div class="winner-sub" id="winnerSub"></div>
   </div>
@@ -1897,8 +1904,19 @@ function renderPlayersBar(distData) {
 
 function showResults(msg) {
   clearInterval(timerInterval);
-  document.getElementById('winnerName').textContent = msg.gaveUp ? 'Game Abandoned' : isSinglePlayer ? 'You Won!' : msg.winner + ' Wins!';
-  document.getElementById('winnerSub').textContent = msg.gaveUp ? 'Everyone gave up' : 'Congratulations!';
+  let winTitle, winSub;
+  if (msg.gaveUp) {
+    winTitle = isSinglePlayer ? 'You Surrendered' : 'Game Abandoned';
+    winSub = isSinglePlayer ? 'Better luck next time!' : 'Everyone gave up';
+  } else {
+    winTitle = isSinglePlayer ? 'You Won!' : msg.winner + ' Wins!';
+    winSub = 'Congratulations!';
+  }
+  document.getElementById('resultIcon').textContent = msg.gaveUp ? '🏳️' : '🏆';
+  const nameEl = document.getElementById('winnerName');
+  nameEl.textContent = winTitle;
+  nameEl.classList.toggle('surrendered', !!msg.gaveUp);
+  document.getElementById('winnerSub').textContent = winSub;
 
   const grid = document.getElementById('resultsGrid');
   grid.innerHTML = '';
@@ -1929,10 +1947,14 @@ function showResults(msg) {
              `<span class="path-node ${nodeCls}">${esc(p.replace(/_/g, ' '))}${distBadge}</span>`;
     }).join('');
 
+    const icon = r.isWinner ? '👑' : '💀';
+    const badgeCls = r.isWinner ? 'badge-winner' : 'badge-lost';
+    const badgeText = r.isWinner ? 'Winner' : 'Better luck next time';
+
     card.innerHTML = `
       <div class="result-header">
-        <div class="r-name">${esc(r.name)}</div>
-        <div class="r-badge ${r.isWinner ? 'badge-winner' : 'badge-abandoned'}">${r.isWinner ? 'Winner' : 'Participated'}</div>
+        <div class="r-name"><span class="r-icon">${icon}</span> ${esc(r.name)}</div>
+        <div class="r-badge ${badgeCls}">${badgeText}</div>
       </div>
       <div class="result-stats">
         <span>Steps: <span class="stat-val">${r.path.length - 1}</span></span>
