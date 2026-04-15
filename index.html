@@ -300,25 +300,27 @@
   .room-code-input { text-transform: uppercase; letter-spacing: 4px; text-align: center; font-weight: 700; }
   .btn-row { display: flex; gap: 12px; width: 100%; }
   .btn-row .btn { flex: 1; }
-  .mp-join-row {
+  .mp-actions-row {
     display: flex;
-    gap: 8px;
+    gap: 12px;
     width: 100%;
     align-items: center;
   }
-  .mp-join-name {
+  .mp-actions-row .btn {
     flex: 1;
-    min-width: 0;
   }
-  .mp-join-code {
-    width: 100px;
-    flex-shrink: 0;
+  .mp-code-input {
+    flex: 1;
     text-transform: uppercase;
-    letter-spacing: 3px;
+    letter-spacing: 4px;
     text-align: center;
     font-weight: 700;
+    font-size: 1rem;
   }
-  .mp-join-row .btn {
+  .divider-vertical {
+    width: 1px;
+    height: 36px;
+    background: var(--surface2);
     flex-shrink: 0;
   }
   .divider {
@@ -338,8 +340,20 @@
   .error-msg {
     color: var(--red);
     font-size: 0.9rem;
-    min-height: 1.2em;
+    min-height: 0;
     text-align: center;
+    display: none;
+  }
+  .input-shake {
+    animation: shake 0.4s ease;
+    border-color: rgba(225, 112, 85, 0.6) !important;
+  }
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    20% { transform: translateX(-6px); }
+    40% { transform: translateX(6px); }
+    60% { transform: translateX(-4px); }
+    80% { transform: translateX(4px); }
   }
 
   /* ─── Lobby Screen ─── */
@@ -1091,13 +1105,14 @@
   <button class="back-btn" onclick="showScreen('home')">← Back</button>
   <h1 class="setup-title">Multiplayer</h1>
   <div class="setup-form">
-    <div class="mp-join-row">
-      <input type="text" id="mpName" placeholder="Name" maxlength="20" class="mp-join-name" />
-      <input type="text" id="mpRoomCode" placeholder="CODE" class="mp-join-code" maxlength="5" />
-      <button class="btn btn-secondary btn-small" onclick="joinMultiplayerRoom()">Join</button>
+    <div class="form-group">
+      <input type="text" id="mpName" placeholder="Your Name" maxlength="20" />
     </div>
-    <div class="divider">or</div>
-    <button class="btn btn-primary" onclick="createMultiplayerRoom()" style="width:100%;">Create Room</button>
+    <div class="mp-actions-row">
+      <button class="btn btn-primary" onclick="createMultiplayerRoom()">Create Room</button>
+      <div class="divider-vertical"></div>
+      <input type="text" id="mpRoomCode" placeholder="CODE" class="mp-code-input" maxlength="5" oninput="autoJoinRoom()" />
+    </div>
     <div class="error-msg" id="mpError"></div>
   </div>
 </div>
@@ -1504,18 +1519,38 @@ async function createMultiplayerRoom() {
   }
 }
 
+let autoJoinPending = false;
+
+function shakeInput(el) {
+  el.classList.remove('input-shake');
+  void el.offsetWidth; // force reflow
+  el.classList.add('input-shake');
+  setTimeout(() => el.classList.remove('input-shake'), 500);
+}
+
 async function joinMultiplayerRoom() {
   const name = document.getElementById('mpName').value.trim() || 'Player';
-  const code = document.getElementById('mpRoomCode').value.trim();
-  if (!code) {
-    showError('mpError', 'Enter a room code');
-    return;
-  }
+  const codeInput = document.getElementById('mpRoomCode');
+  const code = codeInput.value.trim().toUpperCase();
+  if (!code) return;
   try {
     await connectSSE();
-    await send({ type: 'join_room', code, name });
+    const result = await send({ type: 'join_room', code, name });
+    if (!result || !result.ok) {
+      shakeInput(codeInput);
+    }
   } catch(e) {
-    showError('mpError', 'Could not connect to server.');
+    shakeInput(codeInput);
+  }
+}
+
+function autoJoinRoom() {
+  const input = document.getElementById('mpRoomCode');
+  const code = input.value.trim();
+  input.classList.remove('input-shake');
+  if (code.length === 5 && !autoJoinPending) {
+    autoJoinPending = true;
+    joinMultiplayerRoom().finally(() => { autoJoinPending = false; });
   }
 }
 
