@@ -780,7 +780,7 @@
   .lb-riders {
     position: relative;
     width: 100%;
-    min-height: 44px;
+    min-height: 40px;
   }
   .lb-rider {
     position: absolute;
@@ -2188,7 +2188,7 @@ function renderPlayersBar(distData) {
         for (const u of rowUsed) {
           if (Math.abs(u.left - e.leftPct) < 12 && u.row === row) row++;
         }
-        rider.style.top = (row * 22) + 'px';
+        rider.style.top = (row * 20) + 'px';
         rider.style.left = e.leftPct + '%';
         rowUsed.push({ left: e.leftPct, row });
         if (prevData && prevData.distance !== null && e.d !== null && prevData.distance !== e.d && !isNew) {
