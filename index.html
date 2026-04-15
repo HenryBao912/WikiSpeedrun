@@ -751,7 +751,7 @@
     display: none;
     flex-direction: column;
     z-index: 50;
-    padding: 3px 24px 2px;
+    padding: 3px 24px 0px;
     flex-shrink: 0;
     position: relative;
     overflow: hidden;
@@ -770,12 +770,12 @@
     background-position: 0 0, 0 4px, 4px -4px, -4px 0;
     pointer-events: none;
     z-index: 1;
-    box-shadow: inset 0 0 12px 4px rgba(0, 220, 100, 0.3), 0 0 16px 4px rgba(0, 220, 100, 0.2);
-    animation: checkeredGlow 2s ease-in-out infinite;
+    box-shadow: inset 0 0 8px 2px rgba(0, 200, 90, 0.15), 0 0 10px 2px rgba(0, 200, 90, 0.1);
+    animation: checkeredGlow 2.5s ease-in-out infinite;
   }
   @keyframes checkeredGlow {
-    0%, 100% { box-shadow: inset 0 0 12px 4px rgba(0, 220, 100, 0.25), 0 0 14px 4px rgba(0, 220, 100, 0.15); }
-    50% { box-shadow: inset 0 0 18px 6px rgba(0, 220, 100, 0.5), 0 0 24px 8px rgba(0, 220, 100, 0.35); }
+    0%, 100% { box-shadow: inset 0 0 8px 2px rgba(0, 200, 90, 0.12), 0 0 8px 2px rgba(0, 200, 90, 0.08); }
+    50% { box-shadow: inset 0 0 12px 3px rgba(0, 200, 90, 0.25), 0 0 14px 4px rgba(0, 200, 90, 0.15); }
   }
   .lb-riders {
     position: relative;
