@@ -1698,7 +1698,22 @@ async function loadArticle(title) {
     updateBreadcrumbs();
 
   } catch (err) {
-    content.innerHTML = `<h1>Error loading article</h1><p>Could not load "${title.replace(/_/g, ' ')}". This article may not exist.</p>`;
+    // Undo the navigation — go back to previous article
+    const failedTitle = title.replace(/_/g, ' ');
+    if (myPath.length > 1) {
+      myPath.pop();
+      const prevArticle = myPath[myPath.length - 1];
+      currentArticle = prevArticle;
+      content.innerHTML = `
+        <h1>Error loading article</h1>
+        <p>Could not load "${failedTitle}". This article may not exist on English Wikipedia.</p>
+        <button onclick="loadArticle('${prevArticle.replace(/'/g, "\\'")}')"
+                style="margin-top:16px;padding:10px 24px;background:var(--accent);color:white;border:none;border-radius:8px;cursor:pointer;font-size:1rem;">
+          ← Go Back to ${prevArticle.replace(/_/g, ' ')}
+        </button>`;
+    } else {
+      content.innerHTML = `<h1>Error loading article</h1><p>Could not load "${failedTitle}". This article may not exist on English Wikipedia.</p>`;
+    }
     content.style.display = 'block';
     loading.style.display = 'none';
   }

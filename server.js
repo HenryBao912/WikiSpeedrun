@@ -38,6 +38,10 @@ function isBadTitle(title) {
   if (lower.split(/\s+/).length > 3) return true;
   // ISO codes, technical strings with mostly digits/special chars
   if (/^[A-Z]{1,3}-?\d+/.test(title)) return true;
+  // Non-English titles — contain accented/non-ASCII characters
+  if (/[^\x00-\x7F]/.test(title)) return true;
+  // Titles with periods (F.C., U.S., etc.) — often obscure sports/orgs
+  if (title.includes('.')) return true;
   return false;
 }
 
