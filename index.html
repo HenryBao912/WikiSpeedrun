@@ -565,12 +565,52 @@
     font-size: 0.85rem;
   }
   .origin-tag { background: var(--accent); color: white; }
-  .dest-tag { background: var(--green); color: white; }
+  .dest-tag { background: var(--green); color: white; cursor: pointer; position: relative; }
+  .dest-tag:hover { opacity: 0.85; }
+  .summary-tooltip {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--surface);
+    border: 1px solid var(--surface2);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 0.8rem;
+    font-weight: 400;
+    color: var(--text);
+    width: 280px;
+    max-width: 80vw;
+    z-index: 100;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    line-height: 1.4;
+    white-space: normal;
+    text-align: left;
+    animation: tooltipIn 0.2s ease;
+  }
+  .summary-tooltip::before {
+    content: '';
+    position: absolute;
+    top: -6px;
+    left: 50%;
+    transform: translateX(-50%) rotate(45deg);
+    width: 10px;
+    height: 10px;
+    background: var(--surface);
+    border-left: 1px solid var(--surface2);
+    border-top: 1px solid var(--surface2);
+  }
+  @keyframes tooltipIn {
+    from { opacity: 0; transform: translateX(-50%) translateY(4px); }
+    to { opacity: 1; transform: translateX(-50%) translateY(0); }
+  }
   .nav-info .arrow { color: var(--text2); font-size: 1.2rem; }
   .target-tag {
     padding: 4px 12px;
     border-radius: 6px;
     font-weight: 700;
+    cursor: pointer;
+    position: relative;
     font-size: 0.85rem;
     display: inline-block;
     background: var(--surface2);
@@ -1811,7 +1851,9 @@ function startGameUI(msg) {
     document.getElementById('classicNav').style.display = '';
     document.getElementById('triNav').style.display = 'none';
     document.getElementById('gameOrigin').textContent = gameOrigin.replace(/_/g, ' ');
-    document.getElementById('gameDest').textContent = gameDestination.replace(/_/g, ' ');
+    const destEl = document.getElementById('gameDest');
+    destEl.textContent = gameDestination.replace(/_/g, ' ');
+    destEl.onclick = (e) => { e.stopPropagation(); toggleSummary(destEl, gameDestination); };
   } else {
     triTargets = msg.targets;
     myVisited = [msg.origin];
@@ -1839,8 +1881,11 @@ function renderTriTargets() {
   nav.innerHTML = triTargets.map((t, i) => {
     const visited = myVisited.includes(t);
     const current = i === 0 && myVisited.length === 0 ? ' current' : visited ? ' reached' : ' unreached';
-    return `<span class="target-tag${current}">${t.replace(/_/g, ' ')}</span>`;
+    return `<span class="target-tag${current}" data-title="${esc(t)}">${t.replace(/_/g, ' ')}</span>`;
   }).join('<span class="target-sep">→</span>');
+  nav.querySelectorAll('.target-tag').forEach(el => {
+    el.onclick = (e) => { e.stopPropagation(); toggleSummary(el, el.getAttribute('data-title')); };
+  });
 }
 
 function startTimer() {
@@ -1853,6 +1898,53 @@ function startTimer() {
     document.getElementById('timerDisplay').textContent = `${m}:${sec}`;
   }, 100);
 }
+
+// ─── Summary Tooltip ───
+const summaryCache = new Map();
+let activeTooltip = null;
+
+async function toggleSummary(el, title) {
+  // If tooltip already showing on this element, close it
+  if (activeTooltip && activeTooltip.parentElement === el) {
+    activeTooltip.remove();
+    activeTooltip = null;
+    return;
+  }
+  // Close any existing tooltip
+  if (activeTooltip) { activeTooltip.remove(); activeTooltip = null; }
+
+  const tooltip = document.createElement('div');
+  tooltip.className = 'summary-tooltip';
+  tooltip.textContent = 'Loading...';
+  el.appendChild(tooltip);
+  activeTooltip = tooltip;
+
+  // Stop click from propagating (so doc listener doesn't immediately close it)
+  try {
+    const articleTitle = title.replace(/ /g, '_');
+    let summary = summaryCache.get(articleTitle);
+    if (!summary) {
+      const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(articleTitle)}`);
+      const data = await res.json();
+      // Get first sentence only
+      const full = data.extract || '';
+      const firstSentence = full.match(/^[^.!?]*[.!?]/)?.[0] || full;
+      summary = firstSentence;
+      summaryCache.set(articleTitle, summary);
+    }
+    if (activeTooltip === tooltip) tooltip.textContent = summary || 'No summary available.';
+  } catch (e) {
+    if (activeTooltip === tooltip) tooltip.textContent = 'Could not load summary.';
+  }
+}
+
+// Close tooltip on click outside
+document.addEventListener('click', (e) => {
+  if (activeTooltip && !e.target.closest('.dest-tag, .target-tag')) {
+    activeTooltip.remove();
+    activeTooltip = null;
+  }
+});
 
 // ─── Wikipedia Article Loading ─── (simplified, kept from original)
 async function loadArticle(title) {
