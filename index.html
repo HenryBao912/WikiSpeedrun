@@ -173,7 +173,9 @@
     margin-bottom: 8px;
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: baseline;
+    gap: 12px;
+    flex-wrap: wrap;
   }
   .diff-label-title { font-weight: 600; color: var(--text); }
   .diff-range-wrap {
@@ -691,7 +693,7 @@
   .lb-rider.collapsed:hover .lb-tip { opacity: 1; }
   .lb-tip .tip-name { font-weight: 700; }
   .lb-tip .tip-steps { opacity: 0.8; }
-  .lb-tip .tip-dist { font-weight: 800; color: white; }
+  .lb-tip .tip-dist { font-weight: 800; }
   .lb-rider.pulse { animation: dotPulse 0.6s ease-out; }
   @keyframes dotPulse {
     0% { transform: translateX(-50%) scale(1); }
@@ -1920,16 +1922,22 @@ function showResults(msg) {
 
   const grid = document.getElementById('resultsGrid');
   grid.innerHTML = '';
-  const cards = [];
 
-  for (const r of msg.results) {
+  // Sort: winner first, then by steps
+  const sorted = [...msg.results].sort((a, b) => {
+    if (a.isWinner && !b.isWinner) return -1;
+    if (!a.isWinner && b.isWinner) return 1;
+    return (a.path.length) - (b.path.length);
+  });
+
+  for (const r of sorted) {
     const card = document.createElement('div');
     card.className = 'result-card ' + (r.isWinner ? 'winner-card' : '');
     const dists = r.distances || [];
     const pathHtml = r.path.map((p, i) => {
       const isStart = i === 0;
       const isEnd = i === r.path.length - 1;
-      const nodeCls = isStart ? 'start' : isEnd ? 'end' : '';
+      const nodeCls = isStart ? 'start' : (isEnd && r.isWinner) ? 'end' : '';
       let distBadge = '';
       if (!isStart && !isEnd && dists[i - 1] !== undefined && dists[i - 1] !== null) {
         const d = dists[i - 1];

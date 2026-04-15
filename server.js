@@ -344,6 +344,19 @@ function normalizeArticle(name) {
   return (name || '').replace(/_/g, ' ').toLowerCase();
 }
 
+// Resolve Wikipedia redirects to canonical title
+async function resolveRedirect(title) {
+  try {
+    const data = await wikiAPI({ action: 'query', titles: title.replace(/ /g, '_'), redirects: '1' });
+    const pages = data.query?.pages || {};
+    const page = Object.values(pages)[0];
+    if (page && !page.missing) return page.title.replace(/ /g, '_');
+    return title;
+  } catch (e) {
+    return title;
+  }
+}
+
 // ─── Wikipedia API for distance calculation ───
 const linkCache = new Map(); // title -> Set of outgoing link titles
 const backlinkCache = new Map(); // title -> Set of backlink titles
@@ -585,6 +598,9 @@ async function startGameForRoom(room, roomCode) {
     } else {
       room.pair = await getRandomPair(viewRange);
     }
+    // Resolve redirects to canonical titles
+    room.pair.origin = await resolveRedirect(room.pair.origin);
+    room.pair.destination = await resolveRedirect(room.pair.destination);
     for (const [, p] of room.players) {
       Object.assign(p, { path: [room.pair.origin], finished: false, finishTime: null, visited: [], distances: [] });
     }
@@ -655,7 +671,7 @@ function checkWin(room, rp, article) {
   }
 }
 
-function handleAction(playerId, msg) {
+async function handleAction(playerId, msg) {
   console.log(`[${playerId.slice(0,8)}] ${msg.type}`, msg.type === 'navigate' ? msg.article : '');
 
   switch (msg.type) {
@@ -755,8 +771,10 @@ function handleAction(playerId, msg) {
       const rp = room.players.get(playerId);
       if (!rp || rp.finished) return { ok: false };
 
-      const article = msg.article;
-      if (!article) return { ok: false };
+      const rawArticle = msg.article;
+      if (!rawArticle) return { ok: false };
+      // Resolve redirect to canonical title for accurate win detection
+      const article = await resolveRedirect(rawArticle);
       rp.path.push(article);
 
       // For tri mode, include visited count in progress
@@ -1048,7 +1066,7 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ ok: false, error: 'Not connected. Open /events first.' }));
         return;
       }
-      const result = handleAction(playerId, msg);
+      const result = await handleAction(playerId, msg);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(result || { ok: true }));
     } catch (e) {
