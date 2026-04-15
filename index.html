@@ -2227,7 +2227,7 @@ function showResults(msg) {
       winTitle = isSinglePlayer ? 'You Won!' : msg.winner + ' Wins!';
       winSub = 'Congratulations!';
     } else {
-      winTitle = 'You suck! 😂';
+      winTitle = 'You suck!';
       winSub = msg.winner + ' beat you!';
     }
   }
@@ -2254,10 +2254,11 @@ function showResults(msg) {
 
   for (const r of sorted) {
     const card = document.createElement('div');
-    card.className = 'result-card ' + (r.isWinner ? 'winner-card' : '');
-    if (r.isWinner && !isSinglePlayer && !iAmTheWinner) {
-      const winnerColor = playerColors.get(r.id) || '#7c6fad';
-      card.style.borderColor = winnerColor;
+    const isMe = r.id === myPlayerId;
+    card.className = 'result-card ' + (r.isWinner && isMe ? 'winner-card' : '');
+    if (isMe && !r.isWinner && !isSinglePlayer) {
+      const myColor = playerColors.get(myPlayerId) || '#7c6fad';
+      card.style.borderColor = myColor;
     }
     const dists = r.distances || [];
     const pathHtml = r.path.map((p, i) => {
