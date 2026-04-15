@@ -174,17 +174,12 @@ async function getTopViewedArticles() {
       }
     }
 
-    // Pre-filter: remove special pages, bad titles, and person-name-shaped titles
     const filtered = articles
       .filter(a => {
         const t = a.article;
         if (t === 'Main_Page' || t === 'Special:Search' || t.startsWith('Special:')) return false;
         if (t.startsWith('Wikipedia:') || t.startsWith('Portal:') || t.startsWith('Help:')) return false;
         if (isBadTitle(t)) return false;
-        // Filter out person-name-shaped titles from top articles
-        // "Firstname Lastname" or "Firstname Middle Lastname" pattern
-        const clean = t.replace(/_/g, ' ');
-        if (/^[A-Z][a-z]+ [A-Z][a-z]+( [A-Z][a-z]+)?$/.test(clean)) return false;
         return true;
       })
       .filter(a => a.views >= 5000)
