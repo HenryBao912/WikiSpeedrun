@@ -1063,8 +1063,7 @@
   <div class="results-grid" id="resultsGrid"></div>
   <div class="result-actions">
     <button class="btn btn-primary btn-small" id="playAgainBtn" onclick="playAgain()" style="display:none;">Play Again</button>
-    <button class="btn btn-primary btn-small" id="newWordsBtn" onclick="newWords()" style="display:none;">New Words</button>
-    <button class="btn btn-secondary btn-small" onclick="backToHome()">Back to Home</button>
+<button class="btn btn-secondary btn-small" id="backToHomeBtn" onclick="backToHome()">Back to Home</button>
   </div>
 </div>
 
@@ -1399,6 +1398,11 @@ function startMultiplayerGame() {
 // ─── Game ───
 function sendGiveUpVote() {
   send({ type: 'give_up_vote' });
+  const btn = document.querySelector('.surrender-btn');
+  btn.disabled = true;
+  btn.style.opacity = '0.4';
+  btn.style.cursor = 'default';
+  btn.textContent = 'Voted';
 }
 
 // ─── Helpers ───
@@ -2011,7 +2015,7 @@ function showResults(msg) {
   }
 
   document.getElementById('playAgainBtn').style.display = isHost ? '' : 'none';
-  document.getElementById('newWordsBtn').style.display = isHost ? '' : 'none';
+  document.getElementById('backToHomeBtn').style.display = (isSinglePlayer || isHost) ? '' : 'none';
   showScreen('results');
 
   // Animate results
@@ -2044,20 +2048,6 @@ function playAgain() {
   send({ type: 'play_again' });
 }
 
-function newWords() {
-  if (isSinglePlayer) {
-    // For single player, go back to setup screen
-    eventSource?.close();
-    eventSource = null;
-    clearInterval(timerInterval);
-    resultsAnimationTimeouts.forEach(t => clearTimeout(t));
-    resultsAnimationTimeouts = [];
-    currentRoomCode = null;
-    showScreen('sp-setup');
-  } else {
-    send({ type: 'back_to_lobby' });
-  }
-}
 
 function backToHome() {
   eventSource?.close();
@@ -2070,6 +2060,10 @@ function backToHome() {
   isSinglePlayer = false;
   showScreen('home');
 }
+
+// Initialize slider fills on page load
+updateSinglePlayerDiffSlider();
+updateMultiplayerDiffSlider();
 </script>
 </body>
 </html>
