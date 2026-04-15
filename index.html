@@ -427,18 +427,20 @@
     gap: 16px;
     flex: 1;
   }
-  .give-up-btn {
-    padding: 8px 16px;
+  .surrender-btn {
+    padding: 6px 14px;
     background: var(--red);
     color: white;
     border: none;
     border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
     font-size: 0.85rem;
     font-weight: 600;
     cursor: pointer;
     transition: opacity 0.2s;
   }
-  .give-up-btn:hover { opacity: 0.9; }
+  .surrender-btn:hover { opacity: 0.9; cursor: pointer; }
   .give-up-status {
     font-size: 0.75rem;
     color: var(--text2);
@@ -697,6 +699,29 @@
     100% { transform: translateX(-50%) scale(1); }
   }
 
+  /* ─── Distance color classes ─── */
+  .dist-close { color: #fbbf24; }
+  .dist-mid { color: #c084fc; }
+  .dist-far { color: #7dd3fc; }
+
+  /* ─── Step flash ─── */
+  .lb-step-flash {
+    font-size: 0.65rem;
+    font-weight: 800;
+    color: #4ade80;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .lb-step-flash.show {
+    opacity: 1;
+    animation: stepFlashPop 0.5s ease-out;
+  }
+  @keyframes stepFlashPop {
+    0% { transform: scale(0.5); opacity: 0; }
+    50% { transform: scale(1.4); opacity: 1; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+
   /* ─── Checkpoint toast ─── */
   .checkpoint-toast {
     position: fixed;
@@ -733,9 +758,15 @@
   .winner-name {
     font-size: 2rem;
     font-weight: 800;
-    background: linear-gradient(135deg, var(--gold), #f39c12);
+    background: linear-gradient(90deg, var(--gold), #fff5c0, var(--gold), #f39c12, var(--gold));
+    background-size: 200% 100%;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
+    animation: goldShine 2s ease-in-out infinite;
+  }
+  @keyframes goldShine {
+    0% { background-position: 200% center; }
+    100% { background-position: -200% center; }
   }
   .winner-sub { color: var(--text2); margin-top: 4px; }
   .results-grid {
@@ -960,14 +991,12 @@
         <span class="dest-tag" id="gameDest"></span>
       </div>
       <div id="triNav" style="display:none;"></div>
-      <div style="display:flex;flex-direction:column;">
-        <button class="give-up-btn" onclick="sendGiveUpVote()">Give Up</button>
-        <div class="give-up-status" id="giveUpStatus"></div>
-      </div>
     </div>
     <div class="game-stats">
       <span>Steps: <span class="stat-val" id="stepCount">0</span></span>
       <span>Time: <span class="stat-val" id="timerDisplay">0:00</span></span>
+      <button class="surrender-btn" onclick="sendGiveUpVote()">Surrender</button>
+      <div class="give-up-status" id="giveUpStatus"></div>
     </div>
   </div>
   <div class="breadcrumb-bar" id="breadcrumbs"></div>
@@ -1542,24 +1571,130 @@ function startTimer() {
 
 // ─── Wikipedia Article Loading ─── (simplified, kept from original)
 async function loadArticle(title) {
-  document.getElementById('wikiLoading').style.display = 'flex';
-  document.getElementById('wikiContent').innerHTML = '';
-  try {
-    const resp = await fetch(`https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(title)}&prop=extracts&explaintext&format=json&origin=*`);
-    const data = await resp.json();
-    const pages = data.query?.pages || {};
-    const page = Object.values(pages)[0] || {};
-    const extract = page.extract || 'Article not found.';
+  const container = document.getElementById('wikiContainer');
+  const loading = document.getElementById('wikiLoading');
+  const content = document.getElementById('wikiContent');
 
-    document.getElementById('wikiLoading').style.display = 'none';
-    document.getElementById('wikiContent').innerHTML = extract
-      .split('\n')
-      .map(p => p.trim() ? `<p>${esc(p)}</p>` : '')
-      .join('');
-  } catch(e) {
-    document.getElementById('wikiLoading').style.display = 'none';
-    document.getElementById('wikiContent').innerHTML = '<p>Error loading article.</p>';
+  loading.style.display = 'flex';
+  content.style.display = 'none';
+  container.scrollTop = 0;
+
+  try {
+    const apiUrl = `https://en.wikipedia.org/api/rest_v1/page/html/${encodeURIComponent(title)}`;
+    const resp = await fetch(apiUrl);
+    if (!resp.ok) throw new Error('Article not found');
+    let html = await resp.text();
+
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+
+    // Remove non-content elements
+    doc.querySelectorAll(
+      '.mw-editsection, .reference, .reflist, .navbox, .sistersitebox, ' +
+      '.metadata, .mw-empty-elt, .noprint, style, .mw-kartographer-container, ' +
+      'sup.reference, .mw-references-wrap, link, meta, .hatnote, ' +
+      '.shortdescription, .mw-indicators, .ambox, .tmbox, .ombox, .cmbox, ' +
+      '.dmbox, .fmbox, .imbox, .portal, .side-box, .authority-control, ' +
+      '.sidebar, .sidebar-collapse, .sidebar-content, ' +
+      'table.sidebar, div.sidebar, ' +
+      '.vcard, .vertical-navbox, .hlist, ' +
+      'table.vertical-navbox, ' +
+      '[role="navigation"], .mw-collapsible, ' +
+      '#toc, .toc, .toccolours, ' +
+      '.geo-default, .geo-dms, .geo-dec, #coordinates'
+    ).forEach(el => el.remove());
+
+    // Remove images
+    doc.querySelectorAll('img, figure, .thumb, .image, .mw-file-element, .mw-file-description').forEach(el => el.remove());
+
+    // Remove infobox/sidebar tables
+    doc.querySelectorAll('table').forEach(table => {
+      const cls = (table.className || '').toLowerCase();
+      const style = (table.getAttribute('style') || '').toLowerCase();
+      if (cls.includes('infobox') || cls.includes('sidebar') || cls.includes('vcard') ||
+          cls.includes('vertical-navbox') || cls.includes('wikitable plainrowheaders') ||
+          style.includes('float') && (style.includes('right') || style.includes('left')) && table.querySelector('th')) {
+        table.remove();
+      }
+    });
+
+    // Remove References, Bibliography, etc. and everything after
+    const removeHeadings = ['references', 'citations', 'bibliography', 'further_reading',
+      'further reading', 'external_links', 'external links', 'see_also', 'see also', 'notes'];
+    doc.querySelectorAll('h2, h3').forEach(heading => {
+      const id = (heading.id || '').toLowerCase().replace(/_/g, ' ');
+      const text = (heading.textContent || '').toLowerCase().trim();
+      if (removeHeadings.some(r => id.includes(r) || text.includes(r))) {
+        let el = heading;
+        while (el) {
+          const next = el.nextElementSibling;
+          el.remove();
+          el = next;
+        }
+      }
+    });
+
+    // Process links: only keep Wikipedia internal article links
+    doc.querySelectorAll('a').forEach(a => {
+      const href = a.getAttribute('href') || '';
+      const wikiMatch = href.match(/^\.\/([^#?]+)/) || href.match(/^\/wiki\/([^#?]+)/);
+      if (wikiMatch) {
+        const target = decodeURIComponent(wikiMatch[1]);
+        if (target.includes(':') && !target.startsWith('The_') && target.indexOf(':') < 15) {
+          a.removeAttribute('href');
+          a.style.color = '#666';
+          a.style.cursor = 'default';
+          return;
+        }
+        a.removeAttribute('href');
+        a.setAttribute('data-article', target);
+        a.style.cursor = 'pointer';
+        a.style.color = '#3366cc';
+      } else {
+        a.removeAttribute('href');
+        a.style.color = '#666';
+        a.style.cursor = 'default';
+      }
+    });
+
+    content.innerHTML = doc.body.innerHTML;
+    content.style.display = 'block';
+    loading.style.display = 'none';
+
+    // Attach click handlers to wiki links
+    content.querySelectorAll('a[data-article]').forEach(a => {
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        const article = a.getAttribute('data-article');
+        navigateTo(article);
+      });
+    });
+
+    updateBreadcrumbs();
+
+  } catch (err) {
+    content.innerHTML = `<h1>Error loading article</h1><p>Could not load "${title.replace(/_/g, ' ')}". This article may not exist.</p>`;
+    content.style.display = 'block';
+    loading.style.display = 'none';
   }
+}
+
+function navigateTo(article) {
+  currentArticle = article;
+  myPath.push(article);
+  send({ type: 'navigate', article });
+  loadArticle(article);
+}
+
+function updateBreadcrumbs() {
+  const bar = document.getElementById('breadcrumbs');
+  bar.innerHTML = myPath.map((p, i) => {
+    const name = p.replace(/_/g, ' ');
+    const arrow = i < myPath.length - 1 ? '<span class="bc-arrow"> \u203A </span>' : '';
+    return `<span>${esc(name)}</span>${arrow}`;
+  }).join('');
+  bar.scrollLeft = bar.scrollWidth;
+  document.getElementById('stepCount').textContent = myPath.length - 1;
 }
 
 function showCheckpointToast(article, remaining) {
@@ -1576,37 +1711,172 @@ function renderProgress(playerId) {
       document.getElementById('stepCount').textContent = p.steps - 1;
     }
   }
+  renderPlayersBar(latestDistData);
+}
+
+const MAX_DIST = 6;
+const COLLAPSE_THRESHOLD = 3;
+
+function distColorClass(d) {
+  if (d === null || d === undefined) return 'dist-far';
+  if (d <= 2) return 'dist-close';
+  if (d <= 4) return 'dist-mid';
+  return 'dist-far';
 }
 
 function renderPlayersBar(distData) {
-  const riders = document.getElementById('lbRiders');
-  if (!distData || Object.keys(distData).length === 0) return;
+  const container = document.getElementById('lbRiders');
 
-  const entries = Object.entries(distData).map(([pid, info]) => ({
-    pid,
-    name: info.name,
-    color: info.color,
-    distance: info.distance,
-    steps: info.steps,
-    prev: info.prev,
-  }));
+  const entries = [];
+  const allPids = new Set([...playerProgress.keys(), ...(distData ? Object.keys(distData) : [])]);
 
-  const maxDist = Math.max(...entries.map(e => e.distance || 0), 1);
-  riders.innerHTML = entries.map(e => {
-    const pos = e.distance !== null ? (100 * e.distance / maxDist) : 0;
-    const isMe = e.pid === myPlayerId;
-    const arrow = e.distance !== null && e.prev !== null
-      ? (e.distance < e.prev ? '↓' : e.distance > e.prev ? '↑' : '→')
-      : '→';
-    return `
-      <div class="lb-rider ${isMe ? 'is-me' : ''}" style="left:${pos}%;background:${e.color};">
-        <span class="lb-name">${esc(e.name)}</span>
-        <span class="lb-steps">${e.steps} steps</span>
-        <span class="lb-dist">${e.distance ?? '?'}</span>
-        <span class="lb-arrow">${arrow}</span>
-      </div>
-    `;
-  }).join('');
+  for (const pid of allPids) {
+    const prog = playerProgress.get(pid);
+    const dist = distData ? distData[pid] : null;
+    const name = pid === myPlayerId ? 'You' : (prog?.name || dist?.name || '?');
+    const steps = dist?.steps ?? (prog ? prog.steps - 1 : 0);
+    const d = dist?.distance ?? null;
+    const prev = dist?.prev ?? null;
+    const color = playerColors.get(pid) || '#7c6fad';
+    const triInfo = prog?.mode === 'tri' ? ` · ${prog.visited || 0}/3` : '';
+    entries.push({ pid, name, steps, d, prev, color, triInfo });
+  }
+
+  entries.forEach(e => {
+    if (e.d !== null && e.d !== undefined) {
+      const clamped = Math.min(e.d, MAX_DIST);
+      e.leftPct = 93 - (clamped / MAX_DIST) * 86;
+    } else {
+      e.leftPct = 7;
+    }
+  });
+
+  const groups = [];
+  const assigned = new Set();
+  for (let i = 0; i < entries.length; i++) {
+    if (assigned.has(i)) continue;
+    const group = [entries[i]];
+    assigned.add(i);
+    for (let j = i + 1; j < entries.length; j++) {
+      if (assigned.has(j)) continue;
+      if (Math.abs(entries[i].leftPct - entries[j].leftPct) < 8) {
+        group.push(entries[j]);
+        assigned.add(j);
+      }
+    }
+    groups.push(group);
+  }
+
+  const renderedIds = new Set();
+
+  for (const group of groups) {
+    if (group.length >= COLLAPSE_THRESHOLD) {
+      const groupId = 'grp-' + group.map(e => e.pid).sort().join('-');
+      renderedIds.add(groupId);
+      for (const e of group) {
+        const old = container.querySelector(`[data-pid="${e.pid}"]`);
+        if (old) old.remove();
+      }
+      let dot = container.querySelector(`[data-gid="${groupId}"]`);
+      if (!dot) {
+        dot = document.createElement('div');
+        dot.className = 'lb-rider collapsed';
+        dot.setAttribute('data-gid', groupId);
+        container.appendChild(dot);
+      }
+      const avgLeft = group.reduce((s, e) => s + e.leftPct, 0) / group.length;
+      const circles = group.map(e =>
+        `<span class="lb-stack-circle" style="background:${e.color}"></span>`
+      ).join('');
+      const tipRows = group.map(e => {
+        let arrow = '';
+        if (e.d !== null && e.prev !== null && e.prev !== undefined && currentGameMode === 'classic') {
+          if (e.d < e.prev) arrow = '<span class="tip-arrow up">▲</span>';
+          else if (e.d > e.prev) arrow = '<span class="tip-arrow down">▼</span>';
+        }
+        let dHtml = '';
+        if (e.d !== null && e.d !== undefined && currentGameMode === 'classic') {
+          const dcls = distColorClass(e.d);
+          dHtml = `<span class="tip-dist ${dcls}">${e.d}</span>${arrow}`;
+        }
+        return `<div style="display:flex;align-items:center;gap:6px;">
+          <span style="width:8px;height:8px;border-radius:50%;background:${e.color};flex-shrink:0;"></span>
+          ${dHtml}
+          <span class="tip-name">${esc(e.name)}</span>
+          <span class="tip-steps">${e.steps}</span>
+        </div>`;
+      }).join('');
+      dot.innerHTML = `
+        <div class="lb-stack">${circles}</div>
+        <div class="lb-tip" style="background:var(--surface);flex-direction:column;gap:4px;padding:8px 12px;">
+          ${tipRows}
+        </div>
+      `;
+      dot.style.left = avgLeft + '%';
+      dot.style.top = '0px';
+      dot.style.width = 'auto';
+    } else {
+      container.querySelectorAll('[data-gid]').forEach(el => {
+        const gid = el.getAttribute('data-gid');
+        if (group.some(e => gid.includes(e.pid))) el.remove();
+      });
+      let rowUsed = [];
+      for (const e of group) {
+        renderedIds.add(e.pid);
+        let rider = container.querySelector(`[data-pid="${e.pid}"]`);
+        const isNew = !rider;
+        if (isNew) {
+          rider = document.createElement('div');
+          rider.className = 'lb-rider';
+          rider.setAttribute('data-pid', e.pid);
+          if (e.pid === myPlayerId) rider.classList.add('is-me');
+          container.appendChild(rider);
+        }
+        rider.classList.remove('collapsed');
+        let arrowHtml = '';
+        if (e.d !== null && e.prev !== null && e.prev !== undefined && currentGameMode === 'classic') {
+          if (e.d < e.prev) arrowHtml = '<span class="lb-arrow up">▲</span>';
+          else if (e.d > e.prev) arrowHtml = '<span class="lb-arrow down">▼</span>';
+          else arrowHtml = '<span class="lb-arrow flat">=</span>';
+        }
+        let distHtml = '';
+        if (e.d !== null && e.d !== undefined && currentGameMode === 'classic') {
+          const cls = distColorClass(e.d);
+          distHtml = `${arrowHtml}<span class="lb-dist ${cls}">${e.d}</span>`;
+        }
+        const prevData = prevPositions.get(e.pid);
+        const steppedUp = prevData && prevData.steps !== undefined && e.steps > prevData.steps && !isNew;
+        const stepFlash = steppedUp ? '<span class="lb-step-flash show">+</span>' : '<span class="lb-step-flash"></span>';
+        rider.style.background = e.color;
+        rider.innerHTML = `
+          ${distHtml}
+          <span class="lb-name">${esc(e.name)}</span>
+          <span class="lb-steps">${e.steps}${e.triInfo}</span>
+          ${stepFlash}
+        `;
+        let row = 0;
+        for (const u of rowUsed) {
+          if (Math.abs(u.left - e.leftPct) < 12 && u.row === row) row++;
+        }
+        rider.style.top = (row * 28) + 'px';
+        rider.style.left = e.leftPct + '%';
+        rowUsed.push({ left: e.leftPct, row });
+        if (prevData && prevData.distance !== null && e.d !== null && prevData.distance !== e.d && !isNew) {
+          rider.classList.remove('pulse');
+          void rider.offsetWidth;
+          rider.classList.add('pulse');
+        }
+        prevPositions.set(e.pid, { distance: e.d, steps: e.steps });
+      }
+    }
+  }
+
+  container.querySelectorAll('.lb-rider').forEach(el => {
+    const pid = el.getAttribute('data-pid');
+    const gid = el.getAttribute('data-gid');
+    if (pid && !renderedIds.has(pid)) el.remove();
+    if (gid && !renderedIds.has(gid)) el.remove();
+  });
 }
 
 function showResults(msg) {

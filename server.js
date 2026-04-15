@@ -850,17 +850,21 @@ function handleAction(playerId, msg) {
 
     case 'start_single': {
       const code = generateRoomCode();
-      const name = (msg.name || 'Player').slice(0, 20);
+      const name = (msg.name || 'Single Player').slice(0, 20);
       const player = players.get(playerId);
       if (player) {
         player.name = name;
         player.roomCode = code;
       }
       const room = initRoom(code, playerId, name);
-      room.singlePlayer = true; // Mark as single player
+      room.singlePlayer = true;
+      // Apply mode and difficulty from client
+      room.mode = msg.mode === 'tri' ? 'tri' : 'classic';
+      if (Array.isArray(msg.viewRange) && msg.viewRange.length === 2) {
+        room.viewRange = [Number(msg.viewRange[0]), Number(msg.viewRange[1])];
+      }
       rooms.set(code, room);
       sendSSE(playerId, { type: 'room_created', code, playerId, singlePlayer: true });
-      // Immediately start the game
       startGameForRoom(room, code);
       return { ok: true, code };
     }
