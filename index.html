@@ -979,6 +979,23 @@
     0%, 100% { box-shadow: inset 0 0 8px 2px rgba(0, 200, 90, 0.12), 0 0 8px 2px rgba(0, 200, 90, 0.08); }
     50% { box-shadow: inset 0 0 12px 3px rgba(0, 200, 90, 0.25), 0 0 14px 4px rgba(0, 200, 90, 0.15); }
   }
+  .players-bar.tri-mode::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 30px;
+    background-image:
+      linear-gradient(45deg, rgba(255,255,255,0.15) 25%, transparent 25%),
+      linear-gradient(-45deg, rgba(255,255,255,0.15) 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, rgba(255,255,255,0.15) 75%),
+      linear-gradient(-45deg, transparent 75%, rgba(255,255,255,0.15) 75%);
+    background-size: 8px 8px;
+    background-position: 0 0, 0 4px, 4px -4px, -4px 0;
+    pointer-events: none;
+    z-index: 1;
+    box-shadow: inset 0 0 8px 2px rgba(0, 200, 90, 0.15), 0 0 10px 2px rgba(0, 200, 90, 0.1);
+    animation: checkeredGlow 2.5s ease-in-out infinite;
+  }
   .lb-riders {
     position: relative;
     width: 100%;
@@ -2188,7 +2205,9 @@ function startGameUI(msg) {
   prevPositions.clear();
   document.getElementById('lbRiders').innerHTML = '';
   showScreen('game');
-  document.getElementById('playersBar').style.display = 'flex';
+  const playersBar = document.getElementById('playersBar');
+  playersBar.style.display = 'flex';
+  playersBar.classList.toggle('tri-mode', currentGameMode === 'tri');
   startTimer();
   loadArticle(currentArticle);
 }
@@ -2502,12 +2521,29 @@ function renderPlayersBar(distData) {
     const d = dist?.distance ?? null;
     const prev = dist?.prev ?? null;
     const color = playerColors.get(pid) || '#7c6fad';
-    const triInfo = prog?.mode === 'tri' ? ` · ${prog.visited || 0}/3` : '';
-    entries.push({ pid, name, steps, d, prev, color, triInfo });
+    const triInfo = prog?.mode === 'tri' ? ` · ${dist?.visited || prog?.visited || 0}/3` : '';
+    const triDists = dist?.triDistances || null;
+    entries.push({ pid, name, steps, d, prev, color, triInfo, triDists });
   }
 
   entries.forEach(e => {
-    if (e.d !== null && e.d !== undefined) {
+    if (currentGameMode === 'tri' && e.triDists) {
+      // Tri mode: position between two targets (left=target1, right=target2)
+      const dists = Object.values(e.triDists).filter(v => v !== null && v !== undefined);
+      if (dists.length === 2) {
+        const [d1, d2] = dists;
+        const total = d1 + d2;
+        // leftPct: 7% = fully at left target, 93% = fully at right target
+        // Position based on relative closeness: closer to d1 = more left
+        e.leftPct = total > 0 ? 7 + (d1 / total) * 86 : 50;
+      } else if (dists.length === 1) {
+        // Only one target left — use classic-style positioning
+        const clamped = Math.min(dists[0], MAX_DIST);
+        e.leftPct = 93 - (clamped / MAX_DIST) * 86;
+      } else {
+        e.leftPct = 50;
+      }
+    } else if (e.d !== null && e.d !== undefined) {
       const clamped = Math.min(e.d, MAX_DIST);
       e.leftPct = 93 - (clamped / MAX_DIST) * 86;
     } else {
@@ -2553,21 +2589,30 @@ function renderPlayersBar(distData) {
         `<span class="lb-stack-circle" style="background:${e.color}"></span>`
       ).join('');
       const tipRows = group.map(e => {
-        let arrow = '';
-        if (e.d !== null && e.prev !== null && e.prev !== undefined && currentGameMode === 'classic') {
-          if (e.d < e.prev) arrow = '<span class="tip-arrow up">▲</span>';
-          else if (e.d > e.prev) arrow = '<span class="tip-arrow down">▼</span>';
-        }
         let dHtml = '';
-        if (e.d !== null && e.d !== undefined && currentGameMode === 'classic') {
-          const dcls = distColorClass(e.d);
-          dHtml = `<span class="tip-dist ${dcls}">${e.d}</span>${arrow}`;
+        if (currentGameMode === 'tri' && e.triDists) {
+          const distVals = Object.values(e.triDists).filter(v => v !== null && v !== undefined);
+          if (distVals.length > 0) {
+            const minD = Math.min(...distVals);
+            const dcls = distColorClass(minD);
+            dHtml = `<span class="tip-dist ${dcls}">${minD}</span>`;
+          }
+        } else if (currentGameMode === 'classic') {
+          let arrow = '';
+          if (e.d !== null && e.prev !== null && e.prev !== undefined) {
+            if (e.d < e.prev) arrow = '<span class="tip-arrow up">▲</span>';
+            else if (e.d > e.prev) arrow = '<span class="tip-arrow down">▼</span>';
+          }
+          if (e.d !== null && e.d !== undefined) {
+            const dcls = distColorClass(e.d);
+            dHtml = `<span class="tip-dist ${dcls}">${e.d}</span>${arrow}`;
+          }
         }
         return `<div style="display:flex;align-items:center;gap:6px;">
           <span style="width:8px;height:8px;border-radius:50%;background:${e.color};flex-shrink:0;"></span>
           ${dHtml}
           <span class="tip-name">${esc(e.name)}</span>
-          <span class="tip-steps">${e.steps}</span>
+          <span class="tip-steps">${e.steps}${e.triInfo || ''}</span>
         </div>`;
       }).join('');
       dot.innerHTML = `
@@ -2597,16 +2642,26 @@ function renderPlayersBar(distData) {
           container.appendChild(rider);
         }
         rider.classList.remove('collapsed');
-        let arrowHtml = '';
-        if (e.d !== null && e.prev !== null && e.prev !== undefined && currentGameMode === 'classic') {
-          if (e.d < e.prev) arrowHtml = '<span class="lb-arrow up">▲</span>';
-          else if (e.d > e.prev) arrowHtml = '<span class="lb-arrow down">▼</span>';
-          else arrowHtml = '<span class="lb-arrow flat">=</span>';
-        }
         let distHtml = '';
-        if (e.d !== null && e.d !== undefined && currentGameMode === 'classic') {
-          const cls = distColorClass(e.d);
-          distHtml = `${arrowHtml}<span class="lb-dist ${cls}">${e.d}</span>`;
+        if (currentGameMode === 'tri' && e.triDists) {
+          const keys = Object.keys(e.triDists);
+          const distVals = keys.map(k => e.triDists[k]).filter(v => v !== null && v !== undefined);
+          if (distVals.length > 0) {
+            const minD = Math.min(...distVals);
+            const cls = distColorClass(minD);
+            distHtml = `<span class="lb-dist ${cls}">${minD}</span>`;
+          }
+        } else if (currentGameMode === 'classic') {
+          let arrowHtml = '';
+          if (e.d !== null && e.prev !== null && e.prev !== undefined) {
+            if (e.d < e.prev) arrowHtml = '<span class="lb-arrow up">▲</span>';
+            else if (e.d > e.prev) arrowHtml = '<span class="lb-arrow down">▼</span>';
+            else arrowHtml = '<span class="lb-arrow flat">=</span>';
+          }
+          if (e.d !== null && e.d !== undefined) {
+            const cls = distColorClass(e.d);
+            distHtml = `${arrowHtml}<span class="lb-dist ${cls}">${e.d}</span>`;
+          }
         }
         const prevData = prevPositions.get(e.pid);
         const steppedUp = prevData && prevData.steps !== undefined && e.steps > prevData.steps && !isNew;

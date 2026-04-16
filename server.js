@@ -651,6 +651,42 @@ async function startGameForRoom(room, roomCode) {
       origin: startArticle,
       targets: room.triple.targets,
     });
+    // Cache destination data for unvisited tri targets (targets[1] and targets[2])
+    room.triDestData = {};
+    for (const t of room.triple.targets.slice(1)) {
+      cacheDestination(t).then(destData => {
+        room.triDestData[t] = destData;
+        // Compute initial distances for all players
+        computeTriDistances(room, roomCode, startArticle);
+      }).catch(e => console.error('Tri cache error:', e.message));
+    }
+  }
+}
+
+async function computeTriDistances(room, roomCode, article) {
+  if (!room || !room.triDestData || !room.triple) return;
+  const targets = room.triple.targets.slice(1); // the 2 destination targets
+  const promises = targets.map(async t => {
+    const destData = room.triDestData[t];
+    if (!destData) return { target: t, distance: null };
+    const d = await computeDistance(article, t, destData);
+    return { target: t, distance: d };
+  });
+  const results = await Promise.all(promises);
+  const triDists = {};
+  for (const r of results) triDists[r.target] = r.distance;
+  // Store per-player tri distances
+  for (const [pid, p] of room.players) {
+    if (p.finished) continue;
+    const currentArticle = p.path[p.path.length - 1];
+    // Only compute for the article the player is on
+    if (currentArticle === article || article === null) {
+      p.triDistances = triDists;
+    }
+  }
+  const currentRoom = rooms.get(roomCode);
+  if (currentRoom && currentRoom.started) {
+    broadcastToRoom(roomCode, { type: 'distance_update', distances: getDistanceMap(currentRoom) });
   }
 }
 
@@ -660,7 +696,12 @@ function getDistanceMap(room) {
     const len = p.distances.length;
     const curr = len > 0 ? p.distances[len - 1] : null;
     const prev = len > 1 ? p.distances[len - 2] : null;
-    map[pid] = { name: p.name, color: p.color, distance: curr, prev, steps: p.path.length - 1 };
+    const entry = { name: p.name, color: p.color, distance: curr, prev, steps: p.path.length - 1 };
+    if (room.mode === 'tri' && p.triDistances) {
+      entry.triDistances = p.triDistances;
+      entry.visited = p.visited ? p.visited.length : 0;
+    }
+    map[pid] = entry;
   }
   return map;
 }
@@ -856,6 +897,30 @@ async function handleAction(playerId, msg) {
             });
             break;
           }
+        }
+      }
+
+      // Compute tri distances async
+      if (room.mode === 'tri' && !won && room.triDestData) {
+        const rc = player.roomCode;
+        const targets = room.triple.targets.slice(1);
+        const unvisited = targets.filter(t => !rp.visited.includes(t));
+        if (unvisited.length > 0) {
+          Promise.all(unvisited.map(async t => {
+            const destData = room.triDestData[t];
+            if (!destData) return;
+            const d = await computeDistance(article, t, destData);
+            return { target: t, distance: d };
+          })).then(results => {
+            if (!rp.triDistances) rp.triDistances = {};
+            for (const r of results) {
+              if (r) rp.triDistances[r.target] = r.distance;
+            }
+            const currentRoom = rooms.get(rc);
+            if (currentRoom && currentRoom.started) {
+              broadcastToRoom(rc, { type: 'distance_update', distances: getDistanceMap(currentRoom) });
+            }
+          }).catch(e => console.error('Tri distance error:', e.message));
         }
       }
 
