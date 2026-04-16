@@ -1809,14 +1809,27 @@ function renderRoundWords() {
 }
 
 async function randomizeWord(inputId) {
-  const btn = document.getElementById(inputId.replace('rw', 'rwRand'));
+  // Derive button ID: rwOrigin→rwRandOrigin, spRwOrigin→spRwRandOrigin, rwTarget1→rwRandTarget1, etc.
+  const btnId = inputId.replace(/^(sp)?[Rr]w/, (m) => m + 'Rand');
+  const btn = document.getElementById(btnId);
   if (!btn) return;
   btn.disabled = true;
   btn.classList.add('loading');
   try {
-    const result = await send({ type: 'random_word' });
-    if (result.ok && result.word) {
-      document.getElementById(inputId).value = result.word.replace(/_/g, ' ');
+    let word = null;
+    // Try server first (works in multiplayer lobby), fall back to client-side Wikipedia API
+    if (myPlayerId && eventSource) {
+      const result = await send({ type: 'random_word' });
+      if (result.ok && result.word) word = result.word;
+    }
+    if (!word) {
+      // Client-side fallback: use Wikipedia random API
+      const res = await fetch('https://en.wikipedia.org/api/rest_v1/page/random/summary');
+      const data = await res.json();
+      if (data.title) word = data.title;
+    }
+    if (word) {
+      document.getElementById(inputId).value = word.replace(/_/g, ' ');
       broadcastWordUpdate();
     }
   } catch(e) {
