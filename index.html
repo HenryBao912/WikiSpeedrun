@@ -185,14 +185,90 @@
   .home-buttons {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 14px;
     width: 100%;
     max-width: 360px;
   }
-  .home-buttons .btn {
+  .home-btn {
+    position: relative;
     width: 100%;
-    padding: 16px 24px;
+    padding: 18px 24px;
     font-size: 1.1rem;
+    font-weight: 800;
+    border: none;
+    border-radius: 14px;
+    cursor: pointer;
+    color: white;
+    overflow: hidden;
+    transition: transform 0.2s, box-shadow 0.3s;
+    letter-spacing: 0.3px;
+  }
+  .home-btn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 14px;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .home-btn:hover { transform: translateY(-3px); }
+  .home-btn:active { transform: translateY(0); }
+
+  .home-btn.sp {
+    background: linear-gradient(135deg, var(--accent), #6366f1);
+    box-shadow: 0 4px 24px rgba(108, 92, 231, 0.35), inset 0 1px 0 rgba(255,255,255,0.15);
+  }
+  .home-btn.sp::before {
+    background: linear-gradient(135deg, #8b7cf0, #7c6cf0);
+  }
+  .home-btn.sp:hover {
+    box-shadow: 0 8px 32px rgba(108, 92, 231, 0.55), inset 0 1px 0 rgba(255,255,255,0.15);
+  }
+  .home-btn.sp:hover::before { opacity: 1; }
+  .home-btn.sp::after {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: linear-gradient(transparent, rgba(255,255,255,0.06), transparent);
+    transform: rotate(30deg);
+    animation: btnSheen 4s ease-in-out infinite;
+  }
+
+  .home-btn.mp {
+    background: linear-gradient(135deg, var(--green), #16a34a);
+    box-shadow: 0 4px 24px rgba(34, 197, 94, 0.3), inset 0 1px 0 rgba(255,255,255,0.15);
+  }
+  .home-btn.mp::before {
+    background: linear-gradient(135deg, #2dd272, #22c55e);
+  }
+  .home-btn.mp:hover {
+    box-shadow: 0 8px 32px rgba(34, 197, 94, 0.5), inset 0 1px 0 rgba(255,255,255,0.15);
+  }
+  .home-btn.mp:hover::before { opacity: 1; }
+  .home-btn.mp::after {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: linear-gradient(transparent, rgba(255,255,255,0.06), transparent);
+    transform: rotate(30deg);
+    animation: btnSheen 4s ease-in-out infinite;
+    animation-delay: 2s;
+  }
+
+  .home-btn span {
+    position: relative;
+    z-index: 1;
+  }
+
+  @keyframes btnSheen {
+    0%, 100% { transform: rotate(30deg) translateX(-100%); }
+    50% { transform: rotate(30deg) translateX(100%); }
   }
 
   /* ─── Single Player Setup Screen ─── */
@@ -1199,8 +1275,8 @@
     </div>
     <p class="logo-sub">Navigate Wikipedia links. Race to the destination.</p>
     <div class="home-buttons">
-      <button class="btn btn-primary" onclick="showScreen('sp-setup')">Single Player</button>
-      <button class="btn btn-primary" onclick="showScreen('mp-setup')">Multiplayer</button>
+      <button class="home-btn sp" onclick="showScreen('sp-setup')"><span>Single Player</span></button>
+      <button class="home-btn mp" onclick="showScreen('mp-setup')"><span>Multiplayer</span></button>
     </div>
   </div>
 </div>
