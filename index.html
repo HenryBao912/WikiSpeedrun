@@ -1816,18 +1816,13 @@ async function randomizeWord(inputId) {
   btn.disabled = true;
   btn.classList.add('loading');
   try {
+    // Ensure server connection for good random articles
+    if (!myPlayerId || !eventSource) {
+      await connectSSE();
+    }
     let word = null;
-    // Try server first (works in multiplayer lobby), fall back to client-side Wikipedia API
-    if (myPlayerId && eventSource) {
-      const result = await send({ type: 'random_word' });
-      if (result.ok && result.word) word = result.word;
-    }
-    if (!word) {
-      // Client-side fallback: use Wikipedia random API
-      const res = await fetch('https://en.wikipedia.org/api/rest_v1/page/random/summary');
-      const data = await res.json();
-      if (data.title) word = data.title;
-    }
+    const result = await send({ type: 'random_word' });
+    if (result.ok && result.word) word = result.word;
     if (word) {
       document.getElementById(inputId).value = word.replace(/_/g, ' ');
       broadcastWordUpdate();
