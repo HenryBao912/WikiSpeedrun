@@ -1697,15 +1697,27 @@ async function startSinglePlayer() {
       mode: currentGameMode,
       viewRange: spDifficulty,
     };
-    // Gather manual words
+    // Gather and validate manual words
     if (currentGameMode === 'classic') {
-      const origin = document.getElementById('spRwOrigin')?.value.trim();
-      const dest = document.getElementById('spRwDest')?.value.trim();
-      if (origin) payload.origin = origin;
-      if (dest) payload.destination = dest;
+      const originEl = document.getElementById('spRwOrigin');
+      const destEl = document.getElementById('spRwDest');
+      const origin = originEl?.value.trim();
+      const dest = destEl?.value.trim();
+      if (!origin || !dest) {
+        if (!origin) shakeInput(originEl);
+        if (!dest) shakeInput(destEl);
+        return;
+      }
+      payload.origin = origin;
+      payload.destination = dest;
     } else {
-      const targets = [1, 2, 3].map(n => document.getElementById(`spRwTarget${n}`)?.value.trim()).filter(Boolean);
-      if (targets.length === 3) payload.targets = targets;
+      const els = [1, 2, 3].map(n => document.getElementById(`spRwTarget${n}`));
+      const targets = els.map(el => el?.value.trim());
+      if (targets.some(t => !t)) {
+        els.forEach((el, i) => { if (!targets[i]) shakeInput(el); });
+        return;
+      }
+      payload.targets = targets;
     }
     const result = await send(payload);
     if (result.ok) {
@@ -1938,13 +1950,8 @@ function startMultiplayerGame() {
     const origin = document.getElementById('rwOrigin')?.value.trim();
     const dest = document.getElementById('rwDest')?.value.trim();
     if (!origin || !dest) {
-      // Shake the empty fields
-      if (!origin) document.getElementById('rwOrigin').style.borderColor = 'var(--red)';
-      if (!dest) document.getElementById('rwDest').style.borderColor = 'var(--red)';
-      setTimeout(() => {
-        document.getElementById('rwOrigin').style.borderColor = '';
-        document.getElementById('rwDest').style.borderColor = '';
-      }, 1500);
+      if (!origin) shakeInput(document.getElementById('rwOrigin'));
+      if (!dest) shakeInput(document.getElementById('rwDest'));
       return;
     }
     send({ type: 'start_game', origin, destination: dest });
@@ -1954,11 +1961,8 @@ function startMultiplayerGame() {
     if (empty) {
       [1, 2, 3].forEach(n => {
         const el = document.getElementById(`rwTarget${n}`);
-        if (!el.value.trim()) el.style.borderColor = 'var(--red)';
+        if (!el.value.trim()) shakeInput(el);
       });
-      setTimeout(() => {
-        [1, 2, 3].forEach(n => document.getElementById(`rwTarget${n}`).style.borderColor = '');
-      }, 1500);
       return;
     }
     send({ type: 'start_game', targets });
