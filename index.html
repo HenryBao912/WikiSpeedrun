@@ -778,6 +778,7 @@
     color: var(--text2);
     transition: all 0.3s;
   }
+  .target-tag.start { background: var(--accent); color: white; }
   .target-tag.current { background: var(--accent); color: white; }
   .target-tag.reached { background: var(--green); color: white; }
   .target-tag.unreached { background: var(--surface2); color: var(--text2); opacity: 0.6; }
@@ -1833,7 +1834,7 @@ async function randomizeWord(inputId) {
       await connectSSE();
     }
     let word = null;
-    const result = await send({ type: 'random_word' });
+    const result = await send({ type: 'random_word', viewRange: spDifficulty || null });
     if (result.ok && result.word) word = result.word;
     if (word) {
       document.getElementById(inputId).value = word.replace(/_/g, ' ');
@@ -2196,8 +2197,11 @@ function renderTriTargets() {
   const nav = document.getElementById('triNav');
   nav.innerHTML = triTargets.map((t, i) => {
     const visited = myVisited.includes(t);
-    const current = i === 0 && myVisited.length === 0 ? ' current' : visited ? ' reached' : ' unreached';
-    return `<span class="target-tag${current}" data-title="${esc(t)}">${t.replace(/_/g, ' ')}</span>`;
+    const isStart = (i === 0);
+    let cls;
+    if (visited) cls = isStart ? ' start' : ' reached';
+    else cls = ' unreached';
+    return `<span class="target-tag${cls}" data-title="${esc(t)}">${t.replace(/_/g, ' ')}</span>`;
   }).join('<span class="target-sep">→</span>');
   nav.querySelectorAll('.target-tag').forEach(el => {
     el.onclick = (e) => { e.stopPropagation(); toggleSummary(el, el.getAttribute('data-title')); };

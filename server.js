@@ -896,7 +896,11 @@ async function handleAction(playerId, msg) {
     case 'random_word': {
       const player = players.get(playerId);
       const room = player ? rooms.get(player.roomCode) : null;
-      const viewRange = room?.viewRange || null;
+      // Use viewRange from message (SP setup) or from room (MP lobby)
+      let viewRange = room?.viewRange || null;
+      if (!viewRange && Array.isArray(msg.viewRange) && msg.viewRange.length === 2) {
+        viewRange = [Number(msg.viewRange[0]), Number(msg.viewRange[1])];
+      }
       const articles = await getGoodRandomArticles(1, viewRange);
       const word = articles.length > 0 ? articles[0] : 'Wikipedia';
       return { ok: true, word };
