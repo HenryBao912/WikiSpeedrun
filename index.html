@@ -618,6 +618,10 @@
   .rw-input:focus {
     border-color: var(--accent);
   }
+  .rw-input.rw-origin { border-color: rgba(108, 92, 231, 0.3); }
+  .rw-input.rw-origin:focus { border-color: var(--accent); }
+  .rw-input.rw-dest { border-color: rgba(34, 197, 94, 0.3); }
+  .rw-input.rw-dest:focus { border-color: var(--green); }
   .rw-input:disabled {
     opacity: 0.8;
     cursor: default;
@@ -638,6 +642,7 @@
     justify-content: center;
     flex-shrink: 0;
   }
+  .rw-random-btn.rw-dest-btn { background: var(--green); }
   .rw-random-btn:hover { transform: scale(1.1); }
   .rw-random-btn:active { transform: scale(0.95); }
   .rw-random-btn:disabled { opacity: 0.4; cursor: default; transform: none; }
@@ -645,7 +650,7 @@
   @keyframes spin { to { transform: rotate(360deg); } }
   .rw-arrow {
     text-align: center;
-    color: var(--accent2);
+    color: var(--text2);
     font-size: 1.1rem;
     margin: -4px 0;
   }
@@ -1316,7 +1321,11 @@
         </div>
       </div>
     </div>
-    <button class="btn btn-primary" onclick="startSinglePlayer()" style="width:100%;">Start Game</button>
+    <div class="round-words-section" id="spRoundWordsSection" style="display:flex;">
+      <div class="rw-title">ROUND WORDS</div>
+      <div id="spRoundWordsInputs"></div>
+      <button class="btn btn-primary" onclick="startSinglePlayer()" style="width:100%;margin-top:8px;">Start!</button>
+    </div>
   </div>
 </div>
 
@@ -1340,7 +1349,6 @@
 <!-- ─── Lobby Screen ─── -->
 <div id="lobby" class="screen">
   <button class="back-btn" onclick="backToMultiplayerSetup()">← Back</button>
-  <div class="logo" style="font-size:2rem;">WikiSpeedrun</div>
   <p style="color:var(--text2)">Share this room code with friends:</p>
   <div class="room-code-display" id="roomCodeDisplay" onclick="copyCode()">
     <span id="codeText"></span>
@@ -1505,7 +1513,7 @@ function scheduleHeroRoll(el) {
   }, delay);
 }
 
-document.addEventListener('DOMContentLoaded', () => { initBgWords(); initHeroLinks(); });
+document.addEventListener('DOMContentLoaded', () => { initBgWords(); initHeroLinks(); renderSpRoundWords(); });
 
 // ─── Global State ───
 let eventSource = null;
@@ -1607,6 +1615,50 @@ function setSinglePlayerMode(mode) {
   currentGameMode = mode;
   document.getElementById('spModeClassic').classList.toggle('active', mode === 'classic');
   document.getElementById('spModeTri').classList.toggle('active', mode === 'tri');
+  renderSpRoundWords();
+}
+
+function renderSpRoundWords() {
+  const container = document.getElementById('spRoundWordsInputs');
+  if (!container) return;
+
+  if (currentGameMode === 'classic') {
+    container.innerHTML = `
+      <div class="rw-row">
+        <div class="rw-input-wrap">
+          <input type="text" class="rw-input rw-origin" id="spRwOrigin" placeholder="e.g. Pizza" onfocus="this.select()" />
+          <ul class="autocomplete-list" id="acSpRwOrigin"></ul>
+        </div>
+        <button class="rw-random-btn" id="spRwRandOrigin" onclick="randomizeWord('spRwOrigin')">?</button>
+      </div>
+      <div class="rw-arrow">↓</div>
+      <div class="rw-row">
+        <div class="rw-input-wrap">
+          <input type="text" class="rw-input rw-dest" id="spRwDest" placeholder="e.g. Moon" onfocus="this.select()" />
+          <ul class="autocomplete-list" id="acSpRwDest"></ul>
+        </div>
+        <button class="rw-random-btn rw-dest-btn" id="spRwRandDest" onclick="randomizeWord('spRwDest')">?</button>
+      </div>
+    `;
+    document.getElementById('spRwOrigin')?.addEventListener('input', (e) => fetchAutocomplete(e.target.value, 'acSpRwOrigin', 'spRwOrigin'));
+    document.getElementById('spRwDest')?.addEventListener('input', (e) => fetchAutocomplete(e.target.value, 'acSpRwDest', 'spRwDest'));
+  } else {
+    container.innerHTML = [1, 2, 3].map((n, i) => {
+      let html = `
+        <div class="rw-row">
+          <div class="rw-input-wrap">
+            <input type="text" class="rw-input" id="spRwTarget${n}" placeholder="Target ${n}" onfocus="this.select()" />
+            <ul class="autocomplete-list" id="acSpRwTarget${n}"></ul>
+          </div>
+          <button class="rw-random-btn" id="spRwRandTarget${n}" onclick="randomizeWord('spRwTarget${n}')">?</button>
+        </div>`;
+      if (i < 2) html += '<div class="rw-arrow">↓</div>';
+      return html;
+    }).join('');
+    [1, 2, 3].forEach(n => {
+      document.getElementById(`spRwTarget${n}`)?.addEventListener('input', (e) => fetchAutocomplete(e.target.value, `acSpRwTarget${n}`, `spRwTarget${n}`));
+    });
+  }
 }
 
 function updateSinglePlayerDiffSlider() {
@@ -1639,12 +1691,23 @@ async function startSinglePlayer() {
   try {
     await connectSSE();
     isSinglePlayer = true;
-    const result = await send({
+    const payload = {
       type: 'start_single',
       name: 'Single Player',
       mode: currentGameMode,
       viewRange: spDifficulty,
-    });
+    };
+    // Gather manual words
+    if (currentGameMode === 'classic') {
+      const origin = document.getElementById('spRwOrigin')?.value.trim();
+      const dest = document.getElementById('spRwDest')?.value.trim();
+      if (origin) payload.origin = origin;
+      if (dest) payload.destination = dest;
+    } else {
+      const targets = [1, 2, 3].map(n => document.getElementById(`spRwTarget${n}`)?.value.trim()).filter(Boolean);
+      if (targets.length === 3) payload.targets = targets;
+    }
+    const result = await send(payload);
     if (result.ok) {
       currentRoomCode = result.code;
       isHost = true;
@@ -1706,7 +1769,7 @@ function renderRoundWords() {
     container.innerHTML = `
       <div class="rw-row">
         <div class="rw-input-wrap">
-          <input type="text" class="rw-input" id="rwOrigin" placeholder="e.g. Pizza" ${disabled} onfocus="this.select()" />
+          <input type="text" class="rw-input rw-origin" id="rwOrigin" placeholder="e.g. Pizza" ${disabled} onfocus="this.select()" />
           <ul class="autocomplete-list" id="acRwOrigin"></ul>
         </div>
         <button class="rw-random-btn" id="rwRandOrigin" onclick="randomizeWord('rwOrigin')" ${btnStyle}>?</button>
@@ -1714,10 +1777,10 @@ function renderRoundWords() {
       <div class="rw-arrow">↓</div>
       <div class="rw-row">
         <div class="rw-input-wrap">
-          <input type="text" class="rw-input" id="rwDest" placeholder="e.g. Moon" ${disabled} onfocus="this.select()" />
+          <input type="text" class="rw-input rw-dest" id="rwDest" placeholder="e.g. Moon" ${disabled} onfocus="this.select()" />
           <ul class="autocomplete-list" id="acRwDest"></ul>
         </div>
-        <button class="rw-random-btn" id="rwRandDest" onclick="randomizeWord('rwDest')" ${btnStyle}>?</button>
+        <button class="rw-random-btn rw-dest-btn" id="rwRandDest" onclick="randomizeWord('rwDest')" ${btnStyle}>?</button>
       </div>
     `;
     if (isHost) {

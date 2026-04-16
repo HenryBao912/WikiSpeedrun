@@ -596,8 +596,15 @@ async function startGameForRoom(room, roomCode) {
 
   if (room.mode === 'classic') {
     // Use manual articles if set, otherwise generate random
-    if (room.manualArticles && room.manualArticles.origin && room.manualArticles.destination) {
-      room.pair = { origin: room.manualArticles.origin, destination: room.manualArticles.destination };
+    const ma = room.manualArticles || {};
+    if (ma.origin && ma.destination) {
+      room.pair = { origin: ma.origin, destination: ma.destination };
+    } else if (ma.origin || ma.destination) {
+      const randomPair = await getRandomPair(viewRange);
+      room.pair = {
+        origin: ma.origin || randomPair.origin,
+        destination: ma.destination || randomPair.destination,
+      };
     } else {
       room.pair = await getRandomPair(viewRange);
     }
@@ -931,6 +938,18 @@ async function handleAction(playerId, msg) {
       room.mode = msg.mode === 'tri' ? 'tri' : 'classic';
       if (Array.isArray(msg.viewRange) && msg.viewRange.length === 2) {
         room.viewRange = [Number(msg.viewRange[0]), Number(msg.viewRange[1])];
+      }
+      // Apply manual articles if provided
+      if (msg.mode === 'classic' || !msg.mode) {
+        if (msg.origin && msg.destination) {
+          room.manualArticles = { origin: msg.origin, destination: msg.destination };
+        } else if (msg.origin) {
+          room.manualArticles = { origin: msg.origin };
+        } else if (msg.destination) {
+          room.manualArticles = { destination: msg.destination };
+        }
+      } else if (msg.mode === 'tri' && msg.targets && msg.targets.length === 3) {
+        room.manualArticles = { targets: msg.targets };
       }
       rooms.set(code, room);
       sendSSE(playerId, { type: 'room_created', code, playerId, singlePlayer: true });
