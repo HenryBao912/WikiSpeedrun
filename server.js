@@ -895,10 +895,8 @@ async function handleAction(playerId, msg) {
 
     case 'random_word': {
       const player = players.get(playerId);
-      if (!player) return { ok: false };
-      const room = rooms.get(player.roomCode);
-      if (!room) return { ok: false };
-      const viewRange = room.viewRange || null;
+      const room = player ? rooms.get(player.roomCode) : null;
+      const viewRange = room?.viewRange || null;
       const articles = await getGoodRandomArticles(1, viewRange);
       const word = articles.length > 0 ? articles[0] : 'Wikipedia';
       return { ok: true, word };
