@@ -1765,6 +1765,11 @@ async function startSinglePlayer() {
         if (!dest) shakeInput(destEl);
         return;
       }
+      if (origin.toLowerCase() === dest.toLowerCase()) {
+        shakeInput(originEl);
+        shakeInput(destEl);
+        return;
+      }
       payload.origin = origin;
       payload.destination = dest;
     } else {
@@ -1772,6 +1777,13 @@ async function startSinglePlayer() {
       const targets = els.map(el => el?.value.trim());
       if (targets.some(t => !t)) {
         els.forEach((el, i) => { if (!targets[i]) shakeInput(el); });
+        return;
+      }
+      const lowers = targets.map(t => t.toLowerCase());
+      const dupes = new Set();
+      lowers.forEach((t, i) => { lowers.forEach((t2, j) => { if (i !== j && t === t2) { dupes.add(i); dupes.add(j); } }); });
+      if (dupes.size > 0) {
+        els.forEach((el, i) => { if (dupes.has(i)) shakeInput(el); });
         return;
       }
       payload.targets = targets;
@@ -2004,22 +2016,33 @@ function copyCode() {
 function startMultiplayerGame() {
   // Gather words from the input fields
   if (mpCurrentMode === 'classic') {
-    const origin = document.getElementById('rwOrigin')?.value.trim();
-    const dest = document.getElementById('rwDest')?.value.trim();
+    const originEl = document.getElementById('rwOrigin');
+    const destEl = document.getElementById('rwDest');
+    const origin = originEl?.value.trim();
+    const dest = destEl?.value.trim();
     if (!origin || !dest) {
-      if (!origin) shakeInput(document.getElementById('rwOrigin'));
-      if (!dest) shakeInput(document.getElementById('rwDest'));
+      if (!origin) shakeInput(originEl);
+      if (!dest) shakeInput(destEl);
+      return;
+    }
+    if (origin.toLowerCase() === dest.toLowerCase()) {
+      shakeInput(originEl);
+      shakeInput(destEl);
       return;
     }
     send({ type: 'start_game', origin, destination: dest });
   } else {
-    const targets = [1, 2, 3].map(n => document.getElementById(`rwTarget${n}`)?.value.trim());
-    const empty = targets.some(t => !t);
-    if (empty) {
-      [1, 2, 3].forEach(n => {
-        const el = document.getElementById(`rwTarget${n}`);
-        if (!el.value.trim()) shakeInput(el);
-      });
+    const els = [1, 2, 3].map(n => document.getElementById(`rwTarget${n}`));
+    const targets = els.map(el => el?.value.trim());
+    if (targets.some(t => !t)) {
+      els.forEach((el, i) => { if (!targets[i]) shakeInput(el); });
+      return;
+    }
+    const lowers = targets.map(t => t.toLowerCase());
+    const dupes = new Set();
+    lowers.forEach((t, i) => { lowers.forEach((t2, j) => { if (i !== j && t === t2) { dupes.add(i); dupes.add(j); } }); });
+    if (dupes.size > 0) {
+      els.forEach((el, i) => { if (dupes.has(i)) shakeInput(el); });
       return;
     }
     send({ type: 'start_game', targets });
