@@ -9,6 +9,21 @@ const url = require('url');
 const rooms = new Map();
 const players = new Map(); // playerId -> { res (SSE), roomCode, name }
 
+// Max length for a Wikipedia article title. The API docs cap at 255 bytes;
+// anything longer is definitely malicious/garbage.
+const MAX_ARTICLE_LEN = 255;
+
+// Validate a user-supplied article name. Wikipedia allows almost any Unicode,
+// so we can't whitelist characters — but we can bound length and reject
+// control chars / pipes / brackets that break wiki-syntax and API params.
+function isValidArticle(s) {
+  if (typeof s !== 'string') return false;
+  if (s.length === 0 || s.length > MAX_ARTICLE_LEN) return false;
+  // Reject control chars and separators that would break API URL params
+  if (/[\x00-\x1f\x7f|#<>\[\]{}]/.test(s)) return false;
+  return true;
+}
+
 function generateRoomCode() {
   return crypto.randomBytes(3).toString('hex').toUpperCase().slice(0, 5);
 }
@@ -379,8 +394,31 @@ async function resolveRedirect(title) {
 }
 
 // ─── Wikipedia API for distance calculation ───
-const linkCache = new Map(); // title -> Set of outgoing link titles
-const backlinkCache = new Map(); // title -> Set of backlink titles
+// LRU-ish caches with size + TTL bounds. Long-running servers otherwise grow
+// unbounded since every navigated article gets cached indefinitely.
+const CACHE_MAX = 5000;
+const CACHE_TTL_MS = 30 * 60 * 1000; // 30 min
+const linkCache = new Map(); // title -> { value: Set, expires: number }
+const backlinkCache = new Map(); // title -> { value: Set, expires: number }
+
+function cacheGet(cache, key) {
+  const entry = cache.get(key);
+  if (!entry) return undefined;
+  if (entry.expires < Date.now()) { cache.delete(key); return undefined; }
+  // Touch: move to end so recent keys survive eviction
+  cache.delete(key);
+  cache.set(key, entry);
+  return entry.value;
+}
+
+function cacheSet(cache, key, value) {
+  if (cache.size >= CACHE_MAX) {
+    // Evict oldest (first) key — Map iterates insertion order
+    const firstKey = cache.keys().next().value;
+    if (firstKey !== undefined) cache.delete(firstKey);
+  }
+  cache.set(key, { value, expires: Date.now() + CACHE_TTL_MS });
+}
 
 function wikiAPI(params) {
   return new Promise((resolve, reject) => {
@@ -398,7 +436,8 @@ function wikiAPI(params) {
 
 async function getPageLinks(title) {
   const norm = normalizeArticle(title);
-  if (linkCache.has(norm)) return linkCache.get(norm);
+  const cached = cacheGet(linkCache, norm);
+  if (cached) return cached;
   const links = new Set();
   let plcontinue = null;
   try {
@@ -415,13 +454,14 @@ async function getPageLinks(title) {
   } catch (e) {
     console.error('Error fetching links for', title, e.message);
   }
-  linkCache.set(norm, links);
+  cacheSet(linkCache, norm, links);
   return links;
 }
 
 async function getBacklinks(title, limit = 500) {
   const norm = normalizeArticle(title);
-  if (backlinkCache.has(norm)) return backlinkCache.get(norm);
+  const cached = cacheGet(backlinkCache, norm);
+  if (cached) return cached;
   const links = new Set();
   let blcontinue = null;
   try {
@@ -435,7 +475,7 @@ async function getBacklinks(title, limit = 500) {
   } catch (e) {
     console.error('Error fetching backlinks for', title, e.message);
   }
-  backlinkCache.set(norm, links);
+  cacheSet(backlinkCache, norm, links);
   return links;
 }
 
@@ -652,9 +692,16 @@ async function startGameForRoom(room, roomCode) {
       });
     });
   } else {
-    // Use manual articles if set, otherwise generate random
-    if (room.manualArticles && room.manualArticles.targets && room.manualArticles.targets.length === 3) {
-      room.triple = { targets: room.manualArticles.targets };
+    // Use manual articles if set, otherwise generate random.
+    // Duplicate targets would make the game unwinnable (two visited slots map
+    // to the same article but we require 3 distinct entries in `visited`) —
+    // reject and fall back to random.
+    const manualTargets = room.manualArticles?.targets;
+    const manualOk = Array.isArray(manualTargets)
+      && manualTargets.length === 3
+      && new Set(manualTargets.map(t => normalizeArticle(t))).size === 3;
+    if (manualOk) {
+      room.triple = { targets: manualTargets };
     } else {
       room.triple = await getRandomTriple(viewRange);
     }
@@ -779,6 +826,31 @@ async function handleAction(playerId, msg) {
 
       const name = (msg.name || 'Player').slice(0, 20);
       const player = players.get(playerId);
+
+      // Leave prior room first — otherwise the player has stale state in both
+      // rooms, the old host pointer dangles, and player_list broadcasts keep
+      // firing for a ghost member.
+      if (player && player.roomCode && player.roomCode !== code) {
+        const oldCode = player.roomCode;
+        const oldRoom = rooms.get(oldCode);
+        if (oldRoom) {
+          oldRoom.players.delete(playerId);
+          if (oldRoom.host === playerId) {
+            const next = oldRoom.players.keys().next();
+            oldRoom.host = next.done ? null : next.value;
+          }
+          if (oldRoom.players.size === 0) {
+            rooms.delete(oldCode);
+          } else {
+            broadcastToRoom(oldCode, {
+              type: 'player_list',
+              players: [...oldRoom.players.entries()].map(([id, p]) => ({ id, name: p.name, color: p.color })),
+              host: oldRoom.host,
+            });
+          }
+        }
+      }
+
       if (player) {
         player.name = name;
         player.roomCode = code;
@@ -834,10 +906,10 @@ async function handleAction(playerId, msg) {
       } else {
         if (room.players.size < 2) return { ok: false, error: 'Need at least 2 players' };
       }
-      // Accept words from the client if provided
-      if (msg.origin && msg.destination) {
+      // Accept words from the client if provided (validated)
+      if (msg.origin && msg.destination && isValidArticle(msg.origin) && isValidArticle(msg.destination)) {
         room.manualArticles = { origin: msg.origin, destination: msg.destination };
-      } else if (msg.targets && msg.targets.length === 3) {
+      } else if (Array.isArray(msg.targets) && msg.targets.length === 3 && msg.targets.every(t => isValidArticle(t))) {
         room.manualArticles = { targets: msg.targets };
       }
       startGameForRoom(room, player.roomCode);
@@ -854,7 +926,7 @@ async function handleAction(playerId, msg) {
       if (!rp || rp.finished) return { ok: false };
 
       const article = msg.article;
-      if (!article) return { ok: false };
+      if (!isValidArticle(article)) return { ok: false, error: 'Invalid article' };
       rp.path.push(article);
 
       // For tri mode, include visited count in progress
@@ -868,6 +940,11 @@ async function handleAction(playerId, msg) {
         visited: rp.visited.length,
         mode: room.mode,
       });
+
+      // Snapshot visited count BEFORE checkWin — checkWin mutates rp.visited
+      // as a side effect. We use the delta to distinguish a newly reached
+      // checkpoint from a re-visit (avoids spurious checkpoint_reached events).
+      const visitedBefore = rp.visited.length;
 
       // Check win — first quick check, then resolve redirect if needed
       let won = checkWin(room, rp, article);
@@ -901,20 +978,16 @@ async function handleAction(playerId, msg) {
         }
       }
 
-      // For tri mode, notify the player when they hit a checkpoint
-      if (!won && room.mode === 'tri') {
-        const current = normalizeArticle(article);
-        for (const t of room.triple.targets) {
-          if (normalizeArticle(t) === current && rp.visited.includes(t)) {
-            sendSSE(playerId, {
-              type: 'checkpoint_reached',
-              article: t,
-              visited: [...rp.visited],
-              remaining: room.triple.targets.length - rp.visited.length,
-            });
-            break;
-          }
-        }
+      // Notify only when a NEW checkpoint was reached this navigation (not on
+      // re-visits of an already-visited target).
+      if (!won && room.mode === 'tri' && rp.visited.length > visitedBefore) {
+        const justVisited = rp.visited[rp.visited.length - 1];
+        sendSSE(playerId, {
+          type: 'checkpoint_reached',
+          article: justVisited,
+          visited: [...rp.visited],
+          remaining: room.triple.targets.length - rp.visited.length,
+        });
       }
 
       // Compute tri distances async
@@ -934,7 +1007,9 @@ async function handleAction(playerId, msg) {
               if (r) rp.triDistances[r.target] = r.distance;
             }
             const currentRoom = rooms.get(rc);
-            if (currentRoom && currentRoom.started) {
+            // Player may have left the room or joined a different one while
+            // we were awaiting Wikipedia — skip broadcast in that case.
+            if (currentRoom && currentRoom.started && currentRoom.players.has(playerId)) {
               broadcastToRoom(rc, { type: 'distance_update', distances: getDistanceMap(currentRoom) });
             }
           }).catch(e => console.error('Tri distance error:', e.message));
@@ -947,7 +1022,7 @@ async function handleAction(playerId, msg) {
         computeDistance(article, room.pair.destination, room.destData).then(dist => {
           rp.distances.push(dist);
           const currentRoom = rooms.get(rc);
-          if (currentRoom && currentRoom.started) {
+          if (currentRoom && currentRoom.started && currentRoom.players.has(playerId)) {
             broadcastToRoom(rc, { type: 'distance_update', distances: getDistanceMap(currentRoom) });
           }
         }).catch(e => console.error('Distance calc error:', e.message));
@@ -997,10 +1072,16 @@ async function handleAction(playerId, msg) {
       if (!room || room.host !== playerId) return { ok: false, error: 'Only host can set articles' };
       if (room.started) return { ok: false, error: 'Cannot change articles during game' };
       // Store manual articles: { origin, destination } for classic or { targets: [a,b,c] } for tri
+      const origin = msg.origin;
+      const destination = msg.destination;
+      const targets = Array.isArray(msg.targets) ? msg.targets : null;
+      if (origin !== undefined && origin !== '' && !isValidArticle(origin)) return { ok: false, error: 'Invalid origin' };
+      if (destination !== undefined && destination !== '' && !isValidArticle(destination)) return { ok: false, error: 'Invalid destination' };
+      if (targets && !targets.every(t => t === '' || isValidArticle(t))) return { ok: false, error: 'Invalid target' };
       room.manualArticles = {
-        origin: msg.origin || undefined,
-        destination: msg.destination || undefined,
-        targets: msg.targets || undefined,
+        origin: origin || undefined,
+        destination: destination || undefined,
+        targets: targets || undefined,
       };
       // Broadcast update to all players
       broadcastToRoom(player.roomCode, {
@@ -1025,17 +1106,22 @@ async function handleAction(playerId, msg) {
       if (Array.isArray(msg.viewRange) && msg.viewRange.length === 2) {
         room.viewRange = [Number(msg.viewRange[0]), Number(msg.viewRange[1])];
       }
-      // Apply manual articles if provided
+      // Apply manual articles if provided (validated)
       if (msg.mode === 'classic' || !msg.mode) {
-        if (msg.origin && msg.destination) {
-          room.manualArticles = { origin: msg.origin, destination: msg.destination };
-        } else if (msg.origin) {
-          room.manualArticles = { origin: msg.origin };
-        } else if (msg.destination) {
-          room.manualArticles = { destination: msg.destination };
+        const o = msg.origin, d = msg.destination;
+        const validO = o && isValidArticle(o);
+        const validD = d && isValidArticle(d);
+        if (validO && validD) {
+          room.manualArticles = { origin: o, destination: d };
+        } else if (validO) {
+          room.manualArticles = { origin: o };
+        } else if (validD) {
+          room.manualArticles = { destination: d };
         }
-      } else if (msg.mode === 'tri' && msg.targets && msg.targets.length === 3) {
-        room.manualArticles = { targets: msg.targets };
+      } else if (msg.mode === 'tri' && Array.isArray(msg.targets) && msg.targets.length === 3) {
+        if (msg.targets.every(t => isValidArticle(t))) {
+          room.manualArticles = { targets: msg.targets };
+        }
       }
       rooms.set(code, room);
       sendSSE(playerId, { type: 'room_created', code, playerId, singlePlayer: true });
@@ -1152,7 +1238,7 @@ function readBody(req) {
 function cors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Player-Id');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Player-Id, X-Csrf-Token');
 }
 
 // ─── HTTP Server ───
@@ -1191,10 +1277,15 @@ const server = http.createServer(async (req, res) => {
     });
     res.write('\n');
 
-    players.set(playerId, { res, roomCode: null, name: null });
+    // Per-session CSRF token. The client stores this in JS memory (never a
+    // cookie) and echoes it back on every /action via X-Csrf-Token. An attacker
+    // on another origin can't read the EventSource body from the victim's tab,
+    // so they cannot forge actions even if they guess a playerId.
+    const csrfToken = crypto.randomBytes(16).toString('hex');
+    players.set(playerId, { res, roomCode: null, name: null, csrfToken });
     console.log(`SSE connected: ${playerId.slice(0, 8)} (total: ${players.size})`);
 
-    sendSSE(playerId, { type: 'connected', playerId });
+    sendSSE(playerId, { type: 'connected', playerId, csrfToken });
 
     const keepalive = setInterval(() => {
       if (!res.writableEnded) {
@@ -1215,9 +1306,16 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req);
       const msg = JSON.parse(body);
       const playerId = req.headers['x-player-id'];
-      if (!playerId || !players.has(playerId)) {
+      const csrfToken = req.headers['x-csrf-token'];
+      const player = playerId ? players.get(playerId) : null;
+      if (!player) {
         res.writeHead(401, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: false, error: 'Not connected. Open /events first.' }));
+        return;
+      }
+      if (!csrfToken || csrfToken !== player.csrfToken) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'Invalid CSRF token' }));
         return;
       }
       const result = await handleAction(playerId, msg);

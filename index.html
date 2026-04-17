@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Wikispeedrun | Navigate & Race</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<!-- DOMPurify: sanitize Wikipedia HTML before injecting via innerHTML -->
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js" crossorigin="anonymous"></script>
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-XJHZTSVGM5"></script>
 <script>
@@ -1301,7 +1303,7 @@
     </div>
     <p class="logo-sub">Navigate Wikipedia | Race to the destination</p>
     <div class="home-buttons">
-      <button class="home-btn sp" onclick="showScreen('sp-setup')"><span>Single Player</span></button>
+      <button class="home-btn sp" onclick="showScreen('sp-setup')"><span>Singleplayer</span></button>
       <button class="home-btn mp" onclick="showScreen('mp-setup')"><span>Multiplayer</span></button>
     </div>
   </div>
@@ -1554,6 +1556,7 @@ document.addEventListener('DOMContentLoaded', () => { initBgWords(); initHeroLin
 // ─── Global State ───
 let eventSource = null;
 let myPlayerId = null;
+let myCsrfToken = null;
 let currentRoomCode = null;
 let isHost = false;
 let currentGameMode = 'classic';
@@ -1591,8 +1594,18 @@ function showScreen(id) {
 }
 
 // ─── SSE Connection ───
+// Reuse an existing healthy connection. Every screen transition used to
+// close + reopen, which churned a playerId per click, orphaned server-side
+// room state, and doubled the CSRF-token / game-state resync work.
+let ssePending = null;
 function connectSSE() {
-  return new Promise((resolve, reject) => {
+  // Open or still-connecting socket with a known player — reuse it.
+  if (eventSource && eventSource.readyState !== 2 /* CLOSED */ && myPlayerId) {
+    return Promise.resolve();
+  }
+  // Already dialing — return the in-flight promise so parallel callers share it.
+  if (ssePending) return ssePending;
+  ssePending = new Promise((resolve, reject) => {
     if (eventSource) eventSource.close();
     const url = myPlayerId ? `/events?playerId=${myPlayerId}` : '/events';
     eventSource = new EventSource(url);
@@ -1601,15 +1614,25 @@ function connectSSE() {
       console.log('[SSE] Connected');
     };
 
+    // Messages can arrive before 'connected' (e.g. if the server blasts state
+    // immediately on reconnect). Buffer them until myPlayerId is set —
+    // handleServerMessage branches on that id and silently drops otherwise.
+    const pending = [];
+    let ready = !!myPlayerId;
     eventSource.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data);
         if (msg.type === 'connected') {
           myPlayerId = msg.playerId;
+          myCsrfToken = msg.csrfToken || null;
+          ready = true;
+          while (pending.length) handleServerMessage(pending.shift());
+          ssePending = null;
           resolve();
           return;
         }
-        handleServerMessage(msg);
+        if (ready) handleServerMessage(msg);
+        else pending.push(msg);
       } catch(err) {
         console.error('[SSE] Parse error:', err);
       }
@@ -1620,19 +1643,23 @@ function connectSSE() {
       if (eventSource.readyState === EventSource.CLOSED) {
         showError('mpError', 'Connection lost. Please refresh.');
       }
+      ssePending = null;
       reject(new Error('SSE connection failed'));
     };
   });
+  return ssePending;
 }
 
 async function send(msg) {
   try {
+    const headers = {
+      'Content-Type': 'application/json',
+      'X-Player-Id': myPlayerId,
+    };
+    if (myCsrfToken) headers['X-Csrf-Token'] = myCsrfToken;
     const resp = await fetch('/action', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Player-Id': myPlayerId,
-      },
+      headers,
       body: JSON.stringify(msg),
     });
     const result = await resp.json();
@@ -1654,9 +1681,23 @@ function setSinglePlayerMode(mode) {
   renderSpRoundWords();
 }
 
+// Single delegated input-listener bound once to the inputs container.
+// Previously we attached a fresh listener per-input on every re-render, so
+// flipping modes N times left N orphaned closures pointing at dead DOM nodes.
+let spRoundWordsDelegated = false;
 function renderSpRoundWords() {
   const container = document.getElementById('spRoundWordsInputs');
   if (!container) return;
+
+  if (!spRoundWordsDelegated) {
+    container.addEventListener('input', (e) => {
+      const id = e.target.id;
+      if (id && id.startsWith('spRw')) {
+        fetchAutocomplete(e.target.value, 'ac' + id.charAt(0).toUpperCase() + id.slice(1), id);
+      }
+    });
+    spRoundWordsDelegated = true;
+  }
 
   if (currentGameMode === 'classic') {
     container.innerHTML = `
@@ -1676,8 +1717,6 @@ function renderSpRoundWords() {
         <button class="rw-random-btn rw-dest-btn" id="spRwRandDest" onclick="randomizeWord('spRwDest')">?</button>
       </div>
     `;
-    document.getElementById('spRwOrigin')?.addEventListener('input', (e) => fetchAutocomplete(e.target.value, 'acSpRwOrigin', 'spRwOrigin'));
-    document.getElementById('spRwDest')?.addEventListener('input', (e) => fetchAutocomplete(e.target.value, 'acSpRwDest', 'spRwDest'));
   } else {
     container.innerHTML = `
       <div class="rw-row">
@@ -1704,9 +1743,6 @@ function renderSpRoundWords() {
         <button class="rw-random-btn rw-dest-btn" id="spRwRandTarget3" onclick="randomizeWord('spRwTarget3')">?</button>
       </div>
     `;
-    [1, 2, 3].forEach(n => {
-      document.getElementById(`spRwTarget${n}`)?.addEventListener('input', (e) => fetchAutocomplete(e.target.value, `acSpRwTarget${n}`, `spRwTarget${n}`));
-    });
   }
 }
 
@@ -1978,7 +2014,15 @@ async function fetchAutocomplete(query, listId, inputId) {
     const resp = await fetch(`https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(query)}&limit=5&namespace=0&origin=*`);
     const [, titles] = await resp.json();
     const list = document.getElementById(listId);
-    list.innerHTML = titles.map(t => `<div class="autocomplete-item" onclick="selectArticle('${inputId}', '${listId}', '${t.replace(/'/g, "\\'")}')">${esc(t)}</div>`).join('');
+    // Build items with DOM APIs so titles containing quotes can't break out
+    // into JS execution (previous inline onclick was XSS-exploitable).
+    list.replaceChildren(...titles.map(t => {
+      const item = document.createElement('div');
+      item.className = 'autocomplete-item';
+      item.textContent = t;
+      item.addEventListener('click', () => selectArticle(inputId, listId, t));
+      return item;
+    }));
     list.classList.add('show');
   } catch(e) {
     console.error('Autocomplete error:', e);
@@ -2262,10 +2306,15 @@ function renderPlayerList(players, hostId) {
     if (p.color) playerColors.set(p.id, p.color);
   }
   const ul = document.getElementById('playerList');
-  ul.innerHTML = players.map(p => {
+  // Build with DOM APIs so name/color stay in attribute space, not HTML.
+  ul.replaceChildren(...players.map(p => {
     const color = playerColors.get(p.id) || '#7c6fad';
-    return `<li class="${p.id === hostId ? 'host' : ''}" style="background:${color}">${esc(p.name)}</li>`;
-  }).join('');
+    const li = document.createElement('li');
+    if (p.id === hostId) li.className = 'host';
+    li.style.background = color;
+    li.textContent = p.name;
+    return li;
+  }));
   document.getElementById('waitingText').style.display = players.length < 2 ? '' : 'none';
   document.getElementById('mpStartBtn').style.display = isHost && players.length >= 2 ? '' : 'none';
 }
@@ -2539,7 +2588,13 @@ async function loadArticle(title) {
     }
 
     const titleHtml = `<h1 class="wiki-page-title">${esc(title.replace(/_/g, ' '))}</h1>`;
-    content.innerHTML = titleHtml + tocHtml + doc.body.innerHTML;
+    // Sanitize wiki HTML before injection. data-article (our internal link marker)
+    // must be explicitly allowed since DOMPurify strips unknown data-* attrs with
+    // default config on some versions. Fall back to raw if DOMPurify failed to load.
+    const wikiBody = (typeof DOMPurify !== 'undefined')
+      ? DOMPurify.sanitize(doc.body.innerHTML, { ADD_ATTR: ['data-article'] })
+      : doc.body.innerHTML;
+    content.innerHTML = titleHtml + tocHtml + wikiBody;
     content.style.display = 'block';
     loading.style.display = 'none';
 
@@ -2565,21 +2620,26 @@ async function loadArticle(title) {
     updateBreadcrumbs();
 
   } catch (err) {
-    // Undo the navigation — go back to previous article
+    // Undo the navigation — go back to previous article.
+    // Build with DOM APIs: article titles are user-influenced via the URL/link
+    // click and must never be concatenated into HTML strings.
     const failedTitle = title.replace(/_/g, ' ');
+    content.replaceChildren();
+    const h = document.createElement('h1');
+    h.textContent = 'Error loading article';
+    content.appendChild(h);
+    const p = document.createElement('p');
+    p.textContent = `Could not load "${failedTitle}". This article may not exist on English Wikipedia.`;
+    content.appendChild(p);
     if (myPath.length > 1) {
       myPath.pop();
       const prevArticle = myPath[myPath.length - 1];
       currentArticle = prevArticle;
-      content.innerHTML = `
-        <h1>Error loading article</h1>
-        <p>Could not load "${failedTitle}". This article may not exist on English Wikipedia.</p>
-        <button onclick="loadArticle('${prevArticle.replace(/'/g, "\\'")}')"
-                style="margin-top:16px;padding:10px 24px;background:var(--accent);color:white;border:none;border-radius:8px;cursor:pointer;font-size:1rem;">
-          ← Go Back to ${prevArticle.replace(/_/g, ' ')}
-        </button>`;
-    } else {
-      content.innerHTML = `<h1>Error loading article</h1><p>Could not load "${failedTitle}". This article may not exist on English Wikipedia.</p>`;
+      const btn = document.createElement('button');
+      btn.textContent = `← Go Back to ${prevArticle.replace(/_/g, ' ')}`;
+      btn.style.cssText = 'margin-top:16px;padding:10px 24px;background:var(--accent);color:white;border:none;border-radius:8px;cursor:pointer;font-size:1rem;';
+      btn.addEventListener('click', () => loadArticle(prevArticle));
+      content.appendChild(btn);
     }
     content.style.display = 'block';
     loading.style.display = 'none';
@@ -2713,10 +2773,22 @@ function renderPlayersBar(distData) {
         container.appendChild(dot);
       }
       const avgLeft = group.reduce((s, e) => s + e.leftPct, 0) / group.length;
-      const circles = group.map(e =>
-        `<span class="lb-stack-circle" style="background:${e.color}"></span>`
-      ).join('');
-      const tipRows = group.map(e => {
+      // Build stack + tooltip as DOM. Colors go through style.background (parsed
+      // as CSS value, no injection surface) and names through textContent.
+      dot.replaceChildren();
+      const stack = document.createElement('div');
+      stack.className = 'lb-stack';
+      for (const e of group) {
+        const c = document.createElement('span');
+        c.className = 'lb-stack-circle';
+        c.style.background = e.color;
+        stack.appendChild(c);
+      }
+      dot.appendChild(stack);
+      const tip = document.createElement('div');
+      tip.className = 'lb-tip';
+      tip.style.cssText = 'background:var(--surface);flex-direction:column;gap:4px;padding:8px 12px;';
+      for (const e of group) {
         let dHtml = '';
         if (currentGameMode === 'tri' && e.triDists) {
           const distVals = Object.values(e.triDists).filter(v => v !== null && v !== undefined);
@@ -2736,19 +2808,30 @@ function renderPlayersBar(distData) {
             dHtml = `<span class="tip-dist ${dcls}">${e.d}</span>${arrow}`;
           }
         }
-        return `<div style="display:flex;align-items:center;gap:6px;">
-          <span style="width:8px;height:8px;border-radius:50%;background:${e.color};flex-shrink:0;"></span>
-          ${dHtml}
-          <span class="tip-name">${esc(e.name)}</span>
-          <span class="tip-steps">${e.steps}${e.triInfo || ''}</span>
-        </div>`;
-      }).join('');
-      dot.innerHTML = `
-        <div class="lb-stack">${circles}</div>
-        <div class="lb-tip" style="background:var(--surface);flex-direction:column;gap:4px;padding:8px 12px;">
-          ${tipRows}
-        </div>
-      `;
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:6px;';
+        const dot2 = document.createElement('span');
+        dot2.style.cssText = 'width:8px;height:8px;border-radius:50%;flex-shrink:0;';
+        dot2.style.background = e.color;
+        row.appendChild(dot2);
+        // dHtml is built from server-numeric fields + fixed class names — safe
+        // to keep as innerHTML. Name + steps go through textContent.
+        if (dHtml) {
+          const dSpan = document.createElement('span');
+          dSpan.innerHTML = dHtml;
+          while (dSpan.firstChild) row.appendChild(dSpan.firstChild);
+        }
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'tip-name';
+        nameSpan.textContent = e.name;
+        row.appendChild(nameSpan);
+        const stepsSpan = document.createElement('span');
+        stepsSpan.className = 'tip-steps';
+        stepsSpan.textContent = String(e.steps) + (e.triInfo || '');
+        row.appendChild(stepsSpan);
+        tip.appendChild(row);
+      }
+      dot.appendChild(tip);
       dot.style.left = avgLeft + '%';
       dot.style.top = '0px';
       dot.style.width = 'auto';

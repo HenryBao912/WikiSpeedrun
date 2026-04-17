@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node --check server.js)",
+      "Bash(where node.exe)",
+      "Read(//c/Users/Henry Bao/scoop/apps/nodejs/current/**)",
+      "Read(//c/tools/nodejs/**)",
+      "Bash(npm --version)",
+      "mcp__Claude_Preview__preview_start"
+    ]
+  }
+}
