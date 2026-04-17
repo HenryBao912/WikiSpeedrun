@@ -1027,6 +1027,17 @@
     z-index: 2;
   }
   .lb-rider .lb-name { font-weight: 700; font-size: 0.7rem; }
+  .tri-dots { display: inline-flex; gap: 3px; margin-left: 4px; align-items: center; }
+  .tri-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: rgba(255,255,255,0.2);
+    border: 1px solid rgba(255,255,255,0.3);
+  }
+  .tri-dot.reached {
+    background: var(--green);
+    border-color: var(--green);
+    box-shadow: 0 0 4px rgba(0, 184, 148, 0.5);
+  }
   .lb-rider .lb-steps { opacity: 0.75; font-size: 0.65rem; }
   .lb-rider .lb-dist {
     font-weight: 800;
@@ -2540,7 +2551,17 @@ function renderPlayersBar(distData) {
     const d = dist?.distance ?? null;
     const prev = dist?.prev ?? null;
     const color = playerColors.get(pid) || '#7c6fad';
-    const triInfo = prog?.mode === 'tri' ? ` · ${dist?.visited || prog?.visited || 0}/3` : '';
+    let triInfo = '';
+    if (prog?.mode === 'tri') {
+      const visited = (dist?.visited || prog?.visited || 1) - 1; // subtract start target
+      const total = 2; // 2 destination targets
+      let dots = '';
+      for (let i = 0; i < total; i++) {
+        if (i < visited) dots += '<span class="tri-dot reached"></span>';
+        else dots += '<span class="tri-dot"></span>';
+      }
+      triInfo = `<span class="tri-dots">${dots}</span>`;
+    }
     const triDists = dist?.triDistances || null;
     entries.push({ pid, name, steps, d, prev, color, triInfo, triDists });
   }
