@@ -323,10 +323,13 @@
   .mode-btn .mode-desc { font-size: 0.75rem; color: var(--text2); }
 
   /* ─── Difficulty Slider ─── */
-  .diff-section {
+  .diff-form-group {
     width: 100%;
     max-width: 420px;
     margin: 0 auto;
+  }
+  .diff-section {
+    width: 100%;
   }
   .diff-label {
     font-size: 0.85rem;
@@ -1342,7 +1345,7 @@
         </div>
       </div>
     </div>
-    <div class="form-group">
+    <div class="form-group diff-form-group">
       <div class="diff-section">
         <div class="diff-label">
           <span class="diff-label-title">Difficulty</span>
@@ -1410,7 +1413,7 @@
       </div>
     </div>
   </div>
-  <div class="form-group">
+  <div class="form-group diff-form-group">
     <div class="diff-section" id="mpDiffSection">
       <div class="diff-label">
         <span class="diff-label-title">Difficulty</span>
@@ -2169,7 +2172,6 @@ function handleServerMessage(msg) {
     case 'checkpoint_reached':
       myVisited = msg.visited;
       renderTriTargets();
-      showCheckpointToast(msg.article, msg.remaining);
       break;
 
     case 'give_up_update':
@@ -2250,14 +2252,31 @@ function startGameUI(msg) {
 
 function renderTriTargets() {
   const nav = document.getElementById('triNav');
-  nav.innerHTML = triTargets.map((t, i) => {
-    const visited = myVisited.includes(t);
-    const isStart = (i === 0);
-    let cls;
-    if (visited) cls = isStart ? ' start' : ' reached';
-    else cls = ' unreached';
-    return `<span class="target-tag${cls}" data-title="${esc(t)}">${t.replace(/_/g, ' ')}</span>`;
-  }).join('<span class="target-sep">→</span>');
+  if (triTargets.length !== 3) return;
+  const start = triTargets[0];
+  const dest1 = triTargets[1];
+  const dest2 = triTargets[2];
+  const dest1Reached = myVisited.includes(dest1);
+  const dest2Reached = myVisited.includes(dest2);
+  const anyReached = dest1Reached || dest2Reached;
+
+  let html = '';
+  if (!anyReached) {
+    // Dest1 ← Start → Dest2
+    html = `<span class="target-tag unreached" data-title="${esc(dest1)}">${dest1.replace(/_/g, ' ')}</span>` +
+           `<span class="target-sep">←</span>` +
+           `<span class="target-tag start" data-title="${esc(start)}">${start.replace(/_/g, ' ')}</span>` +
+           `<span class="target-sep">→</span>` +
+           `<span class="target-tag unreached" data-title="${esc(dest2)}">${dest2.replace(/_/g, ' ')}</span>`;
+  } else {
+    // One reached: show reached(green) → unreached, keep original order
+    const d1cls = dest1Reached ? 'reached' : 'unreached';
+    const d2cls = dest2Reached ? 'reached' : 'unreached';
+    html = `<span class="target-tag ${d1cls}" data-title="${esc(dest1)}">${dest1.replace(/_/g, ' ')}</span>` +
+           `<span class="target-sep">→</span>` +
+           `<span class="target-tag ${d2cls}" data-title="${esc(dest2)}">${dest2.replace(/_/g, ' ')}</span>`;
+  }
+  nav.innerHTML = html;
   nav.querySelectorAll('.target-tag').forEach(el => {
     el.onclick = (e) => { e.stopPropagation(); toggleSummary(el, el.getAttribute('data-title')); };
   });
@@ -2796,10 +2815,13 @@ function showResults(msg) {
       card.style.borderColor = myColor;
     }
     const dists = r.distances || [];
+    const triDests = (currentGameMode === 'tri' && triTargets.length === 3) ? triTargets.slice(1) : [];
+    const normA = s => decodeURIComponent(s||'').replace(/_/g, ' ').toLowerCase().trim();
     const pathHtml = r.path.map((p, i) => {
       const isStart = i === 0;
       const isEnd = i === r.path.length - 1;
-      const nodeCls = isStart ? 'start' : (isEnd && r.isWinner) ? 'end' : '';
+      const isTriDest = triDests.some(t => normA(t) === normA(p));
+      const nodeCls = isStart ? 'start' : (isTriDest ? 'end' : ((isEnd && r.isWinner) ? 'end' : ''));
       let distBadge = '';
       if (!isStart && !isEnd && dists[i - 1] !== undefined && dists[i - 1] !== null) {
         const d = dists[i - 1];
@@ -2866,6 +2888,13 @@ function formatTime(ms) {
 }
 
 function playAgain() {
+  if (isSinglePlayer) {
+    // Go back to SP setup screen so player can choose words
+    clearInterval(timerInterval);
+    resultsAnimationTimeouts.forEach(t => clearTimeout(t));
+    showScreen('sp-setup');
+    return;
+  }
   send({ type: 'play_again' });
 }
 
