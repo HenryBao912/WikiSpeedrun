@@ -1905,6 +1905,19 @@ function renderRoundWords() {
   }
 }
 
+function getOtherWordValues(excludeId) {
+  const ids = ['spRwOrigin', 'spRwDest', 'rwOrigin', 'rwDest',
+               'spRwTarget1', 'spRwTarget2', 'spRwTarget3',
+               'rwTarget1', 'rwTarget2', 'rwTarget3'];
+  const vals = [];
+  for (const id of ids) {
+    if (id === excludeId) continue;
+    const el = document.getElementById(id);
+    if (el && el.value.trim()) vals.push(el.value.trim().toLowerCase());
+  }
+  return vals;
+}
+
 async function randomizeWord(inputId) {
   const btnId = inputId.replace(/^(sp)?[Rr]w/, (m) => m + 'Rand');
   const btn = document.getElementById(btnId);
@@ -1915,25 +1928,32 @@ async function randomizeWord(inputId) {
     if (!myPlayerId || !eventSource) {
       await connectSSE();
     }
-    const result = await send({ type: 'random_word', viewRange: spDifficulty || null });
-    if (result.ok && result.word) {
-      document.getElementById(inputId).value = result.word.replace(/_/g, ' ');
+    const existing = getOtherWordValues(inputId);
+    let word = null;
+    let attempts = 0;
+    while (!word && attempts < 3) {
+      attempts++;
+      const result = await send({ type: 'random_word', viewRange: spDifficulty || null });
+      if (result.cooldown) {
+        const input = document.getElementById(inputId);
+        btn.classList.remove('loading');
+        input.value = 'calm down';
+        input.disabled = true;
+        setTimeout(() => { input.value = ''; input.disabled = false; btn.disabled = false; }, 2000);
+        return;
+      }
+      if (result.ok && result.word) {
+        const w = result.word.replace(/_/g, ' ');
+        if (!existing.includes(w.toLowerCase())) {
+          word = w;
+        }
+      }
+    }
+    if (word) {
+      document.getElementById(inputId).value = word;
       broadcastWordUpdate();
       btn.disabled = false;
       btn.classList.remove('loading');
-    } else if (result.cooldown) {
-      const origText = btn.textContent;
-      btn.textContent = '';
-      btn.classList.remove('loading');
-      btn.style.fontSize = '0.55rem';
-      btn.style.letterSpacing = '-0.3px';
-      btn.textContent = 'calm down';
-      setTimeout(() => {
-        btn.textContent = origText;
-        btn.style.fontSize = '';
-        btn.style.letterSpacing = '';
-        btn.disabled = false;
-      }, 2000);
     } else {
       btn.disabled = false;
       btn.classList.remove('loading');
