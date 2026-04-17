@@ -746,10 +746,10 @@
   }
   .origin-tag { background: var(--accent); color: white; }
   .dest-tag { background: var(--green); color: white; cursor: pointer; }
-  .dest-tag.hint-glow { animation: destGlow 1.6s ease-in-out infinite; }
+  .hint-glow { animation: destGlow 1.6s ease-in-out infinite; }
   @keyframes destGlow {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(0, 184, 148, 0); }
-    50%      { box-shadow: 0 0 0 5px rgba(0, 184, 148, 0.35); }
+    0%, 100% { box-shadow: 0 0 0 0 rgba(108, 92, 231, 0); }
+    50%      { box-shadow: 0 0 0 5px rgba(108, 92, 231, 0.45); }
   }
   /* One-time hint bar nudging users to click the destination chip. Appears
      once per browser (localStorage-gated), dismissed on any dest-chip click
@@ -863,6 +863,7 @@
   .wiki-container {
     flex: 1;
     overflow-y: auto;
+    overflow-x: hidden;
     background: #fff;
     color: #222;
   }
@@ -873,7 +874,15 @@
     font-family: 'Linux Libertine', Georgia, serif;
     font-size: 0.95rem;
     line-height: 1.7;
+    overflow-wrap: break-word;
+    word-wrap: break-word;
   }
+  /* Wide tables on narrow viewports scroll within themselves instead of
+     pushing the page sideways (which caused the "accidental left-right
+     drag while scrolling vertically" bug on mobile). */
+  .wiki-content table { max-width: 100%; overflow-x: auto; display: block; }
+  .wiki-content pre, .wiki-content code { overflow-x: auto; max-width: 100%; }
+  .wiki-content img { max-width: 100%; height: auto; }
   .wiki-toc {
     background: #f0f0f4;
     border: 1px solid #d0d0d8;
@@ -1312,12 +1321,52 @@
     .home-buttons { gap: 10px; max-width: 340px; }
     .home-btn { padding: 14px 12px; font-size: 0.95rem; }
     .room-code-display { font-size: 2rem; letter-spacing: 4px; }
-    .game-header { padding: 8px 12px; flex-wrap: nowrap; }
-    .game-stats { flex-shrink: 0; gap: 8px; font-size: 0.75rem; }
-    .game-stats .surrender-btn { position: absolute; right: 8px; top: 8px; }
-    .game-header-left { min-width: 0; overflow-x: auto; }
+
+    /* Game header: stack nav-info and stats on two rows so tri-mode targets
+       don't collide with steps/timer. Both rows are centered horizontally
+       so the short mobile width reads symmetrically instead of clinging left.
+       Surrender stays inline on row 2 instead of absolute-positioned. */
+    .game-header { padding: 8px 12px; flex-wrap: wrap; gap: 6px; }
+    .game-header-left {
+      flex-basis: 100%;
+      min-width: 0;
+      display: flex;
+      justify-content: center;
+    }
+    .game-stats {
+      flex-basis: 100%;
+      justify-content: center;
+      gap: 14px;
+      font-size: 0.75rem;
+      align-items: center;
+      position: relative;
+    }
+    .game-stats .surrender-btn {
+      position: absolute;
+      right: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      padding: 5px 10px;
+      font-size: 0.72rem;
+    }
+    /* Let nav chips wrap to next line on tight screens, stay centered. */
+    .nav-info, #triNav {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      min-width: 0;
+      gap: 6px;
+      row-gap: 4px;
+    }
+    .origin-tag, .dest-tag, .target-tag {
+      font-size: 0.78rem;
+      padding: 3px 9px;
+      white-space: nowrap;
+    }
     .wiki-content { padding: 16px; }
     .wiki-content .infobox { float: none; width: 100%; margin: 0 0 16px 0; }
+    /* Hint bar compacts on mobile so it doesn't eat too many screen lines. */
+    .dest-hint-bar { font-size: 0.72rem; padding: 5px 12px; }
   }
 </style>
 </head>
