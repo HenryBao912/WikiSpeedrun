@@ -1700,18 +1700,31 @@ function renderSpRoundWords() {
     document.getElementById('spRwOrigin')?.addEventListener('input', (e) => fetchAutocomplete(e.target.value, 'acSpRwOrigin', 'spRwOrigin'));
     document.getElementById('spRwDest')?.addEventListener('input', (e) => fetchAutocomplete(e.target.value, 'acSpRwDest', 'spRwDest'));
   } else {
-    container.innerHTML = [1, 2, 3].map((n, i) => {
-      let html = `
-        <div class="rw-row">
-          <div class="rw-input-wrap">
-            <input type="text" class="rw-input" id="spRwTarget${n}" placeholder="Target ${n}" onfocus="this.value=''" />
-            <ul class="autocomplete-list" id="acSpRwTarget${n}"></ul>
-          </div>
-          <button class="rw-random-btn" id="spRwRandTarget${n}" onclick="randomizeWord('spRwTarget${n}')">?</button>
-        </div>`;
-      if (i < 2) html += '<div class="rw-arrow">↓</div>';
-      return html;
-    }).join('');
+    container.innerHTML = `
+      <div class="rw-row">
+        <div class="rw-input-wrap">
+          <input type="text" class="rw-input rw-dest" id="spRwTarget1" placeholder="Target" onfocus="this.value=''" />
+          <ul class="autocomplete-list" id="acSpRwTarget1"></ul>
+        </div>
+        <button class="rw-random-btn rw-dest-btn" id="spRwRandTarget1" onclick="randomizeWord('spRwTarget1')">?</button>
+      </div>
+      <div class="rw-arrow">↑</div>
+      <div class="rw-row">
+        <div class="rw-input-wrap">
+          <input type="text" class="rw-input rw-origin" id="spRwTarget2" placeholder="Start here" onfocus="this.value=''" />
+          <ul class="autocomplete-list" id="acSpRwTarget2"></ul>
+        </div>
+        <button class="rw-random-btn" id="spRwRandTarget2" onclick="randomizeWord('spRwTarget2')">?</button>
+      </div>
+      <div class="rw-arrow">↓</div>
+      <div class="rw-row">
+        <div class="rw-input-wrap">
+          <input type="text" class="rw-input rw-dest" id="spRwTarget3" placeholder="Target" onfocus="this.value=''" />
+          <ul class="autocomplete-list" id="acSpRwTarget3"></ul>
+        </div>
+        <button class="rw-random-btn rw-dest-btn" id="spRwRandTarget3" onclick="randomizeWord('spRwTarget3')">?</button>
+      </div>
+    `;
     [1, 2, 3].forEach(n => {
       document.getElementById(`spRwTarget${n}`)?.addEventListener('input', (e) => fetchAutocomplete(e.target.value, `acSpRwTarget${n}`, `spRwTarget${n}`));
     });
@@ -1786,7 +1799,8 @@ async function startSinglePlayer() {
         els.forEach((el, i) => { if (dupes.has(i)) shakeInput(el); });
         return;
       }
-      payload.targets = targets;
+      // Reorder: Target2 (start) first, then Target1 and Target3 (destinations)
+      payload.targets = [targets[1], targets[0], targets[2]];
     }
     const result = await send(payload);
     if (result.ok) {
@@ -1869,18 +1883,31 @@ function renderRoundWords() {
       document.getElementById('rwDest')?.addEventListener('input', (e) => fetchAutocomplete(e.target.value, 'acRwDest', 'rwDest'));
     }
   } else {
-    container.innerHTML = [1, 2, 3].map((n, i) => {
-      let html = `
-        <div class="rw-row">
-          <div class="rw-input-wrap">
-            <input type="text" class="rw-input" id="rwTarget${n}" placeholder="Target ${n}" ${disabled} onfocus="this.value=''" />
-            <ul class="autocomplete-list" id="acRwTarget${n}"></ul>
-          </div>
-          <button class="rw-random-btn" id="rwRandTarget${n}" onclick="randomizeWord('rwTarget${n}')" ${btnStyle}>?</button>
-        </div>`;
-      if (i < 2) html += '<div class="rw-arrow">↓</div>';
-      return html;
-    }).join('');
+    container.innerHTML = `
+      <div class="rw-row">
+        <div class="rw-input-wrap">
+          <input type="text" class="rw-input rw-dest" id="rwTarget1" placeholder="Target" ${disabled} onfocus="this.value=''" />
+          <ul class="autocomplete-list" id="acRwTarget1"></ul>
+        </div>
+        <button class="rw-random-btn rw-dest-btn" id="rwRandTarget1" onclick="randomizeWord('rwTarget1')" ${btnStyle}>?</button>
+      </div>
+      <div class="rw-arrow">↑</div>
+      <div class="rw-row">
+        <div class="rw-input-wrap">
+          <input type="text" class="rw-input rw-origin" id="rwTarget2" placeholder="Start here" ${disabled} onfocus="this.value=''" />
+          <ul class="autocomplete-list" id="acRwTarget2"></ul>
+        </div>
+        <button class="rw-random-btn" id="rwRandTarget2" onclick="randomizeWord('rwTarget2')" ${btnStyle}>?</button>
+      </div>
+      <div class="rw-arrow">↓</div>
+      <div class="rw-row">
+        <div class="rw-input-wrap">
+          <input type="text" class="rw-input rw-dest" id="rwTarget3" placeholder="Target" ${disabled} onfocus="this.value=''" />
+          <ul class="autocomplete-list" id="acRwTarget3"></ul>
+        </div>
+        <button class="rw-random-btn rw-dest-btn" id="rwRandTarget3" onclick="randomizeWord('rwTarget3')" ${btnStyle}>?</button>
+      </div>
+    `;
     if (isHost) {
       [1, 2, 3].forEach(n => {
         document.getElementById(`rwTarget${n}`)?.addEventListener('input', (e) => fetchAutocomplete(e.target.value, `acRwTarget${n}`, `rwTarget${n}`));
@@ -2045,7 +2072,8 @@ function startMultiplayerGame() {
       els.forEach((el, i) => { if (dupes.has(i)) shakeInput(el); });
       return;
     }
-    send({ type: 'start_game', targets });
+    // Reorder: Target2 (start) first, then Target1 and Target3 (destinations)
+    send({ type: 'start_game', targets: [targets[1], targets[0], targets[2]] });
   }
 }
 
