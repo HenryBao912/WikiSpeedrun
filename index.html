@@ -746,6 +746,42 @@
   }
   .origin-tag { background: var(--accent); color: white; }
   .dest-tag { background: var(--green); color: white; cursor: pointer; }
+  .dest-tag.hint-glow { animation: destGlow 1.6s ease-in-out infinite; }
+  @keyframes destGlow {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(0, 184, 148, 0); }
+    50%      { box-shadow: 0 0 0 5px rgba(0, 184, 148, 0.35); }
+  }
+  /* One-time hint bar nudging users to click the destination chip. Appears
+     once per browser (localStorage-gated), dismissed on any dest-chip click
+     or the × button. */
+  .dest-hint-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: rgba(108, 92, 231, 0.12);
+    border-bottom: 1px solid rgba(108, 92, 231, 0.25);
+    color: var(--text2);
+    font-size: 0.78rem;
+    padding: 6px 16px;
+    animation: hintIn 0.3s ease;
+  }
+  .dest-hint-bar strong { color: var(--text); font-weight: 600; }
+  .dest-hint-bar .hint-dismiss {
+    background: transparent;
+    border: none;
+    color: var(--text2);
+    cursor: pointer;
+    font-size: 1rem;
+    padding: 0 4px;
+    line-height: 1;
+    opacity: 0.7;
+  }
+  .dest-hint-bar .hint-dismiss:hover { opacity: 1; color: var(--text); }
+  @keyframes hintIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
   .summary-tooltip {
     position: fixed;
     background: var(--surface);
@@ -2337,7 +2373,7 @@ function startGameUI(msg) {
     document.getElementById('gameOrigin').textContent = gameOrigin.replace(/_/g, ' ');
     const destEl = document.getElementById('gameDest');
     destEl.textContent = gameDestination.replace(/_/g, ' ');
-    destEl.onclick = (e) => { e.stopPropagation(); toggleSummary(destEl, gameDestination); };
+    destEl.onclick = (e) => { e.stopPropagation(); dismissInfoHint(); toggleSummary(destEl, gameDestination); };
   } else {
     triTargets = msg.targets;
     myVisited = [msg.origin];
@@ -2360,6 +2396,7 @@ function startGameUI(msg) {
   playersBar.style.display = 'flex';
   playersBar.classList.toggle('tri-mode', currentGameMode === 'tri');
   startTimer();
+  maybeShowDestHint();
   loadArticle(currentArticle);
 }
 
@@ -2393,8 +2430,58 @@ function renderTriTargets() {
   nav.querySelectorAll('.target-tag').forEach(el => {
     if (el.classList.contains('start')) return; // no tooltip for start word
     el.style.cursor = 'pointer';
-    el.onclick = (e) => { e.stopPropagation(); toggleSummary(el, el.getAttribute('data-title')); };
+    el.onclick = (e) => { e.stopPropagation(); dismissInfoHint(); toggleSummary(el, el.getAttribute('data-title')); };
   });
+}
+
+// One-time hint that destination chips are clickable. Shows a small bar under
+// the game header + a glow on the chip until the first interaction or the
+// bar's × is clicked. Gated by localStorage so it doesn't repeat.
+const INFO_HINT_KEY = 'wsr_destInfoHintShown';
+function maybeShowDestHint() {
+  let seen = false;
+  try { seen = !!localStorage.getItem(INFO_HINT_KEY); } catch (e) {}
+  if (seen) return;
+
+  // Glow the chip(s).
+  document.querySelectorAll('#gameDest, .target-tag:not(.start)').forEach(el => {
+    el.classList.add('hint-glow');
+  });
+
+  // Remove any stale bar (can happen on play-again).
+  document.querySelectorAll('.dest-hint-bar').forEach(el => el.remove());
+
+  const bar = document.createElement('div');
+  bar.className = 'dest-hint-bar';
+  const text = document.createElement('span');
+  // Pull the live destination name in so the hint reads concretely. Tri mode
+  // has 2 targets, so we keep it generic there.
+  if (currentGameMode === 'tri') {
+    text.textContent = 'Click a target to preview it.';
+  } else {
+    const destName = (gameDestination || '').replace(/_/g, ' ');
+    text.appendChild(document.createTextNode('Click '));
+    const strong = document.createElement('strong');
+    strong.textContent = destName;
+    text.appendChild(strong);
+    text.appendChild(document.createTextNode(' to preview it.'));
+  }
+  const close = document.createElement('button');
+  close.className = 'hint-dismiss';
+  close.setAttribute('aria-label', 'Dismiss tip');
+  close.textContent = '×';
+  close.addEventListener('click', (e) => { e.stopPropagation(); dismissInfoHint(); });
+  bar.appendChild(text);
+  bar.appendChild(close);
+
+  // Insert right above the breadcrumb bar.
+  const crumbs = document.getElementById('breadcrumbs');
+  crumbs?.parentNode?.insertBefore(bar, crumbs);
+}
+function dismissInfoHint() {
+  try { localStorage.setItem(INFO_HINT_KEY, '1'); } catch (e) {}
+  document.querySelectorAll('.dest-hint-bar').forEach(el => el.remove());
+  document.querySelectorAll('.hint-glow').forEach(el => el.classList.remove('hint-glow'));
 }
 
 function startTimer() {
