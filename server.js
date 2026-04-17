@@ -1172,6 +1172,12 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (parsed.pathname === '/favicon.svg') {
+    res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=86400' });
+    fs.createReadStream(path.join(__dirname, 'favicon.svg')).pipe(res);
+    return;
+  }
+
   if (parsed.pathname === '/events' && req.method === 'GET') {
     let playerId = parsed.query.playerId;
     if (!playerId) {
