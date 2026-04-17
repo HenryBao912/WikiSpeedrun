@@ -984,8 +984,10 @@ async function handleAction(playerId, msg) {
         viewRange = [Number(msg.viewRange[0]), Number(msg.viewRange[1])];
       }
       const articles = await getGoodRandomArticles(1, viewRange);
-      const word = articles.length > 0 ? articles[0] : 'Moon';
-      return { ok: true, word };
+      if (articles.length > 0) {
+        return { ok: true, word: articles[0] };
+      }
+      return { ok: false, cooldown: true };
     }
 
     case 'set_articles': {

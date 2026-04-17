@@ -1906,29 +1906,43 @@ function renderRoundWords() {
 }
 
 async function randomizeWord(inputId) {
-  // Derive button ID: rwOrigin→rwRandOrigin, spRwOrigin→spRwRandOrigin, rwTarget1→rwRandTarget1, etc.
   const btnId = inputId.replace(/^(sp)?[Rr]w/, (m) => m + 'Rand');
   const btn = document.getElementById(btnId);
   if (!btn) return;
   btn.disabled = true;
   btn.classList.add('loading');
   try {
-    // Ensure server connection for good random articles
     if (!myPlayerId || !eventSource) {
       await connectSSE();
     }
-    let word = null;
     const result = await send({ type: 'random_word', viewRange: spDifficulty || null });
-    if (result.ok && result.word) word = result.word;
-    if (word) {
-      document.getElementById(inputId).value = word.replace(/_/g, ' ');
+    if (result.ok && result.word) {
+      document.getElementById(inputId).value = result.word.replace(/_/g, ' ');
       broadcastWordUpdate();
+      btn.disabled = false;
+      btn.classList.remove('loading');
+    } else if (result.cooldown) {
+      const origText = btn.textContent;
+      btn.textContent = '';
+      btn.classList.remove('loading');
+      btn.style.fontSize = '0.55rem';
+      btn.style.letterSpacing = '-0.3px';
+      btn.textContent = 'calm down';
+      setTimeout(() => {
+        btn.textContent = origText;
+        btn.style.fontSize = '';
+        btn.style.letterSpacing = '';
+        btn.disabled = false;
+      }, 2000);
+    } else {
+      btn.disabled = false;
+      btn.classList.remove('loading');
     }
   } catch(e) {
     console.error('Random word error:', e);
+    btn.disabled = false;
+    btn.classList.remove('loading');
   }
-  btn.disabled = false;
-  btn.classList.remove('loading');
 }
 
 function broadcastWordUpdate() {
