@@ -2315,7 +2315,10 @@ async function toggleSummary(el, title) {
   tooltip.className = 'summary-tooltip';
   tooltip.textContent = 'Loading...';
   tooltip.style.top = (rect.bottom + 8) + 'px';
-  tooltip.style.left = (rect.left + rect.width / 2 - 140) + 'px'; // 140 = half of 280px width
+  const tooltipW = 280;
+  const idealLeft = rect.left + rect.width / 2 - tooltipW / 2;
+  const clampedLeft = Math.max(8, Math.min(idealLeft, window.innerWidth - tooltipW - 8));
+  tooltip.style.left = clampedLeft + 'px';
   document.body.appendChild(tooltip);
   activeTooltip = tooltip;
   activeTooltipOwner = el;

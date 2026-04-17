@@ -281,7 +281,8 @@ async function getGoodRandomArticles(count, viewRange) {
       const viewData = await getPageViews(validated);
       for (const { title, views } of viewData) {
         if (good.length >= needed) break;
-        if (views >= minViews && views <= maxViews) {
+        const norm = normalizeArticle(title);
+        if (views >= minViews && views <= maxViews && !good.some(g => normalizeArticle(g) === norm)) {
           good.push(title);
         }
       }
@@ -319,7 +320,7 @@ async function fetchRandomArticles(count) {
       if (batch.length === 0) continue;
       const validated = await validateArticles(batch);
       for (const a of validated) {
-        if (good.length < count) good.push(a);
+        if (good.length < count && !good.some(g => normalizeArticle(g) === normalizeArticle(a))) good.push(a);
       }
     } catch (e) {
       console.error('Error fetching random articles:', e.message);
@@ -330,16 +331,31 @@ async function fetchRandomArticles(count) {
 
 async function getRandomPair(viewRange) {
   const articles = await getGoodRandomArticles(2, viewRange);
-  if (articles.length >= 2) {
+  // Ensure no duplicates
+  if (articles.length >= 2 && normalizeArticle(articles[0]) !== normalizeArticle(articles[1])) {
     return { origin: articles[0], destination: articles[1] };
+  }
+  // Retry once if we got a duplicate
+  const retry = await getGoodRandomArticles(2, viewRange);
+  if (retry.length >= 2 && normalizeArticle(retry[0]) !== normalizeArticle(retry[1])) {
+    return { origin: retry[0], destination: retry[1] };
   }
   return { origin: 'Pizza', destination: 'Moon' };
 }
 
 async function getRandomTriple(viewRange) {
   const articles = await getGoodRandomArticles(3, viewRange);
-  if (articles.length >= 3) {
+  // Ensure all 3 are unique
+  const norms = articles.map(a => normalizeArticle(a));
+  const unique = norms.length === 3 && new Set(norms).size === 3;
+  if (unique) {
     return { targets: [articles[0], articles[1], articles[2]] };
+  }
+  // Retry once
+  const retry = await getGoodRandomArticles(3, viewRange);
+  const rNorms = retry.map(a => normalizeArticle(a));
+  if (rNorms.length === 3 && new Set(rNorms).size === 3) {
+    return { targets: [retry[0], retry[1], retry[2]] };
   }
   return { targets: ['Moon', 'Dinosaur', 'Jazz'] };
 }
