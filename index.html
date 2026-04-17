@@ -1514,6 +1514,18 @@ function initHeroLinks() {
   });
 }
 
+function getHeroUsedWords() {
+  const used = new Set();
+  ['heroLink1', 'heroLink2', 'heroLink3', 'heroLink4'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      const inner = el.querySelector('.logo-link-inner');
+      if (inner && inner.textContent) used.add(inner.textContent);
+    }
+  });
+  return used;
+}
+
 function scheduleHeroRoll(el) {
   const delay = 1000 + Math.random() * 900;
   setTimeout(() => {
@@ -1521,7 +1533,10 @@ function scheduleHeroRoll(el) {
     if (!inner) return;
     inner.classList.add('roll-out');
     setTimeout(() => {
-      inner.textContent = WIKI_WORDS[Math.floor(Math.random() * WIKI_WORDS.length)];
+      const used = getHeroUsedWords();
+      const available = WIKI_WORDS.filter(w => !used.has(w));
+      const pool = available.length > 0 ? available : WIKI_WORDS;
+      inner.textContent = pool[Math.floor(Math.random() * pool.length)];
       inner.classList.remove('roll-out');
       inner.classList.add('roll-in');
       void inner.offsetWidth;
