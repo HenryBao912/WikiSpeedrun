@@ -420,18 +420,43 @@ function cacheSet(cache, key, value) {
   cache.set(key, { value, expires: Date.now() + CACHE_TTL_MS });
 }
 
-function wikiAPI(params) {
+function wikiAPIOnce(params) {
   return new Promise((resolve, reject) => {
     const qs = new URLSearchParams({ ...params, format: 'json', origin: '*' });
     const reqUrl = `https://en.wikipedia.org/w/api.php?${qs}`;
-    https.get(reqUrl, { headers: { 'User-Agent': 'WikiSpeedrun/1.0' } }, (res) => {
+    https.get(reqUrl, { headers: { 'User-Agent': 'WikiSpeedrun/1.0 (contact: local)' } }, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
-        try { resolve(JSON.parse(data)); } catch (e) { reject(e); }
+        // Rate-limit / upstream error → Wikipedia returns HTML, not JSON. Let
+        // the caller retry with backoff rather than bubbling a parse error
+        // that poisons distance caches.
+        if (res.statusCode && res.statusCode >= 400) {
+          return reject(new Error(`wiki http ${res.statusCode}`));
+        }
+        try { resolve(JSON.parse(data)); }
+        catch (e) { reject(new Error('wiki non-json response')); }
       });
     }).on('error', reject);
   });
+}
+
+// Retry transient failures (rate limiting, transient 5xx) with exponential
+// backoff. After `attempts` tries the final error bubbles to the caller,
+// where it's caught and logged without poisoning the cache.
+async function wikiAPI(params, attempts = 3) {
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    try { return await wikiAPIOnce(params); }
+    catch (e) {
+      lastErr = e;
+      if (i < attempts - 1) {
+        const delay = 250 * Math.pow(2, i) + Math.floor(Math.random() * 100);
+        await new Promise(r => setTimeout(r, delay));
+      }
+    }
+  }
+  throw lastErr;
 }
 
 async function getPageLinks(title) {
@@ -440,6 +465,7 @@ async function getPageLinks(title) {
   if (cached) return cached;
   const links = new Set();
   let plcontinue = null;
+  let completed = false;
   try {
     do {
       const params = { action: 'query', titles: title.replace(/ /g, '_'), prop: 'links', pllimit: '500', plnamespace: '0' };
@@ -451,10 +477,13 @@ async function getPageLinks(title) {
       }
       plcontinue = data.continue?.plcontinue;
     } while (plcontinue);
+    completed = true;
   } catch (e) {
     console.error('Error fetching links for', title, e.message);
   }
-  cacheSet(linkCache, norm, links);
+  // Only cache a complete set. A partial set (from mid-pagination error) would
+  // silently hide a direct link to destination from distance checks forever.
+  if (completed) cacheSet(linkCache, norm, links);
   return links;
 }
 
@@ -464,6 +493,7 @@ async function getBacklinks(title, limit = 500) {
   if (cached) return cached;
   const links = new Set();
   let blcontinue = null;
+  let completed = false;
   try {
     do {
       const params = { action: 'query', list: 'backlinks', bltitle: title.replace(/ /g, '_'), bllimit: String(Math.min(limit - links.size, 500)), blnamespace: '0' };
@@ -472,24 +502,67 @@ async function getBacklinks(title, limit = 500) {
       if (data.query?.backlinks) data.query.backlinks.forEach(l => links.add(normalizeArticle(l.title)));
       blcontinue = data.continue?.blcontinue;
     } while (blcontinue && links.size < limit);
+    completed = true;
   } catch (e) {
     console.error('Error fetching backlinks for', title, e.message);
   }
-  cacheSet(backlinkCache, norm, links);
+  // Only cache on success — see getPageLinks for the same reasoning.
+  if (completed) cacheSet(backlinkCache, norm, links);
   return links;
+}
+
+// Fetch titles of all redirects that point AT the given page. Wikipedia's
+// `prop=links` returns raw link targets from wikitext, so an article that
+// contains `[[lunar landing]]` gives us "lunar landing" — not the canonical
+// "moon landing". We expand the destination into an alias set at cache time
+// so distance checks still match when a link goes through a redirect.
+async function getRedirectsTo(title) {
+  const aliases = new Set();
+  let rdcontinue = null;
+  try {
+    do {
+      const params = {
+        action: 'query',
+        titles: title.replace(/ /g, '_'),
+        prop: 'redirects',
+        rdlimit: '500',
+        rdnamespace: '0',
+      };
+      if (rdcontinue) params.rdcontinue = rdcontinue;
+      const data = await wikiAPI(params);
+      const pages = data.query?.pages || {};
+      for (const page of Object.values(pages)) {
+        if (page.redirects) {
+          for (const r of page.redirects) aliases.add(normalizeArticle(r.title));
+        }
+      }
+      rdcontinue = data.continue?.rdcontinue;
+    } while (rdcontinue);
+  } catch (e) {
+    console.error('Error fetching redirects for', title, e.message);
+  }
+  return aliases;
 }
 
 async function computeDistance(currentArticle, destination, destData) {
   const currentNorm = normalizeArticle(currentArticle);
   const destNorm = normalizeArticle(destination);
 
-  if (currentNorm === destNorm) return 0;
+  // Aliases = canonical title + all redirects to it. Older destData (from
+  // games started before this field existed) falls back to just the canonical.
+  const aliases = destData?.aliases || new Set([destNorm]);
+
+  if (aliases.has(currentNorm)) return 0;
 
   // Get outgoing links from current page
   const outLinks = await getPageLinks(currentArticle);
 
-  // Distance 1: destination is directly linked from current page
-  if (outLinks.has(destNorm)) return 1;
+  // Distance 1: current page links to destination directly OR via any redirect
+  // that resolves to destination. This catches `[[lunar landing]]` when the
+  // destination is "Moon landing".
+  for (const alias of aliases) {
+    if (outLinks.has(alias)) return 1;
+  }
 
   // Distance 2: current -> X -> destination
   // Check if any outgoing link is in the 1-hop backlinks set
@@ -554,7 +627,18 @@ async function cacheDestination(destination) {
   console.log(`[cache] Building distance cache for: ${destination}`);
   const start = Date.now();
 
-  // hop1: direct backlinks to destination
+  // Aliases: normalized destination + every redirect title pointing at it.
+  // Distance 1 check matches any of these against outLinks (that's the main
+  // win — catches `[[lunar landing]]` linking to a destination of "Moon
+  // landing"). We deliberately do NOT fetch backlinks for every alias: a
+  // popular page can have 60+ redirects and that's 60+ extra API calls per
+  // game start, which trips Wikipedia's rate limit and makes hop2 fail.
+  const destNorm = normalizeArticle(destination);
+  const aliases = await getRedirectsTo(destination);
+  aliases.add(destNorm);
+  console.log(`[cache] aliases: ${aliases.size} (including ${destNorm})`);
+
+  // hop1: direct backlinks to destination.
   const hop1 = await getBacklinks(destination, 2000);
   console.log(`[cache] hop1: ${hop1.size} backlinks to ${destination}`);
 
@@ -568,9 +652,12 @@ async function cacheDestination(destination) {
     : hop1Array.sort(() => Math.random() - 0.5).slice(0, 50);
 
   const hop2 = new Set();
-  // Fetch backlinks in parallel batches of 10
-  for (let i = 0; i < hop1Sample.length; i += 10) {
-    const batch = hop1Sample.slice(i, i + 10);
+  // Batches of 10 in parallel tripped Wikipedia's rate limiter (429/503 →
+  // server returned an HTML error page that JSON.parse choked on, leaving
+  // whole hop2 sample empty). 4 at a time stays under the limit in practice.
+  const HOP2_BATCH = 4;
+  for (let i = 0; i < hop1Sample.length; i += HOP2_BATCH) {
+    const batch = hop1Sample.slice(i, i + HOP2_BATCH);
     const results = await Promise.all(
       batch.map(article => getBacklinks(article, 200).catch(() => new Set()))
     );
@@ -586,7 +673,7 @@ async function cacheDestination(destination) {
   const elapsed = ((Date.now() - start) / 1000).toFixed(1);
   console.log(`[cache] hop2: ${hop2.size} articles (sampled ${hop1Sample.length} hop1 nodes) in ${elapsed}s`);
 
-  return { hop1, hop2 };
+  return { hop1, hop2, aliases };
 }
 
 // ─── SSE helpers ───
