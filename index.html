@@ -325,6 +325,8 @@
   /* ─── Difficulty Slider ─── */
   .diff-section {
     width: 100%;
+    max-width: 420px;
+    margin: 0 auto;
   }
   .diff-label {
     font-size: 0.85rem;
@@ -962,38 +964,40 @@
     content: '';
     position: absolute;
     right: 0; top: 0; bottom: 0;
-    width: 30px;
+    width: 34px;
     background-image:
-      linear-gradient(45deg, rgba(255,255,255,0.15) 25%, transparent 25%),
-      linear-gradient(-45deg, rgba(255,255,255,0.15) 25%, transparent 25%),
-      linear-gradient(45deg, transparent 75%, rgba(255,255,255,0.15) 75%),
-      linear-gradient(-45deg, transparent 75%, rgba(255,255,255,0.15) 75%);
+      linear-gradient(45deg, rgba(255,255,255,0.25) 25%, transparent 25%),
+      linear-gradient(-45deg, rgba(255,255,255,0.25) 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, rgba(255,255,255,0.25) 75%),
+      linear-gradient(-45deg, transparent 75%, rgba(255,255,255,0.25) 75%);
     background-size: 8px 8px;
     background-position: 0 0, 0 4px, 4px -4px, -4px 0;
+    background-color: rgba(0, 200, 90, 0.08);
     pointer-events: none;
     z-index: 1;
-    box-shadow: inset 0 0 8px 2px rgba(0, 200, 90, 0.15), 0 0 10px 2px rgba(0, 200, 90, 0.1);
+    box-shadow: inset 0 0 12px 3px rgba(0, 200, 90, 0.25), 0 0 14px 4px rgba(0, 200, 90, 0.18);
     animation: checkeredGlow 2.5s ease-in-out infinite;
   }
   @keyframes checkeredGlow {
-    0%, 100% { box-shadow: inset 0 0 8px 2px rgba(0, 200, 90, 0.12), 0 0 8px 2px rgba(0, 200, 90, 0.08); }
-    50% { box-shadow: inset 0 0 12px 3px rgba(0, 200, 90, 0.25), 0 0 14px 4px rgba(0, 200, 90, 0.15); }
+    0%, 100% { box-shadow: inset 0 0 10px 3px rgba(0, 200, 90, 0.2), 0 0 12px 3px rgba(0, 200, 90, 0.15); }
+    50% { box-shadow: inset 0 0 16px 5px rgba(0, 200, 90, 0.4), 0 0 20px 6px rgba(0, 200, 90, 0.25); }
   }
   .players-bar.tri-mode::before {
     content: '';
     position: absolute;
     left: 0; top: 0; bottom: 0;
-    width: 30px;
+    width: 34px;
     background-image:
-      linear-gradient(45deg, rgba(255,255,255,0.15) 25%, transparent 25%),
-      linear-gradient(-45deg, rgba(255,255,255,0.15) 25%, transparent 25%),
-      linear-gradient(45deg, transparent 75%, rgba(255,255,255,0.15) 75%),
-      linear-gradient(-45deg, transparent 75%, rgba(255,255,255,0.15) 75%);
+      linear-gradient(45deg, rgba(255,255,255,0.25) 25%, transparent 25%),
+      linear-gradient(-45deg, rgba(255,255,255,0.25) 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, rgba(255,255,255,0.25) 75%),
+      linear-gradient(-45deg, transparent 75%, rgba(255,255,255,0.25) 75%);
     background-size: 8px 8px;
     background-position: 0 0, 0 4px, 4px -4px, -4px 0;
+    background-color: rgba(0, 200, 90, 0.08);
     pointer-events: none;
     z-index: 1;
-    box-shadow: inset 0 0 8px 2px rgba(0, 200, 90, 0.15), 0 0 10px 2px rgba(0, 200, 90, 0.1);
+    box-shadow: inset 0 0 12px 3px rgba(0, 200, 90, 0.25), 0 0 14px 4px rgba(0, 200, 90, 0.18);
     animation: checkeredGlow 2.5s ease-in-out infinite;
   }
   .lb-riders {
