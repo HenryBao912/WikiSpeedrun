@@ -23,7 +23,8 @@ function generatePlayerId() {
 function isBadTitle(title) {
   const lower = title.toLowerCase().replace(/_/g, ' ');
   // Lists, indexes, outlines, drafts
-  if (/^(list of|lists of|index of|outline of|draft:|wikipedia:|template:|category:|portal:|module:)/.test(lower)) return true;
+  if (/^(list of|lists of|index of|outline of|draft:|wikipedia:|template:|category:|portal:|module:|wikipedia)/.test(lower)) return true;
+  if (lower === 'wikipedia') return true;
   // Disambiguation and parenthetical qualifiers — these are hard to reach via links
   // e.g. "Mario Bros. (Game & Watch)", "Paris (Texas)", "Mercury (planet)"
   if (lower.includes('(')) return true;
@@ -983,7 +984,7 @@ async function handleAction(playerId, msg) {
         viewRange = [Number(msg.viewRange[0]), Number(msg.viewRange[1])];
       }
       const articles = await getGoodRandomArticles(1, viewRange);
-      const word = articles.length > 0 ? articles[0] : 'Wikipedia';
+      const word = articles.length > 0 ? articles[0] : 'Moon';
       return { ok: true, word };
     }
 
