@@ -1314,7 +1314,7 @@
   /* Responsive */
   @media (max-width: 600px) {
     .logo { font-size: 2.2rem; }
-    .logo-row { gap: 4px; }
+    .logo-row { gap: 4px; flex-wrap: nowrap; max-width: 100%; overflow: hidden; }
     .logo-link { width: 70px; padding: 4px 6px; font-size: 0.65rem; height: 1.6em; }
     .logo-arrow { font-size: 0.7rem; }
     .logo-sub { font-size: 0.85rem; }
@@ -1367,6 +1367,26 @@
     .wiki-content .infobox { float: none; width: 100%; margin: 0 0 16px 0; }
     /* Hint bar compacts on mobile so it doesn't eat too many screen lines. */
     .dest-hint-bar { font-size: 0.72rem; padding: 5px 12px; }
+  }
+
+  /* Very narrow screens (iPhone SE / older devices at 320–359px). */
+  @media (max-width: 359px) {
+    .logo { font-size: 1.8rem; }
+    .logo-link { width: 56px; padding: 3px 4px; font-size: 0.58rem; }
+    .logo-arrow { font-size: 0.6rem; }
+    /* Give Surrender more breathing room from the Time stat on row 2 */
+    .game-stats { gap: 10px; padding-right: 70px; }
+    .game-stats .surrender-btn { padding: 4px 8px; font-size: 0.68rem; }
+    .origin-tag, .dest-tag, .target-tag { font-size: 0.72rem; padding: 2px 7px; }
+  }
+
+  /* Short viewports (landscape phones). Chrome was eating ~160px of 375px
+     height; trim header + hint so the wiki content has breathing room. */
+  @media (max-height: 450px) and (min-width: 601px) {
+    .game-header { padding: 4px 12px; }
+    .breadcrumb-bar { padding: 4px 16px; font-size: 0.75rem; }
+    .players-bar { padding: 2px 16px; }
+    .dest-hint-bar { padding: 3px 12px; font-size: 0.72rem; }
   }
 </style>
 </head>
