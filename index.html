@@ -2723,7 +2723,13 @@ function renderPlayersBar(distData) {
         for (const u of rowUsed) {
           if (Math.abs(u.left - e.leftPct) < 12 && u.row === row) row++;
         }
-        rider.style.top = (row * 20) + 'px';
+        if (entries.length === 1) {
+          rider.style.top = '50%';
+          rider.style.transform = 'translateX(-50%) translateY(-50%)';
+        } else {
+          rider.style.top = (row * 20) + 'px';
+          rider.style.transform = 'translateX(-50%)';
+        }
         rider.style.left = e.leftPct + '%';
         rowUsed.push({ left: e.leftPct, row });
         if (prevData && prevData.distance !== null && e.d !== null && prevData.distance !== e.d && !isNew) {
