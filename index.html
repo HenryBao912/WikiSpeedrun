@@ -1139,24 +1139,6 @@
   }
 
   /* ─── Checkpoint toast ─── */
-  .checkpoint-toast {
-    position: fixed;
-    top: 80px;
-    left: 50%;
-    transform: translateX(-50%) translateY(-20px);
-    background: var(--green);
-    color: white;
-    padding: 12px 28px;
-    border-radius: var(--radius);
-    font-weight: 700;
-    font-size: 1.1rem;
-    z-index: 200;
-    opacity: 0;
-    transition: opacity 0.3s, transform 0.3s;
-    pointer-events: none;
-    box-shadow: 0 4px 20px rgba(0,184,148,0.4);
-  }
-  .checkpoint-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
   /* ─── Results Screen ─── */
   #results {
@@ -1437,7 +1419,6 @@
 
 <!-- ─── Game Screen ─── -->
 <div id="game" class="screen">
-  <div class="checkpoint-toast" id="checkpointToast"></div>
   <div class="game-header">
     <div class="game-header-left">
       <div class="nav-info" id="classicNav">
@@ -2622,12 +2603,6 @@ function updateBreadcrumbs() {
   document.getElementById('stepCount').textContent = myPath.length - 1;
 }
 
-function showCheckpointToast(article, remaining) {
-  const toast = document.getElementById('checkpointToast');
-  toast.textContent = `✓ Reached ${article.replace(/_/g, ' ')}`;
-  toast.classList.add('show');
-  setTimeout(() => toast.classList.remove('show'), 2000);
-}
 
 function renderProgress(playerId) {
   if (playerId === myPlayerId) {
