@@ -9,6 +9,18 @@ const url = require('url');
 const rooms = new Map();
 const players = new Map(); // playerId -> { res (SSE), roomCode, name }
 
+// Wikipedia hosts per language. Add a language here + ensure the random
+// article / bio-detection heuristics below know about it and it's available
+// to rooms. Client's toggle must stay in sync.
+const WIKI_HOSTS = {
+  en: 'en.wikipedia.org',
+  zh: 'zh.wikipedia.org',
+};
+const DEFAULT_LANG = 'en';
+function normalizeLang(lang) {
+  return (lang && WIKI_HOSTS[lang]) ? lang : DEFAULT_LANG;
+}
+
 // Max length for a Wikipedia article title. The API docs cap at 255 bytes;
 // anything longer is definitely malicious/garbage.
 const MAX_ARTICLE_LEN = 255;
@@ -34,8 +46,10 @@ function generatePlayerId() {
 
 // ─── Random article fetching from Wikipedia ───
 
-// Quick title-based filter (no API call needed)
-function isBadTitle(title) {
+// Quick title-based filter (no API call needed). Per-language — the English
+// heuristics (word count, non-ASCII rejection) don't apply to zh.
+function isBadTitle(title, lang = DEFAULT_LANG) {
+  if (lang === 'zh') return isBadTitleZh(title);
   const lower = title.toLowerCase().replace(/_/g, ' ');
   // Lists, indexes, outlines, drafts
   if (/^(list of|lists of|index of|outline of|draft:|wikipedia:|template:|category:|portal:|module:|wikipedia)/.test(lower)) return true;
@@ -61,9 +75,27 @@ function isBadTitle(title) {
   return false;
 }
 
+// Chinese Wikipedia has different prefixes and "list" conventions. Also,
+// rejecting non-ASCII obviously doesn't work — every normal zh article is
+// non-ASCII. Rely mostly on the API validation (length, disambiguation).
+function isBadTitleZh(title) {
+  const t = title.replace(/_/g, ' ');
+  // Namespace prefixes (Wikipedia/Template/Category/Portal/Module/File in zh)
+  if (/^(维基百科|Wikipedia|模板|Template|分类|Category|门户|Portal|模块|Module|文件|File|帮助|Help|User|用户|草稿|Draft):/i.test(t)) return true;
+  // Parenthetical qualifiers (disambiguation style)
+  if (t.includes('(') || t.includes('（')) return true;
+  // Pure digits (years)
+  if (/^\d{3,4}年?$/.test(t)) return true;
+  // Single-character titles are usually too ambiguous
+  if (t.replace(/\s/g, '').length <= 1) return true;
+  // "...列表" (list-of) at the end → skip
+  if (/列表$/.test(t)) return true;
+  return false;
+}
+
 // Validate articles via API: check they're real content pages (not disambig/stubs)
 // Biographies get a stricter threshold — only very famous people are fun to play with
-async function validateArticles(titles) {
+async function validateArticles(titles, lang = DEFAULT_LANG) {
   if (titles.length === 0) return [];
   try {
     const params = {
@@ -74,7 +106,7 @@ async function validateArticles(titles) {
       inprop: 'length',
       cllimit: '50',
     };
-    const data = await wikiAPI(params);
+    const data = await wikiAPI(params, lang);
     const pages = data.query?.pages || {};
     const good = [];
     for (const page of Object.values(pages)) {
@@ -82,24 +114,44 @@ async function validateArticles(titles) {
       // Skip disambiguation pages
       if (page.pageprops && 'disambiguation' in page.pageprops) continue;
 
-      // Detect biographies — check categories AND title pattern
+      // Detect biographies — check categories AND title pattern.
+      // Different categories per-language.
       const cats = (page.categories || []).map(c => c.title.toLowerCase());
-      const isBioByCat = cats.some(c =>
-        c.includes('living people') ||
-        c.includes('possibly living people') ||
-        /\d{1,4} births/.test(c) ||
-        /\d{1,4} deaths/.test(c) ||
-        c.includes('biography') ||
-        c.includes('actresses') ||
-        c.includes('actors') ||
-        c.includes('politicians') ||
-        c.includes('singers') ||
-        c.includes('footballers') ||
-        c.includes('musicians')
-      );
-      // Title heuristic: "Firstname Lastname" pattern (2-3 capitalized words, no other stuff)
+      let isBioByCat;
+      if (lang === 'zh') {
+        // zh category names: "在世人物", "XXXX年出生", "XXXX年逝世", etc.
+        isBioByCat = cats.some(c =>
+          c.includes('在世人物') ||
+          c.includes('在世人士') ||
+          /\d{1,4}年出生/.test(c) ||
+          /\d{1,4}年逝世/.test(c) ||
+          c.includes('传记') ||
+          c.includes('演员') ||
+          c.includes('歌手') ||
+          c.includes('政治家') ||
+          c.includes('作家') ||
+          c.includes('运动员')
+        );
+      } else {
+        isBioByCat = cats.some(c =>
+          c.includes('living people') ||
+          c.includes('possibly living people') ||
+          /\d{1,4} births/.test(c) ||
+          /\d{1,4} deaths/.test(c) ||
+          c.includes('biography') ||
+          c.includes('actresses') ||
+          c.includes('actors') ||
+          c.includes('politicians') ||
+          c.includes('singers') ||
+          c.includes('footballers') ||
+          c.includes('musicians')
+        );
+      }
+      // Title heuristic: Latin "Firstname Lastname" — doesn't apply to zh.
       const titleClean = page.title.replace(/_/g, ' ');
-      const isBioByTitle = /^[A-Z][a-z]+ [A-Z][a-z]+( [A-Z][a-z]+)?$/.test(titleClean);
+      const isBioByTitle = lang === 'zh'
+        ? false
+        : /^[A-Z][a-z]+ [A-Z][a-z]+( [A-Z][a-z]+)?$/.test(titleClean);
 
       const isBio = isBioByCat || isBioByTitle;
 
@@ -129,16 +181,17 @@ async function validateArticles(titles) {
 // ─── Page views & difficulty filtering ───
 
 // Fetch individual article view counts (for mid-range filtering)
-function getPageViews(titles) {
+function getPageViews(titles, lang = DEFAULT_LANG) {
   const today = new Date();
   const endDate = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
   const start = new Date(today);
   start.setDate(start.getDate() - 30);
   const startDate = `${start.getFullYear()}${String(start.getMonth() + 1).padStart(2, '0')}${String(start.getDate()).padStart(2, '0')}`;
 
+  const project = `${lang}.wikipedia`;
   const promises = titles.map(title => {
     const encodedTitle = encodeURIComponent(title.replace(/ /g, '_'));
-    const apiUrl = `https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/en.wikipedia/all-access/all-agents/${encodedTitle}/daily/${startDate}/${endDate}`;
+    const apiUrl = `https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/${project}/all-access/all-agents/${encodedTitle}/daily/${startDate}/${endDate}`;
     return new Promise((resolve) => {
       https.get(apiUrl, { headers: { 'User-Agent': 'WikiSpeedrun/1.0' } }, (res) => {
         let data = '';
@@ -157,20 +210,21 @@ function getPageViews(titles) {
 }
 
 // Fetch top viewed articles from Wikimedia (for easy/popular range)
-// Returns array of { title, views } sorted by views desc
-let topArticlesCache = null;
-let topArticlesCacheTime = 0;
+// Returns array of { title, views } sorted by views desc. Cached per-language.
+const topArticlesCache = new Map(); // lang -> { data, time }
 const TOP_CACHE_TTL = 1000 * 60 * 60; // 1 hour
 
-async function getTopViewedArticles() {
+async function getTopViewedArticles(lang = DEFAULT_LANG) {
   // Return cache if fresh
-  if (topArticlesCache && (Date.now() - topArticlesCacheTime < TOP_CACHE_TTL)) {
-    return topArticlesCache;
+  const cached = topArticlesCache.get(lang);
+  if (cached && (Date.now() - cached.time < TOP_CACHE_TTL)) {
+    return cached.data;
   }
 
   try {
     // Try multiple days back — yesterday's data may not be available yet
     let articles = [];
+    const project = `${lang}.wikipedia`;
     for (let daysBack = 1; daysBack <= 3; daysBack++) {
       const date = new Date();
       date.setDate(date.getDate() - daysBack);
@@ -178,7 +232,7 @@ async function getTopViewedArticles() {
       const m = String(date.getMonth() + 1).padStart(2, '0');
       const d = String(date.getDate()).padStart(2, '0');
 
-      const apiUrl = `https://wikimedia.org/api/rest_v1/metrics/pageviews/top/en.wikipedia/all-access/${y}/${m}/${d}`;
+      const apiUrl = `https://wikimedia.org/api/rest_v1/metrics/pageviews/top/${project}/all-access/${y}/${m}/${d}`;
 
       try {
         const result = await new Promise((resolve, reject) => {
@@ -207,25 +261,24 @@ async function getTopViewedArticles() {
         const t = a.article;
         if (t === 'Main_Page' || t === 'Special:Search' || t.startsWith('Special:')) return false;
         if (t.startsWith('Wikipedia:') || t.startsWith('Portal:') || t.startsWith('Help:')) return false;
-        if (isBadTitle(t)) return false;
+        if (isBadTitle(t, lang)) return false;
         return true;
       })
       .filter(a => a.views >= 1000)
       .map(a => ({ title: a.article, views: a.views * 30 }));
 
-    topArticlesCache = filtered;
-    topArticlesCacheTime = Date.now();
-    console.log(`[top-articles] Cached ${filtered.length} popular articles (1K+ daily views)`);
+    topArticlesCache.set(lang, { data: filtered, time: Date.now() });
+    console.log(`[top-articles:${lang}] Cached ${filtered.length} popular articles (1K+ daily views)`);
     return filtered;
   } catch (e) {
     console.error('Error fetching top articles:', e.message);
-    return topArticlesCache || [];
+    return (topArticlesCache.get(lang)?.data) || [];
   }
 }
 
 // Pick random articles from the top-viewed pool within a view range
-async function pickFromTopArticles(count, viewRange) {
-  const top = await getTopViewedArticles();
+async function pickFromTopArticles(count, viewRange, lang = DEFAULT_LANG) {
+  const top = await getTopViewedArticles(lang);
   if (top.length === 0) return [];
 
   // Filter to view range
@@ -240,25 +293,25 @@ async function pickFromTopArticles(count, viewRange) {
   const picked = shuffled.slice(0, Math.min(count * 5, shuffled.length)).map(a => a.title);
 
   // Validate (filter disambig/stubs) — try multiple rounds if needed
-  const validated = await validateArticles(picked);
+  const validated = await validateArticles(picked, lang);
   if (validated.length >= count) return validated.slice(0, count);
 
   // If first batch wasn't enough, try more from the pool
   const remaining = shuffled.slice(count * 5, count * 10).map(a => a.title);
   if (remaining.length > 0) {
-    const extra = await validateArticles(remaining);
+    const extra = await validateArticles(remaining, lang);
     validated.push(...extra);
   }
   return validated.slice(0, count);
 }
 
 // Main article fetcher — uses different strategies based on view range
-async function getGoodRandomArticles(count, viewRange) {
+async function getGoodRandomArticles(count, viewRange, lang = DEFAULT_LANG) {
   const needed = count;
 
   // If no filter, use plain random
   if (!viewRange) {
-    return await fetchRandomArticles(needed);
+    return await fetchRandomArticles(needed, lang);
   }
 
   const [minViews, maxViews] = viewRange;
@@ -266,7 +319,7 @@ async function getGoodRandomArticles(count, viewRange) {
   // High views (easy/mid): pull from top-viewed articles
   // Threshold: if min views > 5K, use the top-viewed pool
   if (minViews >= 5000) {
-    const fromTop = await pickFromTopArticles(needed, viewRange);
+    const fromTop = await pickFromTopArticles(needed, viewRange, lang);
     if (fromTop.length >= needed) return fromTop;
     // Fallback: try random with filtering
   }
@@ -285,16 +338,16 @@ async function getGoodRandomArticles(count, viewRange) {
         rnnamespace: '0',
         rnlimit: '20',
       };
-      const data = await wikiAPI(params);
+      const data = await wikiAPI(params, lang);
       const batch = (data.query?.random || [])
         .map(r => r.title.replace(/ /g, '_'))
-        .filter(t => !isBadTitle(t));
+        .filter(t => !isBadTitle(t, lang));
 
       if (batch.length === 0) continue;
-      const validated = await validateArticles(batch);
+      const validated = await validateArticles(batch, lang);
       if (validated.length === 0) continue;
 
-      const viewData = await getPageViews(validated);
+      const viewData = await getPageViews(validated, lang);
       for (const { title, views } of viewData) {
         if (good.length >= needed) break;
         const norm = normalizeArticle(title);
@@ -309,7 +362,7 @@ async function getGoodRandomArticles(count, viewRange) {
 
   // If we still don't have enough, supplement from top articles (never use unfiltered random)
   if (good.length < needed) {
-    const extra = await pickFromTopArticles(needed - good.length, null);
+    const extra = await pickFromTopArticles(needed - good.length, null, lang);
     good.push(...extra);
   }
 
@@ -317,7 +370,7 @@ async function getGoodRandomArticles(count, viewRange) {
 }
 
 // Plain random articles (no view filtering) — extracted from old logic
-async function fetchRandomArticles(count) {
+async function fetchRandomArticles(count, lang = DEFAULT_LANG) {
   const good = [];
   let attempts = 0;
   while (good.length < count && attempts < 4) {
@@ -329,12 +382,12 @@ async function fetchRandomArticles(count) {
         rnnamespace: '0',
         rnlimit: String(Math.min(20, count * 5)),
       };
-      const data = await wikiAPI(params);
+      const data = await wikiAPI(params, lang);
       const batch = (data.query?.random || [])
         .map(r => r.title.replace(/ /g, '_'))
-        .filter(t => !isBadTitle(t));
+        .filter(t => !isBadTitle(t, lang));
       if (batch.length === 0) continue;
-      const validated = await validateArticles(batch);
+      const validated = await validateArticles(batch, lang);
       for (const a of validated) {
         if (good.length < count && !good.some(g => normalizeArticle(g) === normalizeArticle(a))) good.push(a);
       }
@@ -345,22 +398,25 @@ async function fetchRandomArticles(count) {
   return good;
 }
 
-async function getRandomPair(viewRange) {
-  const articles = await getGoodRandomArticles(2, viewRange);
+async function getRandomPair(viewRange, lang = DEFAULT_LANG) {
+  const articles = await getGoodRandomArticles(2, viewRange, lang);
   // Ensure no duplicates
   if (articles.length >= 2 && normalizeArticle(articles[0]) !== normalizeArticle(articles[1])) {
     return { origin: articles[0], destination: articles[1] };
   }
   // Retry once if we got a duplicate
-  const retry = await getGoodRandomArticles(2, viewRange);
+  const retry = await getGoodRandomArticles(2, viewRange, lang);
   if (retry.length >= 2 && normalizeArticle(retry[0]) !== normalizeArticle(retry[1])) {
     return { origin: retry[0], destination: retry[1] };
   }
-  return { origin: 'Pizza', destination: 'Moon' };
+  // Safe fallback per language.
+  return lang === 'zh'
+    ? { origin: '披萨', destination: '月球' }
+    : { origin: 'Pizza', destination: 'Moon' };
 }
 
-async function getRandomTriple(viewRange) {
-  const articles = await getGoodRandomArticles(3, viewRange);
+async function getRandomTriple(viewRange, lang = DEFAULT_LANG) {
+  const articles = await getGoodRandomArticles(3, viewRange, lang);
   // Ensure all 3 are unique
   const norms = articles.map(a => normalizeArticle(a));
   const unique = norms.length === 3 && new Set(norms).size === 3;
@@ -368,22 +424,31 @@ async function getRandomTriple(viewRange) {
     return { targets: [articles[0], articles[1], articles[2]] };
   }
   // Retry once
-  const retry = await getGoodRandomArticles(3, viewRange);
+  const retry = await getGoodRandomArticles(3, viewRange, lang);
   const rNorms = retry.map(a => normalizeArticle(a));
   if (rNorms.length === 3 && new Set(rNorms).size === 3) {
     return { targets: [retry[0], retry[1], retry[2]] };
   }
-  return { targets: ['Moon', 'Dinosaur', 'Jazz'] };
+  return lang === 'zh'
+    ? { targets: ['月球', '恐龙', '爵士乐'] }
+    : { targets: ['Moon', 'Dinosaur', 'Jazz'] };
 }
 
 function normalizeArticle(name) {
   return (name || '').replace(/_/g, ' ').toLowerCase();
 }
 
+// Build the composite key used to store per-language cache entries. Without
+// this, `Pizza` on en.wikipedia and `Pizza` on zh.wikipedia would collide
+// and a Chinese room could get English link data (or vice versa).
+function cacheKey(lang, title) {
+  return `${lang || DEFAULT_LANG}:${normalizeArticle(title)}`;
+}
+
 // Resolve Wikipedia redirects to canonical title
-async function resolveRedirect(title) {
+async function resolveRedirect(title, lang = DEFAULT_LANG) {
   try {
-    const data = await wikiAPI({ action: 'query', titles: title.replace(/ /g, '_'), redirects: '1' });
+    const data = await wikiAPI({ action: 'query', titles: title.replace(/ /g, '_'), redirects: '1' }, lang);
     const pages = data.query?.pages || {};
     const page = Object.values(pages)[0];
     if (page && !page.missing) return page.title.replace(/ /g, '_');
@@ -420,10 +485,19 @@ function cacheSet(cache, key, value) {
   cache.set(key, { value, expires: Date.now() + CACHE_TTL_MS });
 }
 
-function wikiAPIOnce(params) {
+// MediaWiki variant codes. Chinese wiki auto-converts Simplified ↔ Traditional
+// at display time; we always want Simplified output for now.
+const WIKI_VARIANTS = {
+  zh: 'zh-cn',
+};
+
+function wikiAPIOnce(params, lang = DEFAULT_LANG) {
   return new Promise((resolve, reject) => {
-    const qs = new URLSearchParams({ ...params, format: 'json', origin: '*' });
-    const reqUrl = `https://en.wikipedia.org/w/api.php?${qs}`;
+    const finalParams = { ...params, format: 'json', origin: '*' };
+    if (WIKI_VARIANTS[lang]) finalParams.variant = WIKI_VARIANTS[lang];
+    const qs = new URLSearchParams(finalParams);
+    const host = WIKI_HOSTS[lang] || WIKI_HOSTS[DEFAULT_LANG];
+    const reqUrl = `https://${host}/w/api.php?${qs}`;
     https.get(reqUrl, { headers: { 'User-Agent': 'WikiSpeedrun/1.0 (contact: local)' } }, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
@@ -444,10 +518,10 @@ function wikiAPIOnce(params) {
 // Retry transient failures (rate limiting, transient 5xx) with exponential
 // backoff. After `attempts` tries the final error bubbles to the caller,
 // where it's caught and logged without poisoning the cache.
-async function wikiAPI(params, attempts = 3) {
+async function wikiAPI(params, lang = DEFAULT_LANG, attempts = 3) {
   let lastErr;
   for (let i = 0; i < attempts; i++) {
-    try { return await wikiAPIOnce(params); }
+    try { return await wikiAPIOnce(params, lang); }
     catch (e) {
       lastErr = e;
       if (i < attempts - 1) {
@@ -459,9 +533,9 @@ async function wikiAPI(params, attempts = 3) {
   throw lastErr;
 }
 
-async function getPageLinks(title) {
-  const norm = normalizeArticle(title);
-  const cached = cacheGet(linkCache, norm);
+async function getPageLinks(title, lang = DEFAULT_LANG) {
+  const key = cacheKey(lang, title);
+  const cached = cacheGet(linkCache, key);
   if (cached) return cached;
   const links = new Set();
   let plcontinue = null;
@@ -470,7 +544,7 @@ async function getPageLinks(title) {
     do {
       const params = { action: 'query', titles: title.replace(/ /g, '_'), prop: 'links', pllimit: '500', plnamespace: '0' };
       if (plcontinue) params.plcontinue = plcontinue;
-      const data = await wikiAPI(params);
+      const data = await wikiAPI(params, lang);
       const pages = data.query?.pages || {};
       for (const page of Object.values(pages)) {
         if (page.links) page.links.forEach(l => links.add(normalizeArticle(l.title)));
@@ -483,13 +557,13 @@ async function getPageLinks(title) {
   }
   // Only cache a complete set. A partial set (from mid-pagination error) would
   // silently hide a direct link to destination from distance checks forever.
-  if (completed) cacheSet(linkCache, norm, links);
+  if (completed) cacheSet(linkCache, key, links);
   return links;
 }
 
-async function getBacklinks(title, limit = 500) {
-  const norm = normalizeArticle(title);
-  const cached = cacheGet(backlinkCache, norm);
+async function getBacklinks(title, limit = 500, lang = DEFAULT_LANG) {
+  const key = cacheKey(lang, title);
+  const cached = cacheGet(backlinkCache, key);
   if (cached) return cached;
   const links = new Set();
   let blcontinue = null;
@@ -498,7 +572,7 @@ async function getBacklinks(title, limit = 500) {
     do {
       const params = { action: 'query', list: 'backlinks', bltitle: title.replace(/ /g, '_'), bllimit: String(Math.min(limit - links.size, 500)), blnamespace: '0' };
       if (blcontinue) params.blcontinue = blcontinue;
-      const data = await wikiAPI(params);
+      const data = await wikiAPI(params, lang);
       if (data.query?.backlinks) data.query.backlinks.forEach(l => links.add(normalizeArticle(l.title)));
       blcontinue = data.continue?.blcontinue;
     } while (blcontinue && links.size < limit);
@@ -507,7 +581,7 @@ async function getBacklinks(title, limit = 500) {
     console.error('Error fetching backlinks for', title, e.message);
   }
   // Only cache on success — see getPageLinks for the same reasoning.
-  if (completed) cacheSet(backlinkCache, norm, links);
+  if (completed) cacheSet(backlinkCache, key, links);
   return links;
 }
 
@@ -516,7 +590,7 @@ async function getBacklinks(title, limit = 500) {
 // contains `[[lunar landing]]` gives us "lunar landing" — not the canonical
 // "moon landing". We expand the destination into an alias set at cache time
 // so distance checks still match when a link goes through a redirect.
-async function getRedirectsTo(title) {
+async function getRedirectsTo(title, lang = DEFAULT_LANG) {
   const aliases = new Set();
   let rdcontinue = null;
   try {
@@ -529,7 +603,7 @@ async function getRedirectsTo(title) {
         rdnamespace: '0',
       };
       if (rdcontinue) params.rdcontinue = rdcontinue;
-      const data = await wikiAPI(params);
+      const data = await wikiAPI(params, lang);
       const pages = data.query?.pages || {};
       for (const page of Object.values(pages)) {
         if (page.redirects) {
@@ -544,7 +618,7 @@ async function getRedirectsTo(title) {
   return aliases;
 }
 
-async function computeDistance(currentArticle, destination, destData) {
+async function computeDistance(currentArticle, destination, destData, lang = DEFAULT_LANG) {
   const currentNorm = normalizeArticle(currentArticle);
   const destNorm = normalizeArticle(destination);
 
@@ -555,7 +629,7 @@ async function computeDistance(currentArticle, destination, destData) {
   if (aliases.has(currentNorm)) return 0;
 
   // Get outgoing links from current page
-  const outLinks = await getPageLinks(currentArticle);
+  const outLinks = await getPageLinks(currentArticle, lang);
 
   // Distance 1: current page links to destination directly OR via any redirect
   // that resolves to destination. This catches `[[lunar landing]]` when the
@@ -584,13 +658,14 @@ async function computeDistance(currentArticle, destination, destData) {
   const cached = [];
   const uncached = [];
   for (const link of outArray) {
-    if (linkCache.has(normalizeArticle(link))) cached.push(link);
+    if (linkCache.has(cacheKey(lang, link))) cached.push(link);
     else uncached.push(link);
   }
 
   // Check all cached ones first (instant, no API calls)
   for (const article of cached) {
-    const middleLinks = linkCache.get(normalizeArticle(article));
+    const entry = linkCache.get(cacheKey(lang, article));
+    const middleLinks = entry ? entry.value : null;
     if (middleLinks) {
       for (const link of middleLinks) {
         if (destData.hop1.has(link)) return 3;
@@ -603,7 +678,7 @@ async function computeDistance(currentArticle, destination, destData) {
   for (let i = 0; i < toFetch.length; i += 10) {
     const batch = toFetch.slice(i, i + 10);
     const results = await Promise.all(
-      batch.map(article => getPageLinks(article).catch(() => new Set()))
+      batch.map(article => getPageLinks(article, lang).catch(() => new Set()))
     );
     for (const middleLinks of results) {
       for (const link of middleLinks) {
@@ -623,8 +698,8 @@ async function computeDistance(currentArticle, destination, destData) {
 //   hop1: articles that link directly to destination (1 hop away)
 //   hop2: articles that link to a hop1 article (2 hops away)
 // This makes distance checks 0-3 instant and 100% accurate (within cache limits)
-async function cacheDestination(destination) {
-  console.log(`[cache] Building distance cache for: ${destination}`);
+async function cacheDestination(destination, lang = DEFAULT_LANG) {
+  console.log(`[cache:${lang}] Building distance cache for: ${destination}`);
   const start = Date.now();
 
   // Aliases: normalized destination + every redirect title pointing at it.
@@ -634,13 +709,13 @@ async function cacheDestination(destination) {
   // popular page can have 60+ redirects and that's 60+ extra API calls per
   // game start, which trips Wikipedia's rate limit and makes hop2 fail.
   const destNorm = normalizeArticle(destination);
-  const aliases = await getRedirectsTo(destination);
+  const aliases = await getRedirectsTo(destination, lang);
   aliases.add(destNorm);
-  console.log(`[cache] aliases: ${aliases.size} (including ${destNorm})`);
+  console.log(`[cache:${lang}] aliases: ${aliases.size} (including ${destNorm})`);
 
   // hop1: direct backlinks to destination.
-  const hop1 = await getBacklinks(destination, 2000);
-  console.log(`[cache] hop1: ${hop1.size} backlinks to ${destination}`);
+  const hop1 = await getBacklinks(destination, 2000, lang);
+  console.log(`[cache:${lang}] hop1: ${hop1.size} backlinks to ${destination}`);
 
   // hop2: backlinks to the hop1 articles
   // Fetching ALL hop1 backlinks would be too many API calls.
@@ -659,7 +734,7 @@ async function cacheDestination(destination) {
   for (let i = 0; i < hop1Sample.length; i += HOP2_BATCH) {
     const batch = hop1Sample.slice(i, i + HOP2_BATCH);
     const results = await Promise.all(
-      batch.map(article => getBacklinks(article, 200).catch(() => new Set()))
+      batch.map(article => getBacklinks(article, 200, lang).catch(() => new Set()))
     );
     for (const backlinks of results) {
       for (const link of backlinks) {
@@ -671,7 +746,7 @@ async function cacheDestination(destination) {
   for (const link of hop1) hop2.delete(link);
 
   const elapsed = ((Date.now() - start) / 1000).toFixed(1);
-  console.log(`[cache] hop2: ${hop2.size} articles (sampled ${hop1Sample.length} hop1 nodes) in ${elapsed}s`);
+  console.log(`[cache:${lang}] hop2: ${hop2.size} articles (sampled ${hop1Sample.length} hop1 nodes) in ${elapsed}s`);
 
   return { hop1, hop2, aliases };
 }
@@ -696,7 +771,7 @@ function broadcastToRoom(roomCode, msg) {
 }
 
 // ─── Game Logic ───
-function initRoom(code, hostId, hostName) {
+function initRoom(code, hostId, hostName, lang = DEFAULT_LANG) {
   return {
     host: hostId,
     players: new Map([[hostId, newPlayerState(hostName, 0)]]),
@@ -706,12 +781,13 @@ function initRoom(code, hostId, hostName) {
     started: false,
     startTime: null,
     winner: null,
-    destData: null, // { hop1: Set, hop2: Set } for distance calc
+    destData: null, // { hop1: Set, hop2: Set, aliases: Set } for distance calc
     viewRange: null, // [minViews, maxViews] for difficulty filtering
     manualArticles: null, // { origin, destination } or { targets: [a,b,c] }
     giveUpVotes: new Set(), // set of playerIds who voted to give up
     singlePlayer: false, // true if room is single-player only
     colorIndex: 1, // next color index (host already took 0)
+    lang: normalizeLang(lang), // Wikipedia language for this room
   };
 }
 
@@ -737,6 +813,7 @@ async function startGameForRoom(room, roomCode) {
   room.winner = null;
   room.giveUpVotes.clear(); // Reset votes for new game
   const viewRange = room.viewRange || null;
+  const lang = room.lang || DEFAULT_LANG;
 
   if (room.mode === 'classic') {
     // Use manual articles if set, otherwise generate random
@@ -744,19 +821,19 @@ async function startGameForRoom(room, roomCode) {
     if (ma.origin && ma.destination) {
       room.pair = { origin: ma.origin, destination: ma.destination };
     } else if (ma.origin || ma.destination) {
-      const randomPair = await getRandomPair(viewRange);
+      const randomPair = await getRandomPair(viewRange, lang);
       room.pair = {
         origin: ma.origin || randomPair.origin,
         destination: ma.destination || randomPair.destination,
       };
     } else {
-      room.pair = await getRandomPair(viewRange);
+      room.pair = await getRandomPair(viewRange, lang);
     }
     // Resolve redirects to canonical titles, keep originals for fallback matching
     const origOrigin = room.pair.origin;
     const origDest = room.pair.destination;
-    room.pair.origin = await resolveRedirect(room.pair.origin);
-    room.pair.destination = await resolveRedirect(room.pair.destination);
+    room.pair.origin = await resolveRedirect(room.pair.origin, lang);
+    room.pair.destination = await resolveRedirect(room.pair.destination, lang);
     room.pair.destinationOriginal = origDest;
     for (const [, p] of room.players) {
       Object.assign(p, { path: [room.pair.origin], finished: false, finishTime: null, visited: [], distances: [] });
@@ -766,12 +843,13 @@ async function startGameForRoom(room, roomCode) {
       mode: 'classic',
       origin: room.pair.origin,
       destination: room.pair.destination,
+      lang,
     });
     // Cache destination backlinks async (don't block game start)
-    cacheDestination(room.pair.destination).then(destData => {
+    cacheDestination(room.pair.destination, lang).then(destData => {
       room.destData = destData;
       // Compute initial distance for starting article
-      computeDistance(room.pair.origin, room.pair.destination, destData).then(dist => {
+      computeDistance(room.pair.origin, room.pair.destination, destData, lang).then(dist => {
         for (const [pid, p] of room.players) {
           p.distances.push(dist);
         }
@@ -790,7 +868,7 @@ async function startGameForRoom(room, roomCode) {
     if (manualOk) {
       room.triple = { targets: manualTargets };
     } else {
-      room.triple = await getRandomTriple(viewRange);
+      room.triple = await getRandomTriple(viewRange, lang);
     }
     const startArticle = room.triple.targets[0];
     for (const [, p] of room.players) {
@@ -801,11 +879,12 @@ async function startGameForRoom(room, roomCode) {
       mode: 'tri',
       origin: startArticle,
       targets: room.triple.targets,
+      lang,
     });
     // Cache destination data for unvisited tri targets (targets[1] and targets[2])
     room.triDestData = {};
     for (const t of room.triple.targets.slice(1)) {
-      cacheDestination(t).then(destData => {
+      cacheDestination(t, lang).then(destData => {
         room.triDestData[t] = destData;
         // Compute initial distances for all players
         computeTriDistances(room, roomCode, startArticle);
@@ -816,11 +895,12 @@ async function startGameForRoom(room, roomCode) {
 
 async function computeTriDistances(room, roomCode, article) {
   if (!room || !room.triDestData || !room.triple) return;
+  const lang = room.lang || DEFAULT_LANG;
   const targets = room.triple.targets.slice(1); // the 2 destination targets
   const promises = targets.map(async t => {
     const destData = room.triDestData[t];
     if (!destData) return { target: t, distance: null };
-    const d = await computeDistance(article, t, destData);
+    const d = await computeDistance(article, t, destData, lang);
     return { target: t, distance: d };
   });
   const results = await Promise.all(promises);
@@ -889,13 +969,14 @@ async function handleAction(playerId, msg) {
     case 'create_room': {
       const code = generateRoomCode();
       const name = (msg.name || 'Player').slice(0, 20);
+      const lang = normalizeLang(msg.lang);
       const player = players.get(playerId);
       if (player) {
         player.name = name;
         player.roomCode = code;
       }
-      rooms.set(code, initRoom(code, playerId, name));
-      sendSSE(playerId, { type: 'room_created', code, playerId });
+      rooms.set(code, initRoom(code, playerId, name, lang));
+      sendSSE(playerId, { type: 'room_created', code, playerId, lang });
       broadcastToRoom(code, {
         type: 'player_list',
         players: [...rooms.get(code).players.entries()].map(([id, p]) => ({ id, name: p.name, color: p.color })),
@@ -944,7 +1025,7 @@ async function handleAction(playerId, msg) {
       }
       room.players.set(playerId, newPlayerState(name, room.colorIndex));
       room.colorIndex++;
-      sendSSE(playerId, { type: 'room_joined', code, playerId });
+      sendSSE(playerId, { type: 'room_joined', code, playerId, lang: room.lang || DEFAULT_LANG });
       sendSSE(playerId, { type: 'mode_changed', mode: room.mode });
       broadcastToRoom(code, {
         type: 'player_list',
@@ -1033,11 +1114,12 @@ async function handleAction(playerId, msg) {
       // checkpoint from a re-visit (avoids spurious checkpoint_reached events).
       const visitedBefore = rp.visited.length;
 
+      const roomLang = room.lang || DEFAULT_LANG;
       // Check win — first quick check, then resolve redirect if needed
       let won = checkWin(room, rp, article);
       if (!won && room.mode === 'classic') {
         // Try resolving the article in case it's a redirect to the destination
-        const resolved = await resolveRedirect(article);
+        const resolved = await resolveRedirect(article, roomLang);
         if (normalizeArticle(resolved) !== normalizeArticle(article)) {
           won = checkWin(room, rp, resolved);
         }
@@ -1086,7 +1168,7 @@ async function handleAction(playerId, msg) {
           Promise.all(unvisited.map(async t => {
             const destData = room.triDestData[t];
             if (!destData) return;
-            const d = await computeDistance(article, t, destData);
+            const d = await computeDistance(article, t, destData, roomLang);
             return { target: t, distance: d };
           })).then(results => {
             if (!rp.triDistances) rp.triDistances = {};
@@ -1106,7 +1188,7 @@ async function handleAction(playerId, msg) {
       // Compute distance async (classic mode only, don't block response)
       if (room.mode === 'classic' && !won && room.destData) {
         const rc = player.roomCode;
-        computeDistance(article, room.pair.destination, room.destData).then(dist => {
+        computeDistance(article, room.pair.destination, room.destData, roomLang).then(dist => {
           rp.distances.push(dist);
           const currentRoom = rooms.get(rc);
           if (currentRoom && currentRoom.started && currentRoom.players.has(playerId)) {
@@ -1145,7 +1227,10 @@ async function handleAction(playerId, msg) {
       if (!viewRange && Array.isArray(msg.viewRange) && msg.viewRange.length === 2) {
         viewRange = [Number(msg.viewRange[0]), Number(msg.viewRange[1])];
       }
-      const articles = await getGoodRandomArticles(1, viewRange);
+      // Prefer the room's language; fall back to the lang on this one-off
+      // request (SP setup sends it via msg.lang before a room exists).
+      const lang = normalizeLang(room?.lang || msg.lang);
+      const articles = await getGoodRandomArticles(1, viewRange, lang);
       if (articles.length > 0) {
         return { ok: true, word: articles[0] };
       }
@@ -1181,12 +1266,13 @@ async function handleAction(playerId, msg) {
     case 'start_single': {
       const code = generateRoomCode();
       const name = (msg.name || 'Single Player').slice(0, 20);
+      const lang = normalizeLang(msg.lang);
       const player = players.get(playerId);
       if (player) {
         player.name = name;
         player.roomCode = code;
       }
-      const room = initRoom(code, playerId, name);
+      const room = initRoom(code, playerId, name, lang);
       room.singlePlayer = true;
       // Apply mode and difficulty from client
       room.mode = msg.mode === 'tri' ? 'tri' : 'classic';
@@ -1211,7 +1297,7 @@ async function handleAction(playerId, msg) {
         }
       }
       rooms.set(code, room);
-      sendSSE(playerId, { type: 'room_created', code, playerId, singlePlayer: true });
+      sendSSE(playerId, { type: 'room_created', code, playerId, singlePlayer: true, lang });
       startGameForRoom(room, code);
       return { ok: true, code };
     }
