@@ -1351,6 +1351,38 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // SEO: tell crawlers everything is fair game and point at the sitemap.
+  if (parsed.pathname === '/robots.txt') {
+    res.writeHead(200, { 'Content-Type': 'text/plain', 'Cache-Control': 'public, max-age=86400' });
+    res.end(
+      'User-agent: *\n' +
+      'Allow: /\n' +
+      'Disallow: /events\n' +
+      'Disallow: /action\n' +
+      'Sitemap: https://wikispeedrun.io/sitemap.xml\n'
+    );
+    return;
+  }
+
+  // Single-URL sitemap — the game is one page. Helps Search Console verify
+  // and speeds up initial indexing.
+  if (parsed.pathname === '/sitemap.xml') {
+    res.writeHead(200, { 'Content-Type': 'application/xml', 'Cache-Control': 'public, max-age=86400' });
+    const today = new Date().toISOString().slice(0, 10);
+    res.end(
+      '<?xml version="1.0" encoding="UTF-8"?>\n' +
+      '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
+      '  <url>\n' +
+      '    <loc>https://wikispeedrun.io/</loc>\n' +
+      `    <lastmod>${today}</lastmod>\n` +
+      '    <changefreq>weekly</changefreq>\n' +
+      '    <priority>1.0</priority>\n' +
+      '  </url>\n' +
+      '</urlset>\n'
+    );
+    return;
+  }
+
   if (parsed.pathname === '/events' && req.method === 'GET') {
     let playerId = parsed.query.playerId;
     if (!playerId) {
