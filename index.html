@@ -1592,7 +1592,7 @@
     <div class="mp-actions-row">
       <button class="btn btn-primary" onclick="createMultiplayerRoom()">Create Room</button>
       <div class="divider-vertical"></div>
-      <input type="text" id="mpRoomCode" placeholder="CODE" class="mp-code-input" maxlength="5" oninput="autoJoinRoom()" />
+      <input type="text" id="mpRoomCode" placeholder="CODE" class="mp-code-input" maxlength="5" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false" oninput="autoJoinRoom(event)" />
     </div>
     <div class="error-msg" id="mpError"></div>
   </div>
@@ -2315,11 +2315,23 @@ async function joinMultiplayerRoom() {
   }
 }
 
-function autoJoinRoom() {
+function autoJoinRoom(event) {
   const input = document.getElementById('mpRoomCode');
-  const code = input.value.trim();
+  // Ignore keystrokes while an IME composition is in progress — Chinese /
+  // Japanese / Korean input methods emit intermediate text that would fail
+  // the join check even though the visible pinyin looks right.
+  if (event && event.isComposing) return;
+
+  // Strip anything that isn't an uppercase letter or digit. Room codes from
+  // the server are always [0-9A-F] ASCII. If a Chinese IME committed a Han
+  // character, it gets removed here so the user can see their code stays
+  // empty / partial instead of silently failing on submit.
+  const raw = input.value;
+  const clean = raw.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 5);
+  if (clean !== raw) input.value = clean;
+
   input.classList.remove('input-shake');
-  if (code.length === 5 && !autoJoinPending) {
+  if (clean.length === 5 && !autoJoinPending) {
     autoJoinPending = true;
     joinMultiplayerRoom().finally(() => { autoJoinPending = false; });
   }
