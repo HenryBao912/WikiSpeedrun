@@ -1511,6 +1511,61 @@
     .players-bar { padding: 2px 16px; }
     .dest-hint-bar { padding: 3px 12px; font-size: 0.72rem; }
   }
+
+  /* Language dropdown — lives in the top-right corner of the Words box.
+     Click the pill to open a panel with the other available languages. */
+  .lang-dropdown {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    user-select: none;
+    z-index: 5;
+  }
+  .lang-dropdown-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    background: var(--surface);
+    border: 1px solid var(--surface2);
+    border-radius: 999px;
+    color: var(--text);
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .lang-dropdown-trigger:hover { border-color: var(--accent); }
+  .lang-dropdown-trigger .chevron {
+    font-size: 0.6rem;
+    opacity: 0.6;
+    transition: transform 0.15s;
+  }
+  .lang-dropdown.open .lang-dropdown-trigger .chevron { transform: rotate(180deg); }
+  .lang-dropdown-panel {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    background: var(--surface);
+    border: 1px solid var(--surface2);
+    border-radius: 8px;
+    min-width: 120px;
+    padding: 4px;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.35);
+    display: none;
+  }
+  .lang-dropdown.open .lang-dropdown-panel { display: block; }
+  .lang-dropdown-item {
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--text2);
+    transition: background 0.1s, color 0.1s;
+  }
+  .lang-dropdown-item:hover { background: var(--surface2); color: var(--text); }
+  .lang-dropdown-item.active { color: var(--accent2); }
+  /* Both words boxes need position: relative so the dropdown can absolute-anchor. */
+  .round-words-section, #spRoundWordsSection { position: relative; }
 </style>
 </head>
 <body>
@@ -1574,7 +1629,17 @@
       </div>
     </div>
     <div class="round-words-section" id="spRoundWordsSection" style="display:flex;">
-      <div class="rw-title">ROUND WORDS</div>
+      <div class="lang-dropdown" data-lang-dropdown>
+        <div class="lang-dropdown-trigger" onclick="toggleLangDropdown(this.parentNode)">
+          <span class="lang-dropdown-label">Eng</span>
+          <span class="chevron">▾</span>
+        </div>
+        <div class="lang-dropdown-panel">
+          <div class="lang-dropdown-item" data-lang="en" onclick="pickLang('en', event)">English</div>
+          <div class="lang-dropdown-item" data-lang="zh" onclick="pickLang('zh', event)">中文 (简体)</div>
+        </div>
+      </div>
+      <div class="rw-title">WORDS</div>
       <div id="spRoundWordsInputs"></div>
       <button class="btn btn-primary" onclick="startSinglePlayer()" style="width:100%;margin-top:8px;">Start!</button>
     </div>
@@ -1642,7 +1707,17 @@
     </div>
   </div>
   <div class="round-words-section" id="roundWordsSection" style="display:none;">
-    <div class="round-words-title">Round Words</div>
+    <div class="lang-dropdown" data-lang-dropdown>
+      <div class="lang-dropdown-trigger" onclick="toggleLangDropdown(this.parentNode)">
+        <span class="lang-dropdown-label">Eng</span>
+        <span class="chevron">▾</span>
+      </div>
+      <div class="lang-dropdown-panel">
+        <div class="lang-dropdown-item" data-lang="en" onclick="pickLang('en', event)">English</div>
+        <div class="lang-dropdown-item" data-lang="zh" onclick="pickLang('zh', event)">中文 (简体)</div>
+      </div>
+    </div>
+    <div class="round-words-title">Words</div>
     <div class="round-words-inputs" id="roundWordsInputs"></div>
     <button class="btn btn-primary btn-small" id="mpStartBtn" onclick="startMultiplayerGame()" style="display:none;">Start!</button>
   </div>
@@ -1794,7 +1869,7 @@ function scheduleHeroRoll(el) {
   }, delay);
 }
 
-document.addEventListener('DOMContentLoaded', () => { initBgWords(); initHeroLinks(); renderSpRoundWords(); });
+document.addEventListener('DOMContentLoaded', () => { initBgWords(); initHeroLinks(); renderSpRoundWords(); updateLangDropdowns(); });
 
 // ─── Global State ───
 let eventSource = null;
@@ -1805,6 +1880,71 @@ let isHost = false;
 let currentGameMode = 'classic';
 let currentGameDifficulty = null; // [minViews, maxViews] or null
 let isSinglePlayer = false;
+
+// Wikipedia language. `wikiLangChoice` is the user's preference (what new
+// games/rooms use); `currentGameLang` is locked to whatever the active room
+// is using so mid-game toggles don't poison the state.
+let wikiLangChoice = (() => {
+  try { return localStorage.getItem('wsr_wiki_lang') || 'en'; } catch { return 'en'; }
+})();
+let currentGameLang = null; // set from game_start, cleared when leaving game
+
+// Host of every Wikipedia we speak to. Keep in sync with server's WIKI_HOSTS.
+const WIKI_HOSTS = { en: 'en.wikipedia.org', zh: 'zh.wikipedia.org' };
+// MediaWiki variant codes — force Simplified for Chinese wiki (default
+// mixed/Traditional-leaning output is confusing for mainland users).
+const WIKI_VARIANTS = { zh: 'zh-cn' };
+function wikiHost(lang) { return WIKI_HOSTS[lang] || WIKI_HOSTS.en; }
+function wikiVariant(lang) { return WIKI_VARIANTS[lang] || ''; }
+// The lang to use for Wikipedia fetches right now. Uses the locked game
+// lang during play so the toggle can't retarget mid-race.
+function activeWikiLang() { return currentGameLang || wikiLangChoice; }
+
+// Dropdown labels per language. Shown in the trigger pill.
+const LANG_LABELS = { en: 'Eng', zh: '中文' };
+
+function setWikiLang(lang) {
+  if (lang !== 'en' && lang !== 'zh') return;
+  if (wikiLangChoice === lang) return;
+  wikiLangChoice = lang;
+  try { localStorage.setItem('wsr_wiki_lang', lang); } catch {}
+  updateLangDropdowns();
+}
+// Sync every dropdown's trigger label + active-option highlight. Called on
+// boot, on pickLang(), and when a room locks a different language.
+function updateLangDropdowns() {
+  const shownLang = currentGameLang || wikiLangChoice;
+  document.querySelectorAll('[data-lang-dropdown]').forEach(dd => {
+    const label = dd.querySelector('.lang-dropdown-label');
+    if (label) label.textContent = LANG_LABELS[shownLang] || LANG_LABELS.en;
+    dd.querySelectorAll('.lang-dropdown-item').forEach(item => {
+      item.classList.toggle('active', item.dataset.lang === shownLang);
+    });
+  });
+}
+// Back-compat alias — callers scattered around still use the old name.
+function updateWikiLangToggleUI() { updateLangDropdowns(); }
+
+function toggleLangDropdown(dd) {
+  // Close any other open dropdown, then toggle this one.
+  document.querySelectorAll('[data-lang-dropdown].open').forEach(other => {
+    if (other !== dd) other.classList.remove('open');
+  });
+  dd.classList.toggle('open');
+}
+
+function pickLang(lang, event) {
+  if (event) event.stopPropagation();
+  setWikiLang(lang);
+  document.querySelectorAll('[data-lang-dropdown]').forEach(dd => dd.classList.remove('open'));
+}
+
+// Close any open dropdown when clicking outside it.
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('[data-lang-dropdown]')) {
+    document.querySelectorAll('[data-lang-dropdown].open').forEach(dd => dd.classList.remove('open'));
+  }
+});
 let currentArticle = '';
 let myPath = [];
 let gameOrigin = '';
@@ -2024,6 +2164,7 @@ async function startSinglePlayer() {
       name: 'Single Player',
       mode: currentGameMode,
       viewRange: spDifficulty,
+      lang: wikiLangChoice,
     };
     // Gather and validate manual words
     if (currentGameMode === 'classic') {
@@ -2202,7 +2343,7 @@ async function randomizeWord(inputId) {
     let attempts = 0;
     while (!word && attempts < 3) {
       attempts++;
-      const result = await send({ type: 'random_word', viewRange: spDifficulty || null });
+      const result = await send({ type: 'random_word', viewRange: spDifficulty || null, lang: wikiLangChoice });
       if (result.cooldown) {
         const input = document.getElementById(inputId);
         btn.classList.remove('loading');
@@ -2254,7 +2395,10 @@ async function fetchAutocomplete(query, listId, inputId) {
     return;
   }
   try {
-    const resp = await fetch(`https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(query)}&limit=5&namespace=0&origin=*`);
+    const lang = activeWikiLang();
+    const variant = wikiVariant(lang);
+    const variantQS = variant ? `&variant=${variant}` : '';
+    const resp = await fetch(`https://${wikiHost(lang)}/w/api.php?action=opensearch&search=${encodeURIComponent(query)}&limit=5&namespace=0&origin=*${variantQS}`);
     const [, titles] = await resp.json();
     const list = document.getElementById(listId);
     // Build items with DOM APIs so titles containing quotes can't break out
@@ -2284,7 +2428,7 @@ async function createMultiplayerRoom() {
     await connectSSE();
     mpIsHost = true;
     isHost = true;
-    await send({ type: 'create_room', name });
+    await send({ type: 'create_room', name, lang: wikiLangChoice });
   } catch(e) {
     showError('mpError', 'Could not connect to server.');
   }
@@ -2342,6 +2486,8 @@ function backToMultiplayerSetup() {
   eventSource = null;
   currentRoomCode = null;
   isHost = false;
+  currentGameLang = null;
+  updateWikiLangToggleUI();
   showScreen('mp-setup');
 }
 
@@ -2439,6 +2585,7 @@ function handleServerMessage(msg) {
       isHost = true;
       mpIsHost = true;
       isSinglePlayer = msg.singlePlayer || false;
+      if (msg.lang) { currentGameLang = msg.lang; updateWikiLangToggleUI(); }
       document.getElementById('codeText').textContent = msg.code;
       if (isSinglePlayer) {
         // Single player: start immediately
@@ -2456,6 +2603,9 @@ function handleServerMessage(msg) {
       currentRoomCode = msg.code;
       isHost = false;
       mpIsHost = false;
+      // Joining players use the room's (host-chosen) language, not their own
+      // toggle — otherwise they'd fetch articles from the wrong Wikipedia.
+      if (msg.lang) { currentGameLang = msg.lang; updateWikiLangToggleUI(); }
       document.getElementById('codeText').textContent = msg.code;
       document.getElementById('mpModeSelector').style.opacity = '0.5';
       document.getElementById('mpModeSelector').style.pointerEvents = 'none';
@@ -2512,6 +2662,8 @@ function handleServerMessage(msg) {
       break;
 
     case 'game_start':
+      // Lock the game language so the toggle can't retarget mid-play.
+      if (msg.lang) { currentGameLang = msg.lang; updateWikiLangToggleUI(); }
       startGameUI(msg);
       break;
 
@@ -2747,23 +2899,40 @@ async function toggleSummary(el, title) {
   // Stop click from propagating (so doc listener doesn't immediately close it)
   try {
     const articleTitle = title.replace(/ /g, '_');
-    let summary = summaryCache.get(articleTitle);
+    const lang = activeWikiLang();
+    const cacheK = `${lang}:${articleTitle}`;
+    let summary = summaryCache.get(cacheK);
     if (!summary) {
-      const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(articleTitle)}`);
-      const data = await res.json();
+      // For zh we need `variant=zh-cn` applied or the extract comes back
+      // Traditional-heavy. The REST summary endpoint doesn't honor variant,
+      // so we fetch the plain extract via the action API instead.
+      let full = '';
+      const variant = wikiVariant(lang);
+      if (variant) {
+        const url = `https://${wikiHost(lang)}/w/api.php?action=query&prop=extracts&exintro=1&explaintext=1&redirects=1&format=json&origin=*&variant=${variant}&titles=${encodeURIComponent(articleTitle)}`;
+        const res = await fetch(url);
+        const data = await res.json();
+        const page = Object.values(data.query?.pages || {})[0];
+        full = page?.extract || '';
+      } else {
+        const res = await fetch(`https://${wikiHost(lang)}/api/rest_v1/page/summary/${encodeURIComponent(articleTitle)}`);
+        const data = await res.json();
+        full = data.extract || '';
+      }
       // Get first sentence — handle abbreviations, decimals, etc.
-      const full = data.extract || '';
+      // Chinese uses 。 as sentence terminator; English uses .!?.
+      const sentenceEnd = /[.!?。！？]/;
       const abbr = /(?:Mr|Mrs|Ms|Dr|Prof|Sr|Jr|St|Mt|Ft|Lt|Gen|Gov|Sgt|Cpl|Pvt|Rev|Hon|Pres|Inc|Corp|Ltd|Co|vs|etc|approx|dept|est|vol|no|op|al|e\.g|i\.e|U\.S|U\.K|U\.N)\./gi;
       // Replace abbreviation dots with a placeholder
       const safe = full.replace(abbr, m => m.slice(0, -1) + '\x00')
                        .replace(/\d+\.\d+/g, m => m.replace('.', '\x00')); // protect decimals
-      const endMatch = safe.match(/[.!?]/);
+      const endMatch = safe.match(sentenceEnd);
       if (endMatch) {
         summary = full.substring(0, endMatch.index + 1);
       } else {
         summary = full;
       }
-      summaryCache.set(articleTitle, summary);
+      summaryCache.set(cacheK, summary);
     }
     if (activeTooltip === tooltip) tooltip.textContent = summary || 'No summary available.';
   } catch (e) {
@@ -2791,10 +2960,25 @@ async function loadArticle(title) {
   container.scrollTop = 0;
 
   try {
-    const apiUrl = `https://en.wikipedia.org/api/rest_v1/page/html/${encodeURIComponent(title)}`;
-    const resp = await fetch(apiUrl);
-    if (!resp.ok) throw new Error('Article not found');
-    let html = await resp.text();
+    // For languages with a variant (zh → Simplified), use the action=parse
+    // endpoint which returns variant-converted HTML. For plain English, the
+    // REST API gives cleaner Parsoid output — keep using it.
+    const lang = activeWikiLang();
+    const variant = wikiVariant(lang);
+    let html;
+    if (variant) {
+      const parseUrl = `https://${wikiHost(lang)}/w/api.php?action=parse&prop=text&redirects=1&format=json&origin=*&variant=${variant}&page=${encodeURIComponent(title)}`;
+      const resp = await fetch(parseUrl);
+      if (!resp.ok) throw new Error('Article not found');
+      const data = await resp.json();
+      html = data.parse?.text?.['*'];
+      if (!html) throw new Error('Article not found');
+    } else {
+      const apiUrl = `https://${wikiHost(lang)}/api/rest_v1/page/html/${encodeURIComponent(title)}`;
+      const resp = await fetch(apiUrl);
+      if (!resp.ok) throw new Error('Article not found');
+      html = await resp.text();
+    }
 
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, 'text/html');
@@ -2935,7 +3119,8 @@ async function loadArticle(title) {
     h.textContent = 'Error loading article';
     content.appendChild(h);
     const p = document.createElement('p');
-    p.textContent = `Could not load "${failedTitle}". This article may not exist on English Wikipedia.`;
+    const wikiName = activeWikiLang() === 'zh' ? 'Chinese Wikipedia' : 'English Wikipedia';
+    p.textContent = `Could not load "${failedTitle}". This article may not exist on ${wikiName}.`;
     content.appendChild(p);
     if (myPath.length > 1) {
       myPath.pop();
@@ -3616,6 +3801,9 @@ function backToHome() {
   currentRoomCode = null;
   isHost = false;
   isSinglePlayer = false;
+  // Unlock the wiki-language toggle now that we're out of any room.
+  currentGameLang = null;
+  updateWikiLangToggleUI();
   showScreen('home');
 }
 
