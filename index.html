@@ -1263,6 +1263,93 @@
     100% { background-position: -200% center; }
   }
   .winner-sub { color: var(--text2); margin-top: 4px; }
+
+  /* Small secondary CTA under "Congratulations!" — reveals the share card.
+     Keeps the default results view clean: just banner + per-player cards. */
+  .share-toggle-btn {
+    margin-top: 12px;
+    padding: 8px 18px;
+    background: transparent;
+    color: var(--accent2);
+    border: 1.5px solid var(--accent);
+    border-radius: 999px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .share-toggle-btn:hover { background: var(--accent); color: white; }
+  .share-toggle-btn::before { content: '↗ '; margin-right: 2px; }
+
+  /* Share-your-run card (between winner banner and results grid). */
+  .share-card {
+    background: linear-gradient(160deg, var(--surface), var(--surface2));
+    border: 1px solid var(--surface2);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    width: 100%;
+    max-width: 560px;
+    margin-bottom: 16px;
+    position: relative;
+  }
+  .share-card-title {
+    color: var(--text2);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .share-card-stats {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 1.05rem;
+    font-weight: 700;
+    margin-bottom: 10px;
+  }
+  .share-card-divider { color: var(--text2); font-weight: 400; }
+  .sc-emoji { margin-right: 4px; }
+  .share-card-path {
+    color: var(--text2);
+    font-size: 0.88rem;
+    line-height: 1.5;
+    margin-bottom: 14px;
+    word-break: break-word;
+  }
+  .share-card-path .sc-origin,
+  .share-card-path .sc-dest { color: var(--text); font-weight: 600; }
+  .share-card-path .sc-sep { color: var(--accent); opacity: 0.7; margin: 0 4px; }
+  .share-card-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+  .share-card-actions .btn-share {
+    padding: 8px 16px;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.85rem;
+    transition: filter 0.15s;
+  }
+  .share-card-actions .btn-share.secondary { background: var(--surface2); color: var(--text); }
+  .share-card-actions .btn-share:hover { filter: brightness(1.1); }
+  .share-card-actions .btn-share:active { transform: translateY(1px); }
+  .share-toast {
+    position: absolute;
+    right: 16px;
+    bottom: 16px;
+    background: var(--green);
+    color: white;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+  }
+  .share-toast.show { opacity: 1; }
+
   .results-grid {
     display: flex;
     flex-direction: column;
@@ -1598,6 +1685,21 @@
     <span class="trophy" id="resultIcon">🏆</span>
     <div class="winner-name" id="winnerName"></div>
     <div class="winner-sub" id="winnerSub"></div>
+    <button class="share-toggle-btn" id="shareToggleBtn" style="display:none;">Share your run</button>
+  </div>
+  <div class="share-card" id="shareCard" style="display:none;">
+    <div class="share-card-title">Your run</div>
+    <div class="share-card-stats">
+      <span><span class="sc-emoji">⚡</span><span id="scSteps">0</span> steps</span>
+      <span class="share-card-divider">·</span>
+      <span><span class="sc-emoji">⏱</span><span id="scTime">0:00</span></span>
+    </div>
+    <div class="share-card-path" id="scPath"></div>
+    <div class="share-card-actions">
+      <button class="btn-share" id="copyShareBtn">Copy share</button>
+      <button class="btn-share secondary" id="saveImageBtn">Save image</button>
+    </div>
+    <div class="share-toast" id="shareToast">Copied!</div>
   </div>
   <div class="results-grid" id="resultsGrid"></div>
   <div class="result-actions">
@@ -3132,6 +3234,9 @@ function showResults(msg) {
   else if (iAmLoser) nameEl.classList.add('loser');
   document.getElementById('winnerSub').textContent = winSub;
 
+  // Populate the share-your-run card before rendering the full results grid.
+  populateShareCard(msg);
+
   const grid = document.getElementById('resultsGrid');
   grid.innerHTML = '';
 
@@ -3223,6 +3328,259 @@ function formatTime(ms) {
   const m = Math.floor(s / 60);
   const sec = (s % 60).toString().padStart(2, '0');
   return `${m}:${sec}`;
+}
+
+// ─── Shareable run card ───
+
+// Return my own result entry, or the first result if I'm not in it (e.g.
+// spectator edge case). Null if no path data at all.
+function myRunResult(msg) {
+  if (!msg || !Array.isArray(msg.results)) return null;
+  const mine = msg.results.find(r => r.id === myPlayerId);
+  const r = mine || msg.results[0];
+  if (!r || !Array.isArray(r.path) || r.path.length === 0) return null;
+  return r;
+}
+
+function titleize(s) { return (s || '').replace(/_/g, ' '); }
+
+// Compact path for display: if too long, keep the first 2 + last 2 + "…".
+function compactPath(path, maxNodes = 6) {
+  const names = path.map(titleize);
+  if (names.length <= maxNodes) return names;
+  return [names[0], names[1], '…', names[names.length - 2], names[names.length - 1]];
+}
+
+function buildShareText(r, msg) {
+  const steps = Math.max(0, r.path.length - 1);
+  const timeStr = r.time ? formatTime(r.time) : null;
+  const statLine = timeStr
+    ? `⚡ ${steps} steps  ·  ⏱ ${timeStr}`
+    : `⚡ ${steps} steps`;
+
+  let pathLine;
+  if (msg.mode === 'tri') {
+    const targets = (msg.targets || []).slice(1).map(titleize);
+    const visited = (r.visited || []).map(titleize);
+    const start = titleize(msg.targets?.[0] || r.path[0]);
+    const marks = targets.map(t => (visited.includes(t) ? `✓ ${t}` : `· ${t}`)).join('  ');
+    pathLine = `Start: ${start}\n${marks}`;
+  } else {
+    const nodes = compactPath(r.path, 6);
+    pathLine = nodes.join(' → ');
+  }
+
+  const modeTag = msg.mode === 'tri' ? ' (Tri)' : '';
+  return `🧩 WikiSpeedrun${modeTag}\n${statLine}\n\n${pathLine}\n\nyour turn → wikispeedrun.io`;
+}
+
+// Render the share image on a 1200x630 canvas. Dark theme, matches game palette.
+async function buildShareImage(r, msg) {
+  const W = 1200, H = 630;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+
+  // Background: subtle purple gradient over dark.
+  const bg = ctx.createLinearGradient(0, 0, W, H);
+  bg.addColorStop(0, '#17172a');
+  bg.addColorStop(1, '#0f0f13');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // Accent corner glow.
+  const glow = ctx.createRadialGradient(W - 120, 80, 0, W - 120, 80, 380);
+  glow.addColorStop(0, 'rgba(108, 92, 231, 0.28)');
+  glow.addColorStop(1, 'rgba(108, 92, 231, 0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, W, H);
+
+  // Logo: "WikiSpeedrun" wordmark in the app's accent colors.
+  ctx.font = '700 52px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = '#6c5ce7';
+  ctx.fillText('Wiki', 64, 56);
+  const wikiW = ctx.measureText('Wiki').width;
+  ctx.fillStyle = '#a29bfe';
+  ctx.fillText('Speed', 64 + wikiW, 56);
+  const speedW = ctx.measureText('Speed').width;
+  ctx.fillStyle = '#00b894';
+  ctx.fillText('run', 64 + wikiW + speedW, 56);
+
+  // Big headline: origin → destination (or tri summary).
+  ctx.fillStyle = '#f0f0f5';
+  ctx.font = '700 72px "Linux Libertine", Georgia, serif';
+  let headline;
+  if (msg.mode === 'tri') {
+    headline = `${titleize(msg.targets?.[0] || r.path[0])} → 3 targets`;
+  } else {
+    const origin = titleize(r.path[0]);
+    const dest = titleize(r.path[r.path.length - 1]);
+    headline = `${origin} → ${dest}`;
+  }
+  // Truncate headline with ellipsis if too wide.
+  const maxW = W - 128;
+  while (ctx.measureText(headline).width > maxW && headline.length > 10) {
+    headline = headline.slice(0, headline.length - 2) + '…';
+  }
+  ctx.fillText(headline, 64, 170);
+
+  // Stats row.
+  ctx.fillStyle = '#a29bfe';
+  ctx.font = '600 36px system-ui, sans-serif';
+  const steps = Math.max(0, r.path.length - 1);
+  const timeStr = r.time ? formatTime(r.time) : '—';
+  ctx.fillText(`⚡ ${steps} steps   ·   ⏱ ${timeStr}`, 64, 280);
+
+  // Path nodes (compact, wrapped).
+  ctx.fillStyle = '#9090a8';
+  ctx.font = '400 28px system-ui, sans-serif';
+  let pathText;
+  if (msg.mode === 'tri') {
+    const targets = (msg.targets || []).slice(1).map(titleize);
+    const visited = (r.visited || []).map(titleize);
+    pathText = targets.map(t => (visited.includes(t) ? `✓ ${t}` : `· ${t}`)).join('    ');
+  } else {
+    pathText = compactPath(r.path, 7).join('  ›  ');
+  }
+  // Word-wrap onto up to 2 lines.
+  const wrapWidth = W - 128;
+  const words = pathText.split(' ');
+  let line = '', y = 360;
+  for (const w of words) {
+    const test = line ? line + ' ' + w : w;
+    if (ctx.measureText(test).width > wrapWidth && line) {
+      ctx.fillText(line, 64, y);
+      y += 40;
+      line = w;
+      if (y > 440) { line = line + '…'; break; }
+    } else {
+      line = test;
+    }
+  }
+  if (line) ctx.fillText(line, 64, y);
+
+  // Footer: call-to-action.
+  ctx.fillStyle = '#6c5ce7';
+  ctx.font = '600 30px system-ui, sans-serif';
+  ctx.fillText('your turn →', 64, H - 80);
+  ctx.fillStyle = '#f0f0f5';
+  const ytW = ctx.measureText('your turn →').width;
+  ctx.fillText(' wikispeedrun.io', 64 + ytW, H - 80);
+
+  return new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+}
+
+function showShareToast(message) {
+  const toast = document.getElementById('shareToast');
+  if (!toast) return;
+  toast.textContent = message;
+  toast.classList.add('show');
+  clearTimeout(toast._hideT);
+  toast._hideT = setTimeout(() => toast.classList.remove('show'), 1800);
+}
+
+function populateShareCard(msg) {
+  const card = document.getElementById('shareCard');
+  const toggleBtn = document.getElementById('shareToggleBtn');
+  if (!card) return;
+  // Default: both hidden. Reset from previous game.
+  card.style.display = 'none';
+  if (toggleBtn) {
+    toggleBtn.style.display = 'none';
+    toggleBtn.textContent = 'Share your run';
+  }
+  // Only winners share. Losers and surrenders don't get the card — avoids
+  // "look at me I gave up" brags and keeps the share signal positive.
+  const iAmWinner = msg && msg.results && msg.results.some(x => x.isWinner && x.id === myPlayerId);
+  if (msg?.gaveUp || !iAmWinner) return;
+  const r = myRunResult(msg);
+  if (!r) return;
+
+  // Winner: reveal toggle button, card stays collapsed until clicked.
+  if (toggleBtn) {
+    toggleBtn.style.display = '';
+    toggleBtn.onclick = () => {
+      const nowHidden = card.style.display === 'none';
+      card.style.display = nowHidden ? '' : 'none';
+      toggleBtn.textContent = nowHidden ? 'Hide share' : 'Share your run';
+    };
+  }
+
+  const steps = Math.max(0, r.path.length - 1);
+  document.getElementById('scSteps').textContent = steps;
+  document.getElementById('scTime').textContent = r.time ? formatTime(r.time) : '—';
+
+  // Path preview inside the card (distinct from the big results grid below).
+  const pathEl = document.getElementById('scPath');
+  pathEl.replaceChildren();
+  if (msg.mode === 'tri') {
+    const start = titleize(msg.targets?.[0] || r.path[0]);
+    const targets = (msg.targets || []).slice(1).map(titleize);
+    const visited = (r.visited || []).map(titleize);
+    const startSpan = document.createElement('span');
+    startSpan.className = 'sc-origin';
+    startSpan.textContent = `Start: ${start}`;
+    pathEl.appendChild(startSpan);
+    pathEl.appendChild(document.createElement('br'));
+    targets.forEach((t, i) => {
+      const s = document.createElement('span');
+      s.textContent = (visited.includes(t) ? '✓ ' : '· ') + t;
+      pathEl.appendChild(s);
+      if (i < targets.length - 1) {
+        const sep = document.createElement('span');
+        sep.className = 'sc-sep';
+        sep.textContent = '  ';
+        pathEl.appendChild(sep);
+      }
+    });
+  } else {
+    const nodes = compactPath(r.path, 6);
+    nodes.forEach((name, i) => {
+      const span = document.createElement('span');
+      if (i === 0) span.className = 'sc-origin';
+      else if (i === nodes.length - 1) span.className = 'sc-dest';
+      span.textContent = name;
+      pathEl.appendChild(span);
+      if (i < nodes.length - 1) {
+        const sep = document.createElement('span');
+        sep.className = 'sc-sep';
+        sep.textContent = '→';
+        pathEl.appendChild(sep);
+      }
+    });
+  }
+
+  // Wire buttons (fresh each game — re-binding is cheap).
+  const copyBtn = document.getElementById('copyShareBtn');
+  const saveBtn = document.getElementById('saveImageBtn');
+  copyBtn.onclick = async () => {
+    const txt = buildShareText(r, msg);
+    try {
+      await navigator.clipboard.writeText(txt);
+      showShareToast('Copied!');
+    } catch (e) {
+      // Clipboard API fails in insecure contexts or some mobile browsers.
+      // Fall back to a hidden textarea + execCommand.
+      const ta = document.createElement('textarea');
+      ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); showShareToast('Copied!'); }
+      catch { showShareToast('Copy failed'); }
+      document.body.removeChild(ta);
+    }
+  };
+  saveBtn.onclick = async () => {
+    const blob = await buildShareImage(r, msg);
+    if (!blob) { showShareToast('Save failed'); return; }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `wikispeedrun-${steps}steps.png`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showShareToast('Saved!');
+  };
 }
 
 function playAgain() {
