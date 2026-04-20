@@ -448,6 +448,23 @@ function pickFromPool(kind, lang, viewRange) {
   return candidates[Math.floor(Math.random() * candidates.length)];
 }
 
+// Mine single article titles out of the pool for the `?` random-word button.
+// A pool of 200 pairs + 100 triples gives us 400 + 300 = 700 pre-validated
+// titles to pick from — instant, no Wikipedia call, no rate limit.
+function pickWordFromPool(lang, viewRange) {
+  const pool = puzzlePools[lang];
+  if (!pool) return null;
+  const candidates = [];
+  for (const p of (pool.pairs || [])) {
+    if (rangeMatches(p, viewRange)) { candidates.push(p.origin, p.destination); }
+  }
+  for (const t of (pool.triples || [])) {
+    if (rangeMatches(t, viewRange)) { candidates.push(...t.targets); }
+  }
+  if (candidates.length === 0) return null;
+  return candidates[Math.floor(Math.random() * candidates.length)];
+}
+
 async function getRandomPair(viewRange, lang = DEFAULT_LANG) {
   // Try the pool first — most games will never touch Wikipedia.
   const pooled = pickFromPool('pair', lang, viewRange);
@@ -1366,6 +1383,14 @@ async function handleAction(playerId, msg) {
       // Prefer the room's language; fall back to the lang on this one-off
       // request (SP setup sends it via msg.lang before a room exists).
       const lang = normalizeLang(room?.lang || msg.lang);
+
+      // Pool path: single titles mined from pool pairs (dedup, range-filtered).
+      // This is ~instant and uses zero Wikipedia calls — avoids the "calm
+      // down" cooldown that players saw when rate-limited live generation
+      // returned an empty result.
+      const poolWord = pickWordFromPool(lang, viewRange);
+      if (poolWord) return { ok: true, word: poolWord };
+
       const articles = await getGoodRandomArticles(1, viewRange, lang);
       if (articles.length > 0) {
         return { ok: true, word: articles[0] };

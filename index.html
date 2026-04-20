@@ -32,11 +32,17 @@
   "@context": "https://schema.org",
   "@type": "WebApplication",
   "name": "WikiSpeedrun",
+  "alternateName": ["Wiki Game", "Wikipedia Speedrun", "Wiki Racing", "Wikipedia Race"],
   "url": "https://wikispeedrun.io/",
-  "description": "Play with friends or yourself. Race from one Wikipedia article to another. Free multiplayer browser game — no signup, no downloads, no ads.",
+  "description": "Play with friends or yourself. Race from one Wikipedia article to another. Free multiplayer browser game — no signup, no downloads, no ads. Supports English and Simplified Chinese Wikipedia.",
   "applicationCategory": "GameApplication",
   "operatingSystem": "Any (web browser)",
-  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+  "inLanguage": ["en", "zh-Hans"],
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "potentialAction": {
+    "@type": "PlayAction",
+    "target": "https://wikispeedrun.io/"
+  }
 }
 </script>
 
@@ -228,31 +234,6 @@
     color: var(--text2);
     max-width: 400px;
     line-height: 1.5;
-  }
-  /* SEO block — keyword-rich body copy so Googlebot has real text to index
-     (the rest of the home is JS-driven). Visible but understated, below the
-     primary CTA buttons so it doesn't fight for attention. */
-  .home-seo {
-    margin-top: 40px;
-    max-width: 560px;
-    text-align: center;
-    color: var(--text2);
-    font-size: 0.88rem;
-    line-height: 1.55;
-  }
-  .home-seo h2 {
-    font-size: 0.95rem;
-    font-weight: 700;
-    color: var(--text);
-    margin-bottom: 10px;
-    letter-spacing: 0.2px;
-  }
-  .home-seo p { margin-bottom: 8px; }
-  .home-seo p:last-child { margin-bottom: 0; }
-  .home-seo strong { color: var(--text); }
-  @media (max-width: 600px) {
-    .home-seo { margin-top: 28px; font-size: 0.8rem; padding: 0 8px; }
-    .home-seo h2 { font-size: 0.85rem; }
   }
   .home-buttons {
     display: flex;
@@ -1614,20 +1595,6 @@
       <button class="home-btn sp" onclick="showScreen('sp-setup')"><span>Singleplayer</span></button>
       <button class="home-btn mp" onclick="showScreen('mp-setup')"><span>Multiplayer</span></button>
     </div>
-    <section class="home-seo">
-      <h2>The free Wikipedia racing game — no signup, no ads</h2>
-      <p>
-        <strong>WikiSpeedrun</strong> (also known as the <em>Wiki Game</em>,
-        <em>Wikipedia speedrun</em>, or <em>wiki racing</em>) challenges you
-        to travel from one Wikipedia article to another using only the
-        internal links on each page. Every click counts — shortest path wins.
-      </p>
-      <p>
-        Play solo against the clock or race friends in real-time multiplayer
-        rooms. Supports English and 中文 (Simplified Chinese) Wikipedia.
-        Works on any browser — no signup, no downloads, no ads.
-      </p>
-    </section>
   </div>
 </div>
 
