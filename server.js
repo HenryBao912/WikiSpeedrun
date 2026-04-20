@@ -515,6 +515,31 @@ function cacheKey(lang, title) {
   return `${lang || DEFAULT_LANG}:${normalizeArticle(title)}`;
 }
 
+// Convert a title to the wiki's display variant (e.g. Traditional → Simplified
+// for zh). Uses action=parse's displaytitle output which honors variant=zh-cn
+// even when the underlying article is canonically stored in Traditional. Used
+// at pool-generation time so the pool JSON only holds Simplified titles.
+async function toVariantTitle(title, lang = DEFAULT_LANG) {
+  if (!WIKI_VARIANTS[lang]) return title;
+  try {
+    const data = await wikiAPI({
+      action: 'parse',
+      page: title.replace(/ /g, '_'),
+      prop: 'displaytitle',
+      redirects: '1',
+    }, lang);
+    const dt = data.parse?.displaytitle || '';
+    // displaytitle is HTML. Grab the main-title span when present, otherwise
+    // strip tags and trim.
+    const mainMatch = dt.match(/<span class="mw-page-title-main">([^<]+)<\/span>/);
+    if (mainMatch && mainMatch[1]) return mainMatch[1].replace(/ /g, '_');
+    const plain = dt.replace(/<[^>]+>/g, '').trim();
+    return plain ? plain.replace(/ /g, '_') : title;
+  } catch (e) {
+    return title;
+  }
+}
+
 // Resolve Wikipedia redirects to canonical title
 async function resolveRedirect(title, lang = DEFAULT_LANG) {
   try {
@@ -1669,6 +1694,7 @@ module.exports = {
   cacheDestination,
   computeDistance,
   resolveRedirect,
+  toVariantTitle,
   normalizeArticle,
   WIKI_HOSTS,
   DEFAULT_LANG,
