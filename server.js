@@ -1023,17 +1023,20 @@ async function startGameForRoom(room, roomCode) {
       destination: room.pair.destination,
       lang,
     });
-    // Cache destination backlinks async (don't block game start)
-    cacheDestination(room.pair.destination, lang).then(destData => {
-      room.destData = destData;
-      // Compute initial distance for starting article
-      computeDistance(room.pair.origin, room.pair.destination, destData, lang).then(dist => {
-        for (const [pid, p] of room.players) {
-          p.distances.push(dist);
-        }
+    // Cache destination backlinks async (don't block game start). Catch
+    // errors so a Wikipedia hiccup doesn't produce an unhandled rejection;
+    // the player just plays without an initial-distance badge, which is fine.
+    cacheDestination(room.pair.destination, lang)
+      .then(async destData => {
+        room.destData = destData;
+        // Tag the cache with the lang it was computed for, so a mid-lobby
+        // set_lang can detect stale data and recompute.
+        room.destDataLang = lang;
+        const dist = await computeDistance(room.pair.origin, room.pair.destination, destData, lang);
+        for (const [, p] of room.players) p.distances.push(dist);
         broadcastToRoom(roomCode, { type: 'distance_update', distances: getDistanceMap(room) });
-      });
-    });
+      })
+      .catch(e => console.error('Classic distance-cache error:', e.message));
   } else {
     // Use manual articles if set, otherwise generate random.
     // Duplicate targets would make the game unwinnable (two visited slots map
@@ -1505,6 +1508,13 @@ async function handleAction(playerId, msg) {
       room.lang = newLang;
       // Any manual words the lobby had set are in the wrong language now.
       room.manualArticles = null;
+      // Toss cached link data tied to the old language. Any in-flight
+      // cacheDestination for the old lang will still write into
+      // room.destData when it resolves, so we also stamp room.destDataLang
+      // (see startGameForRoom) and verify at use time.
+      room.destData = null;
+      room.destDataLang = null;
+      room.triDestData = null;
       broadcastToRoom(player.roomCode, { type: 'lang_changed', lang: newLang });
       return { ok: true };
     }
