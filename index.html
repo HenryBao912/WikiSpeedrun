@@ -1941,8 +1941,15 @@ function toggleLangDropdown(dd) {
 
 function pickLang(lang, event) {
   if (event) event.stopPropagation();
+  const changed = wikiLangChoice !== lang;
   setWikiLang(lang);
   document.querySelectorAll('[data-lang-dropdown]').forEach(dd => dd.classList.remove('open'));
+  // Wipe any typed/auto-filled words when switching language — otherwise you
+  // end up with mixed-script inputs like '台湾 → Sex → FIFA World Cup'.
+  if (changed) {
+    document.querySelectorAll('.rw-input').forEach(input => { input.value = ''; });
+    document.querySelectorAll('.autocomplete-list.show').forEach(l => l.classList.remove('show'));
+  }
 }
 
 // Close any open dropdown when clicking outside it.
