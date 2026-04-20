@@ -1325,12 +1325,15 @@ async function handleAction(playerId, msg) {
         }
       }
 
-      // Notify only when a NEW checkpoint was reached this navigation (not on
-      // re-visits of an already-visited target).
+      // Notify the whole room when a NEW checkpoint is reached — the hitting
+      // player's client uses it for its own animation, everyone else uses it
+      // to pulse that player's pill. Skips re-visits of already-visited targets.
       if (!won && room.mode === 'tri' && rp.visited.length > visitedBefore) {
         const justVisited = rp.visited[rp.visited.length - 1];
-        sendSSE(playerId, {
+        broadcastToRoom(player.roomCode, {
           type: 'checkpoint_reached',
+          playerId,
+          name: rp.name,
           article: justVisited,
           visited: [...rp.visited],
           remaining: room.triple.targets.length - rp.visited.length,

@@ -793,6 +793,31 @@
     0%, 100% { box-shadow: 0 0 0 0 rgba(108, 92, 231, 0); }
     50%      { box-shadow: 0 0 0 5px rgba(108, 92, 231, 0.45); }
   }
+  /* Checkpoint feedback — tri mode. When YOU hit a target, your own screen
+     gets a green inset glow for a half-second. When someone else hits one,
+     their pill on the leaderboard pulses green instead. */
+  .checkpoint-flash {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 9999;
+    box-shadow: inset 0 0 60px 14px var(--green);
+    opacity: 0;
+    animation: checkpointFlash 0.5s ease-out;
+  }
+  @keyframes checkpointFlash {
+    0%   { opacity: 0; }
+    25%  { opacity: 1; }
+    100% { opacity: 0; }
+  }
+  .lb-rider.checkpoint-pulse {
+    animation: pillCheckpointPulse 0.5s ease-out;
+  }
+  @keyframes pillCheckpointPulse {
+    0%   { box-shadow: 0 0 0 0 rgba(0, 184, 148, 0.85); }
+    50%  { box-shadow: 0 0 0 10px rgba(0, 184, 148, 0.55); }
+    100% { box-shadow: 0 0 0 0 rgba(0, 184, 148, 0); }
+  }
   /* One-time hint bar nudging users to click the destination chip. Appears
      once per browser (localStorage-gated), dismissed on any dest-chip click
      or the × button. */
@@ -2736,10 +2761,29 @@ function handleServerMessage(msg) {
       renderPlayersBar(latestDistData);
       break;
 
-    case 'checkpoint_reached':
-      myVisited = msg.visited;
-      renderTriTargets();
+    case 'checkpoint_reached': {
+      const iHit = msg.playerId === myPlayerId;
+      if (iHit) {
+        // Only update my own visited state when I'M the one who hit a target.
+        // Other players have their own visited lists; we don't track them.
+        myVisited = msg.visited;
+        renderTriTargets();
+        // Screen-wide flash — full-viewport inset green glow, 0.5s.
+        const flash = document.createElement('div');
+        flash.className = 'checkpoint-flash';
+        document.body.appendChild(flash);
+        setTimeout(() => flash.remove(), 550);
+      } else {
+        // Someone else hit — pulse their pill on the leaderboard.
+        document.querySelectorAll(`.lb-rider[data-pid="${msg.playerId}"]`).forEach(pill => {
+          pill.classList.remove('checkpoint-pulse');
+          void pill.offsetWidth; // force reflow so the animation re-fires
+          pill.classList.add('checkpoint-pulse');
+          setTimeout(() => pill.classList.remove('checkpoint-pulse'), 550);
+        });
+      }
       break;
+    }
 
     case 'give_up_update':
       document.getElementById('giveUpStatus').textContent = `${msg.voted}/${msg.total} voted`;
