@@ -4,7 +4,9 @@
   "description": "Multiplayer Wikipedia speedrun game",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "generate-pool": "node scripts/generatePool.js",
+    "generate-pool:fast": "node scripts/generatePool.js --fast"
   },
   "engines": {
     "node": ">=18.0.0"
