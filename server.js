@@ -1325,12 +1325,15 @@ async function handleAction(playerId, msg) {
         }
       }
 
-      // Notify only when a NEW checkpoint was reached this navigation (not on
-      // re-visits of an already-visited target).
+      // Notify the whole room when a NEW checkpoint is reached — the hitting
+      // player's client uses it for its own animation, everyone else uses it
+      // to pulse that player's pill. Skips re-visits of already-visited targets.
       if (!won && room.mode === 'tri' && rp.visited.length > visitedBefore) {
         const justVisited = rp.visited[rp.visited.length - 1];
-        sendSSE(playerId, {
+        broadcastToRoom(player.roomCode, {
           type: 'checkpoint_reached',
+          playerId,
+          name: rp.name,
           article: justVisited,
           visited: [...rp.visited],
           remaining: room.triple.targets.length - rp.visited.length,
@@ -1489,6 +1492,21 @@ async function handleAction(playerId, msg) {
       sendSSE(playerId, { type: 'room_created', code, playerId, singlePlayer: true, lang });
       startGameForRoom(room, code);
       return { ok: true, code };
+    }
+
+    case 'set_lang': {
+      const player = players.get(playerId);
+      if (!player) return { ok: false };
+      const room = rooms.get(player.roomCode);
+      if (!room || room.host !== playerId) return { ok: false, error: 'Only host can change language' };
+      if (room.started) return { ok: false, error: 'Cannot change language during game' };
+      const newLang = normalizeLang(msg.lang);
+      if (room.lang === newLang) return { ok: true };
+      room.lang = newLang;
+      // Any manual words the lobby had set are in the wrong language now.
+      room.manualArticles = null;
+      broadcastToRoom(player.roomCode, { type: 'lang_changed', lang: newLang });
+      return { ok: true };
     }
 
     case 'give_up_vote': {

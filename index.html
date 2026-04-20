@@ -793,6 +793,31 @@
     0%, 100% { box-shadow: 0 0 0 0 rgba(108, 92, 231, 0); }
     50%      { box-shadow: 0 0 0 5px rgba(108, 92, 231, 0.45); }
   }
+  /* Checkpoint feedback — tri mode. When YOU hit a target, your own screen
+     gets a green inset glow for a half-second. When someone else hits one,
+     their pill on the leaderboard pulses green instead. */
+  .checkpoint-flash {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 9999;
+    box-shadow: inset 0 0 60px 14px var(--green);
+    opacity: 0;
+    animation: checkpointFlash 0.5s ease-out;
+  }
+  @keyframes checkpointFlash {
+    0%   { opacity: 0; }
+    25%  { opacity: 1; }
+    100% { opacity: 0; }
+  }
+  .lb-rider.checkpoint-pulse {
+    animation: pillCheckpointPulse 0.5s ease-out;
+  }
+  @keyframes pillCheckpointPulse {
+    0%   { box-shadow: 0 0 0 0 rgba(0, 184, 148, 0.85); }
+    50%  { box-shadow: 0 0 0 10px rgba(0, 184, 148, 0.55); }
+    100% { box-shadow: 0 0 0 0 rgba(0, 184, 148, 0); }
+  }
   /* One-time hint bar nudging users to click the destination chip. Appears
      once per browser (localStorage-gated), dismissed on any dest-chip click
      or the × button. */
@@ -1949,11 +1974,21 @@ function toggleLangDropdown(dd) {
 
 function pickLang(lang, event) {
   if (event) event.stopPropagation();
+  document.querySelectorAll('[data-lang-dropdown]').forEach(dd => dd.classList.remove('open'));
+
+  // In an MP lobby, the room's language is server-authoritative. Host sends
+  // set_lang; server broadcasts lang_changed to everyone (including self).
+  // Non-hosts just close the dropdown — they can't change the room's lang.
+  if (currentGameLang && currentRoomCode && !isSinglePlayer) {
+    if (isHost && currentGameLang !== lang) {
+      send({ type: 'set_lang', lang }).catch(() => {});
+    }
+    return;
+  }
+
+  // SP or pre-room: update the user's local preference immediately.
   const changed = wikiLangChoice !== lang;
   setWikiLang(lang);
-  document.querySelectorAll('[data-lang-dropdown]').forEach(dd => dd.classList.remove('open'));
-  // Wipe any typed/auto-filled words when switching language — otherwise you
-  // end up with mixed-script inputs like '台湾 → Sex → FIFA World Cup'.
   if (changed) {
     document.querySelectorAll('.rw-input').forEach(input => { input.value = ''; });
     document.querySelectorAll('.autocomplete-list.show').forEach(l => l.classList.remove('show'));
@@ -2615,6 +2650,12 @@ function handleServerMessage(msg) {
         document.getElementById('mpModeSelector').style.pointerEvents = 'auto';
         document.getElementById('mpDiffSection').style.opacity = '1';
         document.getElementById('mpDiffSection').style.pointerEvents = 'auto';
+        // Host CAN change room language in lobby — unlock the dropdown in
+        // case a previous room_joined left it dimmed.
+        document.querySelectorAll('#roundWordsSection .lang-dropdown').forEach(dd => {
+          dd.style.opacity = '';
+          dd.style.pointerEvents = '';
+        });
         renderRoundWords();
         showScreen('lobby');
       }
@@ -2632,6 +2673,12 @@ function handleServerMessage(msg) {
       document.getElementById('mpModeSelector').style.pointerEvents = 'none';
       document.getElementById('mpDiffSection').style.opacity = '0.5';
       document.getElementById('mpDiffSection').style.pointerEvents = 'none';
+      // Non-host can't change room language — visually lock the dropdown so
+      // they don't waste taps.
+      document.querySelectorAll('#roundWordsSection .lang-dropdown').forEach(dd => {
+        dd.style.opacity = '0.5';
+        dd.style.pointerEvents = 'none';
+      });
       renderRoundWords();
       showScreen('lobby');
       break;
@@ -2646,6 +2693,15 @@ function handleServerMessage(msg) {
       document.getElementById('mpModeClassic').classList.toggle('active', msg.mode === 'classic');
       document.getElementById('mpModeTri').classList.toggle('active', msg.mode === 'tri');
       renderRoundWords();
+      break;
+
+    case 'lang_changed':
+      // Host switched the room's wiki language. Update local state + wipe
+      // any words that were typed in the old language.
+      currentGameLang = msg.lang;
+      updateLangDropdowns();
+      document.querySelectorAll('.rw-input').forEach(input => { input.value = ''; });
+      document.querySelectorAll('.autocomplete-list.show').forEach(l => l.classList.remove('show'));
       break;
 
     case 'difficulty_changed':
@@ -2705,10 +2761,29 @@ function handleServerMessage(msg) {
       renderPlayersBar(latestDistData);
       break;
 
-    case 'checkpoint_reached':
-      myVisited = msg.visited;
-      renderTriTargets();
+    case 'checkpoint_reached': {
+      const iHit = msg.playerId === myPlayerId;
+      if (iHit) {
+        // Only update my own visited state when I'M the one who hit a target.
+        // Other players have their own visited lists; we don't track them.
+        myVisited = msg.visited;
+        renderTriTargets();
+        // Screen-wide flash — full-viewport inset green glow, 0.5s.
+        const flash = document.createElement('div');
+        flash.className = 'checkpoint-flash';
+        document.body.appendChild(flash);
+        setTimeout(() => flash.remove(), 550);
+      } else {
+        // Someone else hit — pulse their pill on the leaderboard.
+        document.querySelectorAll(`.lb-rider[data-pid="${msg.playerId}"]`).forEach(pill => {
+          pill.classList.remove('checkpoint-pulse');
+          void pill.offsetWidth; // force reflow so the animation re-fires
+          pill.classList.add('checkpoint-pulse');
+          setTimeout(() => pill.classList.remove('checkpoint-pulse'), 550);
+        });
+      }
       break;
+    }
 
     case 'give_up_update':
       document.getElementById('giveUpStatus').textContent = `${msg.voted}/${msg.total} voted`;
