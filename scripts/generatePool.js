@@ -16,6 +16,7 @@ const {
   getGoodRandomArticles,
   cacheDestination,
   computeDistance,
+  toVariantTitle,
   normalizeArticle,
 } = require('..' + path.sep + 'server.js');
 
@@ -65,9 +66,15 @@ async function generatePairForBucket(lang, bucket) {
       const destData = await cacheDestination(pair.destination, lang);
       const dist = await computeDistance(pair.origin, pair.destination, destData, lang);
       if (dist !== null && dist <= SOLVABLE_MAX_DIST) {
+        // For variant-aware wikis (zh), convert titles to the display variant
+        // (Simplified) before writing so the pool never stores Traditional.
+        const [origin, destination] = await Promise.all([
+          toVariantTitle(pair.origin, lang),
+          toVariantTitle(pair.destination, lang),
+        ]);
         return {
-          origin: pair.origin,
-          destination: pair.destination,
+          origin,
+          destination,
           viewRange: bucket.viewRange,
           difficulty: bucket.name,
           dist,
@@ -95,8 +102,9 @@ async function generateTripleForBucket(lang, bucket) {
       const dest2Data = await cacheDestination(t2, lang);
       const d2 = await computeDistance(start, t2, dest2Data, lang);
       if (d2 === null || d2 > SOLVABLE_MAX_DIST) continue;
+      const convertedTargets = await Promise.all(triple.targets.map(t => toVariantTitle(t, lang)));
       return {
-        targets: triple.targets,
+        targets: convertedTargets,
         viewRange: bucket.viewRange,
         difficulty: bucket.name,
         distances: [d1, d2],
