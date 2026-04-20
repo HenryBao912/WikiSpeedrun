@@ -12,6 +12,17 @@ const players = new Map(); // playerId -> { res (SSE), roomCode, name }
 // Wikipedia hosts per language. Add a language here + ensure the random
 // article / bio-detection heuristics below know about it and it's available
 // to rooms. Client's toggle must stay in sync.
+// Structured session logging. Each call writes a single JSON line to stdout,
+// which Railway captures and lets us grep/jq later. Free-form data field;
+// always includes ISO timestamp + event name.
+function logEvent(event, data = {}) {
+  try {
+    console.log(JSON.stringify({ t: new Date().toISOString(), event, ...data }));
+  } catch (e) {
+    console.error('logEvent failed:', e.message);
+  }
+}
+
 const WIKI_HOSTS = {
   en: 'en.wikipedia.org',
   zh: 'zh.wikipedia.org',
@@ -1023,6 +1034,15 @@ async function startGameForRoom(room, roomCode) {
       destination: room.pair.destination,
       lang,
     });
+    logEvent('game_started', {
+      roomCode, mode: 'classic', lang,
+      singlePlayer: !!room.singlePlayer,
+      playerCount: room.players.size,
+      viewRange: room.viewRange,
+      origin: room.pair.origin,
+      destination: room.pair.destination,
+      manual: !!room.manualArticles,
+    });
     // Cache destination backlinks async (don't block game start). Catch
     // errors so a Wikipedia hiccup doesn't produce an unhandled rejection;
     // the player just plays without an initial-distance badge, which is fine.
@@ -1061,6 +1081,14 @@ async function startGameForRoom(room, roomCode) {
       origin: startArticle,
       targets: room.triple.targets,
       lang,
+    });
+    logEvent('game_started', {
+      roomCode, mode: 'tri', lang,
+      singlePlayer: !!room.singlePlayer,
+      playerCount: room.players.size,
+      viewRange: room.viewRange,
+      targets: room.triple.targets,
+      manual: !!room.manualArticles,
     });
     // Cache destination data for unvisited tri targets (targets[1] and targets[2])
     room.triDestData = {};
@@ -1277,6 +1305,10 @@ async function handleAction(playerId, msg) {
       const article = msg.article;
       if (!isValidArticle(article)) return { ok: false, error: 'Invalid article' };
       rp.path.push(article);
+      logEvent('navigate', {
+        roomCode: player.roomCode, playerId, name: rp.name,
+        article, step: rp.path.length - 1, mode: room.mode,
+      });
 
       // For tri mode, include visited count in progress
       broadcastToRoom(player.roomCode, {
@@ -1323,6 +1355,20 @@ async function handleAction(playerId, msg) {
             results,
             mode: room.mode,
             targets: room.mode === 'tri' ? room.triple.targets : null,
+          });
+          logEvent('game_over', {
+            roomCode: player.roomCode,
+            mode: room.mode,
+            lang: room.lang || DEFAULT_LANG,
+            gaveUp: false,
+            winnerId: room.winner,
+            winnerName: rp.name,
+            durationMs: Date.now() - room.startTime,
+            results: results.map(r => ({
+              playerId: r.id, name: r.name,
+              finished: r.finished, timeMs: r.time,
+              steps: r.path.length - 1, isWinner: r.isWinner,
+            })),
           });
           room.started = false;
         }
@@ -1553,6 +1599,18 @@ async function handleAction(playerId, msg) {
           mode: room.mode,
           targets: room.mode === 'tri' ? room.triple.targets : null,
         });
+        logEvent('game_over', {
+          roomCode: player.roomCode,
+          mode: room.mode,
+          lang: room.lang || DEFAULT_LANG,
+          gaveUp: true,
+          winnerId: null,
+          durationMs: room.startTime ? Date.now() - room.startTime : null,
+          results: results.map(r => ({
+            playerId: r.id, name: r.name,
+            steps: r.path.length - 1,
+          })),
+        });
         room.started = false;
       }
       return { ok: true };
@@ -1605,6 +1663,7 @@ function handleDisconnect(playerId) {
   if (room.players.size === 0) {
     rooms.delete(roomCode);
     console.log(`Room ${roomCode} deleted (empty)`);
+    logEvent('room_deleted', { roomCode });
   } else {
     if (room.host === playerId) {
       room.host = room.players.keys().next().value;
@@ -1706,8 +1765,10 @@ const server = http.createServer(async (req, res) => {
     // on another origin can't read the EventSource body from the victim's tab,
     // so they cannot forge actions even if they guess a playerId.
     const csrfToken = crypto.randomBytes(16).toString('hex');
-    players.set(playerId, { res, roomCode: null, name: null, csrfToken });
+    const connectedAt = Date.now();
+    players.set(playerId, { res, roomCode: null, name: null, csrfToken, connectedAt });
     console.log(`SSE connected: ${playerId.slice(0, 8)} (total: ${players.size})`);
+    logEvent('sse_connect', { playerId, totalConnected: players.size });
 
     sendSSE(playerId, { type: 'connected', playerId, csrfToken });
 
@@ -1719,7 +1780,10 @@ const server = http.createServer(async (req, res) => {
 
     req.on('close', () => {
       clearInterval(keepalive);
+      const p = players.get(playerId);
+      const sessionMs = p?.connectedAt ? Date.now() - p.connectedAt : null;
       console.log(`SSE disconnected: ${playerId.slice(0, 8)}`);
+      logEvent('sse_disconnect', { playerId, roomCode: p?.roomCode || null, sessionMs });
       handleDisconnect(playerId);
     });
     return;
