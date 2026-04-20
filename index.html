@@ -2769,6 +2769,15 @@ function handleServerMessage(msg) {
       // Lock the game language so the toggle can't retarget mid-play.
       if (msg.lang) { currentGameLang = msg.lang; updateWikiLangToggleUI(); }
       startGameUI(msg);
+      // Fire a Google Analytics event so we can track game starts by
+      // mode/language/difficulty without leaving Railway logs.
+      try {
+        window.gtag?.('event', 'game_start', {
+          mode: msg.mode,
+          lang: msg.lang || 'en',
+          multiplayer: !isSinglePlayer,
+        });
+      } catch (e) { /* gtag blocked by adblocker — not our problem */ }
       break;
 
     case 'player_progress':
@@ -3534,6 +3543,20 @@ function renderPlayersBar(distData) {
 
 function showResults(msg) {
   clearInterval(timerInterval);
+  // GA event: game_finish. Captures the outcome from the player's point of
+  // view (won / lost / gave up, how long, how many steps, which mode).
+  try {
+    const myResult = msg.results?.find(r => r.id === myPlayerId);
+    const iAmWinner = !!myResult?.isWinner;
+    window.gtag?.('event', 'game_finish', {
+      mode: msg.mode,
+      gave_up: !!msg.gaveUp,
+      won: iAmWinner,
+      multiplayer: !isSinglePlayer,
+      steps: myResult ? Math.max(0, (myResult.path?.length || 1) - 1) : null,
+      time_sec: myResult?.time ? Math.round(myResult.time / 1000) : null,
+    });
+  } catch (e) { /* gtag blocked — skip */ }
   let winTitle, winSub;
   if (msg.gaveUp) {
     winTitle = isSinglePlayer ? 'You Surrendered' : 'Game Abandoned';
