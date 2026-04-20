@@ -1,0 +1,49 @@
+name: Refresh puzzle pool
+
+# Regenerate data/puzzlePool.{en,zh}.json once a month so the game stays
+# topical (Wikipedia's "top viewed" shifts with current events). Writes the
+# updated files back to this branch, which triggers a Railway redeploy.
+#
+# You can also run this on demand: Actions tab → "Refresh puzzle pool" →
+# "Run workflow".
+
+on:
+  schedule:
+    # 03:00 UTC on the 1st of each month. Late night in US, quiet enough
+    # not to interrupt most active players if the redeploy blips.
+    - cron: '0 3 1 * *'
+  workflow_dispatch: {}
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    # Pool gen is ~105 min (47 EN + 58 ZH). Give generous headroom in case
+    # Wikipedia's rate limiter is especially grumpy on the CI IP.
+    timeout-minutes: 180
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Generate pool (en + zh)
+        run: npm run generate-pool
+
+      - name: Commit and push if anything changed
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/puzzlePool.en.json data/puzzlePool.zh.json
+          if git diff --staged --quiet; then
+            echo "Pool unchanged; nothing to commit."
+            exit 0
+          fi
+          TODAY=$(date -u +%Y-%m-%d)
+          git commit -m "chore: monthly pool refresh ($TODAY)"
+          git push
