@@ -1491,6 +1491,21 @@ async function handleAction(playerId, msg) {
       return { ok: true, code };
     }
 
+    case 'set_lang': {
+      const player = players.get(playerId);
+      if (!player) return { ok: false };
+      const room = rooms.get(player.roomCode);
+      if (!room || room.host !== playerId) return { ok: false, error: 'Only host can change language' };
+      if (room.started) return { ok: false, error: 'Cannot change language during game' };
+      const newLang = normalizeLang(msg.lang);
+      if (room.lang === newLang) return { ok: true };
+      room.lang = newLang;
+      // Any manual words the lobby had set are in the wrong language now.
+      room.manualArticles = null;
+      broadcastToRoom(player.roomCode, { type: 'lang_changed', lang: newLang });
+      return { ok: true };
+    }
+
     case 'give_up_vote': {
       const player = players.get(playerId);
       if (!player) return { ok: false };

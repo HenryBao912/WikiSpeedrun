@@ -1949,11 +1949,21 @@ function toggleLangDropdown(dd) {
 
 function pickLang(lang, event) {
   if (event) event.stopPropagation();
+  document.querySelectorAll('[data-lang-dropdown]').forEach(dd => dd.classList.remove('open'));
+
+  // In an MP lobby, the room's language is server-authoritative. Host sends
+  // set_lang; server broadcasts lang_changed to everyone (including self).
+  // Non-hosts just close the dropdown — they can't change the room's lang.
+  if (currentGameLang && currentRoomCode && !isSinglePlayer) {
+    if (isHost && currentGameLang !== lang) {
+      send({ type: 'set_lang', lang }).catch(() => {});
+    }
+    return;
+  }
+
+  // SP or pre-room: update the user's local preference immediately.
   const changed = wikiLangChoice !== lang;
   setWikiLang(lang);
-  document.querySelectorAll('[data-lang-dropdown]').forEach(dd => dd.classList.remove('open'));
-  // Wipe any typed/auto-filled words when switching language — otherwise you
-  // end up with mixed-script inputs like '台湾 → Sex → FIFA World Cup'.
   if (changed) {
     document.querySelectorAll('.rw-input').forEach(input => { input.value = ''; });
     document.querySelectorAll('.autocomplete-list.show').forEach(l => l.classList.remove('show'));
@@ -2615,6 +2625,12 @@ function handleServerMessage(msg) {
         document.getElementById('mpModeSelector').style.pointerEvents = 'auto';
         document.getElementById('mpDiffSection').style.opacity = '1';
         document.getElementById('mpDiffSection').style.pointerEvents = 'auto';
+        // Host CAN change room language in lobby — unlock the dropdown in
+        // case a previous room_joined left it dimmed.
+        document.querySelectorAll('#roundWordsSection .lang-dropdown').forEach(dd => {
+          dd.style.opacity = '';
+          dd.style.pointerEvents = '';
+        });
         renderRoundWords();
         showScreen('lobby');
       }
@@ -2632,6 +2648,12 @@ function handleServerMessage(msg) {
       document.getElementById('mpModeSelector').style.pointerEvents = 'none';
       document.getElementById('mpDiffSection').style.opacity = '0.5';
       document.getElementById('mpDiffSection').style.pointerEvents = 'none';
+      // Non-host can't change room language — visually lock the dropdown so
+      // they don't waste taps.
+      document.querySelectorAll('#roundWordsSection .lang-dropdown').forEach(dd => {
+        dd.style.opacity = '0.5';
+        dd.style.pointerEvents = 'none';
+      });
       renderRoundWords();
       showScreen('lobby');
       break;
@@ -2646,6 +2668,15 @@ function handleServerMessage(msg) {
       document.getElementById('mpModeClassic').classList.toggle('active', msg.mode === 'classic');
       document.getElementById('mpModeTri').classList.toggle('active', msg.mode === 'tri');
       renderRoundWords();
+      break;
+
+    case 'lang_changed':
+      // Host switched the room's wiki language. Update local state + wipe
+      // any words that were typed in the old language.
+      currentGameLang = msg.lang;
+      updateLangDropdowns();
+      document.querySelectorAll('.rw-input').forEach(input => { input.value = ''; });
+      document.querySelectorAll('.autocomplete-list.show').forEach(l => l.classList.remove('show'));
       break;
 
     case 'difficulty_changed':
