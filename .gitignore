@@ -1,2 +1,17 @@
 node_modules/
 .env
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Claude Code / editor tooling (local only)
+.claude/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Pool-generation logs (regenerate, don't commit)
+data/genpool.log
+data/*.log
