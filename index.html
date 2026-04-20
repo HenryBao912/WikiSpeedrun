@@ -32,11 +32,17 @@
   "@context": "https://schema.org",
   "@type": "WebApplication",
   "name": "WikiSpeedrun",
+  "alternateName": ["Wiki Game", "Wikipedia Speedrun", "Wiki Racing", "Wikipedia Race"],
   "url": "https://wikispeedrun.io/",
-  "description": "Play with friends or yourself. Race from one Wikipedia article to another. Free multiplayer browser game — no signup, no downloads, no ads.",
+  "description": "Play with friends or yourself. Race from one Wikipedia article to another. Free multiplayer browser game — no signup, no downloads, no ads. Supports English and Simplified Chinese Wikipedia.",
   "applicationCategory": "GameApplication",
   "operatingSystem": "Any (web browser)",
-  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+  "inLanguage": ["en", "zh-Hans"],
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "potentialAction": {
+    "@type": "PlayAction",
+    "target": "https://wikispeedrun.io/"
+  }
 }
 </script>
 
@@ -1574,7 +1580,7 @@
 <div id="home" class="screen active">
   <div class="bg-words" id="bgWords"></div>
   <div class="hero-content">
-    <div class="logo"><span class="wiki">Wiki</span><span class="speed">Speed</span><span class="run">run</span></div>
+    <h1 class="logo"><span class="wiki">Wiki</span><span class="speed">Speed</span><span class="run">run</span></h1>
     <div class="logo-row" id="heroLinkRow">
       <span class="logo-link origin" id="heroLink1"><span class="logo-link-inner">Cat</span></span>
       <span class="logo-arrow">→</span>

@@ -448,6 +448,48 @@ function pickFromPool(kind, lang, viewRange) {
   return candidates[Math.floor(Math.random() * candidates.length)];
 }
 
+// Mine single article titles out of the pool for the `?` random-word button.
+// A pool of 200 pairs + 100 triples gives us 400 + 300 = 700 pre-validated
+// titles to pick from — instant, no Wikipedia call, no rate limit.
+function pickWordFromPool(lang, viewRange, excludeSet) {
+  const pool = puzzlePools[lang];
+  if (!pool) return null;
+  const candidates = [];
+  for (const p of (pool.pairs || [])) {
+    if (rangeMatches(p, viewRange)) { candidates.push(p.origin, p.destination); }
+  }
+  for (const t of (pool.triples || [])) {
+    if (rangeMatches(t, viewRange)) { candidates.push(...t.targets); }
+  }
+  if (candidates.length === 0) return null;
+  // Dedup same title appearing as both origin and destination in different pairs.
+  let unique = [...new Set(candidates)];
+  // Remove recent picks so rapid clicking doesn't re-serve the same word.
+  // If the exclusion empties the set, fall back to the full pool — better a
+  // repeat than no result.
+  if (excludeSet && excludeSet.size > 0) {
+    const filtered = unique.filter(c => !excludeSet.has(c));
+    if (filtered.length > 0) unique = filtered;
+  }
+  return unique[Math.floor(Math.random() * unique.length)];
+}
+
+// Per-player sliding window of recent `?` picks. Prevents the pool from
+// serving the same word twice in a short burst of clicks.
+const RECENT_PICKS_MAX = 20;
+const recentPicks = new Map(); // playerId -> string[]
+function rememberPick(playerId, word) {
+  if (!playerId || !word) return;
+  let list = recentPicks.get(playerId);
+  if (!list) { list = []; recentPicks.set(playerId, list); }
+  list.push(word);
+  if (list.length > RECENT_PICKS_MAX) list.shift();
+}
+function getRecentPicks(playerId) {
+  const list = recentPicks.get(playerId);
+  return list ? new Set(list) : new Set();
+}
+
 async function getRandomPair(viewRange, lang = DEFAULT_LANG) {
   // Try the pool first — most games will never touch Wikipedia.
   const pooled = pickFromPool('pair', lang, viewRange);
@@ -1366,6 +1408,17 @@ async function handleAction(playerId, msg) {
       // Prefer the room's language; fall back to the lang on this one-off
       // request (SP setup sends it via msg.lang before a room exists).
       const lang = normalizeLang(room?.lang || msg.lang);
+
+      // Pool path: single titles mined from pool pairs (dedup, range-filtered,
+      // with a sliding window of this player's last N picks excluded so rapid
+      // clicks don't repeat). Instant, no Wikipedia calls, no rate limit.
+      const excluded = getRecentPicks(playerId);
+      const poolWord = pickWordFromPool(lang, viewRange, excluded);
+      if (poolWord) {
+        rememberPick(playerId, poolWord);
+        return { ok: true, word: poolWord };
+      }
+
       const articles = await getGoodRandomArticles(1, viewRange, lang);
       if (articles.length > 0) {
         return { ok: true, word: articles[0] };
@@ -1513,6 +1566,8 @@ function handleDisconnect(playerId) {
   if (!player) return;
   const roomCode = player.roomCode;
   players.delete(playerId);
+  // Release their recent-picks memory so the map doesn't grow forever.
+  recentPicks.delete(playerId);
 
   if (!roomCode) return;
   const room = rooms.get(roomCode);
