@@ -2423,9 +2423,13 @@ async function randomizeWord(inputId) {
     if (word) {
       const el = document.getElementById(inputId);
       el.value = word;
-      // Fire an `input` event so any listeners (validation, other rendering)
-      // see the change instead of just the programmatic assignment.
-      el.dispatchEvent(new Event('input', { bubbles: true }));
+      // Close any autocomplete dropdown that was open for this input — the
+      // user just picked a random word, they don't want suggestions on top
+      // of it. (We deliberately do NOT dispatch an input event here; firing
+      // it would re-open autocomplete. broadcastWordUpdate handles the MP
+      // sync path directly.)
+      const listId = 'ac' + inputId.charAt(0).toUpperCase() + inputId.slice(1);
+      document.getElementById(listId)?.classList.remove('show');
       broadcastWordUpdate();
       btn.disabled = false;
       btn.classList.remove('loading');
