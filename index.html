@@ -1992,6 +1992,10 @@ function pickLang(lang, event) {
   if (changed) {
     document.querySelectorAll('.rw-input').forEach(input => { input.value = ''; });
     document.querySelectorAll('.autocomplete-list.show').forEach(l => l.classList.remove('show'));
+    // summaryCache holds first-sentence previews keyed by article title. On
+    // a language switch the same title may belong to a different wiki — drop
+    // cached entries rather than serve stale English content for zh titles.
+    if (typeof summaryCache !== 'undefined') summaryCache.clear();
   }
 }
 
@@ -2130,6 +2134,7 @@ function renderSpRoundWords() {
 
   if (!spRoundWordsDelegated) {
     container.addEventListener('input', (e) => {
+      if (e.isComposing) return; // don't autocomplete on pinyin/IME composition
       const id = e.target.id;
       if (id && id.startsWith('spRw')) {
         fetchAutocomplete(e.target.value, 'ac' + id.charAt(0).toUpperCase() + id.slice(1), id);
@@ -2334,8 +2339,8 @@ function renderRoundWords() {
       </div>
     `;
     if (isHost) {
-      document.getElementById('rwOrigin')?.addEventListener('input', (e) => fetchAutocomplete(e.target.value, 'acRwOrigin', 'rwOrigin'));
-      document.getElementById('rwDest')?.addEventListener('input', (e) => fetchAutocomplete(e.target.value, 'acRwDest', 'rwDest'));
+      document.getElementById('rwOrigin')?.addEventListener('input', (e) => { if (e.isComposing) return; fetchAutocomplete(e.target.value, 'acRwOrigin', 'rwOrigin'); });
+      document.getElementById('rwDest')?.addEventListener('input', (e) => { if (e.isComposing) return; fetchAutocomplete(e.target.value, 'acRwDest', 'rwDest'); });
     }
   } else {
     container.innerHTML = `
@@ -2365,7 +2370,7 @@ function renderRoundWords() {
     `;
     if (isHost) {
       [1, 2, 3].forEach(n => {
-        document.getElementById(`rwTarget${n}`)?.addEventListener('input', (e) => fetchAutocomplete(e.target.value, `acRwTarget${n}`, `rwTarget${n}`));
+        document.getElementById(`rwTarget${n}`)?.addEventListener('input', (e) => { if (e.isComposing) return; fetchAutocomplete(e.target.value, `acRwTarget${n}`, `rwTarget${n}`); });
       });
     }
   }
@@ -2416,7 +2421,11 @@ async function randomizeWord(inputId) {
       }
     }
     if (word) {
-      document.getElementById(inputId).value = word;
+      const el = document.getElementById(inputId);
+      el.value = word;
+      // Fire an `input` event so any listeners (validation, other rendering)
+      // see the change instead of just the programmatic assignment.
+      el.dispatchEvent(new Event('input', { bubbles: true }));
       broadcastWordUpdate();
       btn.disabled = false;
       btn.classList.remove('loading');
@@ -2445,11 +2454,21 @@ function broadcastWordUpdate() {
   }
 }
 
+// Debounce autocomplete calls. Without this, every keystroke fires a
+// Wikipedia opensearch request, which floods under IME composition and
+// triggers rate limits on zh.
+const _acDebounce = new Map(); // listId -> timeout id
 async function fetchAutocomplete(query, listId, inputId) {
+  // Cancel any pending call for this list.
+  const existing = _acDebounce.get(listId);
+  if (existing) clearTimeout(existing);
   if (query.length < 2) {
-    document.getElementById(listId).classList.remove('show');
+    document.getElementById(listId)?.classList.remove('show');
     return;
   }
+  _acDebounce.set(listId, setTimeout(() => _fetchAutocompleteNow(query, listId, inputId), 180));
+}
+async function _fetchAutocompleteNow(query, listId, inputId) {
   try {
     const lang = activeWikiLang();
     const variant = wikiVariant(lang);
@@ -2543,6 +2562,9 @@ function backToMultiplayerSetup() {
   currentRoomCode = null;
   isHost = false;
   currentGameLang = null;
+  // Clean up any in-flight animations from the prior session.
+  document.querySelectorAll('.checkpoint-flash').forEach(el => el.remove());
+  document.querySelectorAll('.lb-rider.checkpoint-pulse').forEach(el => el.classList.remove('checkpoint-pulse'));
   updateWikiLangToggleUI();
   showScreen('mp-setup');
 }
@@ -2702,6 +2724,7 @@ function handleServerMessage(msg) {
       updateLangDropdowns();
       document.querySelectorAll('.rw-input').forEach(input => { input.value = ''; });
       document.querySelectorAll('.autocomplete-list.show').forEach(l => l.classList.remove('show'));
+      if (typeof summaryCache !== 'undefined') summaryCache.clear();
       break;
 
     case 'difficulty_changed':
@@ -2796,6 +2819,9 @@ function handleServerMessage(msg) {
     case 'returned_to_lobby':
       if (!isSinglePlayer) {
         playerProgress.clear();
+        // Also clear cached color assignments so stale ones from the previous
+        // round don't linger on the player list / leaderboard.
+        playerColors.clear();
         renderRoundWords();
         showScreen('lobby');
       }
@@ -3894,6 +3920,10 @@ function backToHome() {
   clearInterval(timerInterval);
   resultsAnimationTimeouts.forEach(t => clearTimeout(t));
   resultsAnimationTimeouts = [];
+  // Tear down any lingering checkpoint flash / pill pulses so they don't
+  // flicker on the home screen mid-fade.
+  document.querySelectorAll('.checkpoint-flash').forEach(el => el.remove());
+  document.querySelectorAll('.lb-rider.checkpoint-pulse').forEach(el => el.classList.remove('checkpoint-pulse'));
   currentRoomCode = null;
   isHost = false;
   isSinglePlayer = false;
