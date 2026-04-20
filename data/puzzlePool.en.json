@@ -1,0 +1,3608 @@
+{
+  "generatedAt": "2026-04-20T00:00:01.367Z",
+  "lang": "en",
+  "pairs": [
+    {
+      "origin": "Brooklyn",
+      "destination": "Facebook",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 2
+    },
+    {
+      "origin": "Neatsville,_Kentucky",
+      "destination": "2026_in_film",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 5
+    },
+    {
+      "origin": "Cat",
+      "destination": "Strait_of_Hormuz",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 2
+    },
+    {
+      "origin": "India",
+      "destination": "Sex",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 2
+    },
+    {
+      "origin": "Nynetjer",
+      "destination": "ChatGPT",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 3
+    },
+    {
+      "origin": "Neatsville,_Kentucky",
+      "destination": "Instagram",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 3
+    },
+    {
+      "origin": "April_16",
+      "destination": "India",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 2
+    },
+    {
+      "origin": "April_16",
+      "destination": "Elizabeth_II",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 2
+    },
+    {
+      "origin": "Harriet_Quimby",
+      "destination": "Balls_Up",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 4
+    },
+    {
+      "origin": "Neatsville,_Kentucky",
+      "destination": "Dnepropetrovsk_maniacs",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 5
+    },
+    {
+      "origin": "Deni_Avdija",
+      "destination": "Elle_Fanning",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 4
+    },
+    {
+      "origin": "Rory_McIlroy",
+      "destination": "ChatGPT",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 2
+    },
+    {
+      "origin": "Iran",
+      "destination": "World_War_II",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 2
+    },
+    {
+      "origin": "Cubit",
+      "destination": "Ruby_Ridge_standoff",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 5
+    },
+    {
+      "origin": "Iran",
+      "destination": "UEFA_Champions_League",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 2
+    },
+    {
+      "origin": "Angus_Cloud",
+      "destination": "Katseye",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 3
+    },
+    {
+      "origin": "Sex",
+      "destination": "Meet_the_Fockers",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 4
+    },
+    {
+      "origin": "Strait_of_Hormuz",
+      "destination": "Stephen_Curry",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 3
+    },
+    {
+      "origin": "Anne_Hathaway",
+      "destination": "UEFA_Champions_League",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 2
+    },
+    {
+      "origin": "Real_Madrid_CF",
+      "destination": "FC_Bayern_Munich",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 1
+    },
+    {
+      "origin": "1xBet",
+      "destination": "ChatGPT",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 2
+    },
+    {
+      "origin": "Turbofan",
+      "destination": "Elizabeth_II",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 3
+    },
+    {
+      "origin": "Iran",
+      "destination": "Madonna",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 2
+    },
+    {
+      "origin": "Meet_the_Parents",
+      "destination": "Instagram",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 2
+    },
+    {
+      "origin": "Rory_McIlroy",
+      "destination": "1xBet",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 4
+    },
+    {
+      "origin": "Cristiano_Ronaldo",
+      "destination": "Brooklyn",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 4
+    },
+    {
+      "origin": "YouTube",
+      "destination": "Artemis_II",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 2
+    },
+    {
+      "origin": "April_16",
+      "destination": "World_War_II",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 1
+    },
+    {
+      "origin": "Neatsville,_Kentucky",
+      "destination": "Pope_Leo_XIV",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 3
+    },
+    {
+      "origin": "World_War_II",
+      "destination": "UEFA_Champions_League",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 2
+    },
+    {
+      "origin": "April_16",
+      "destination": "Lebanon",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 2
+    },
+    {
+      "origin": "Focker-in-Law",
+      "destination": "Donald_Trump",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 2
+    },
+    {
+      "origin": "Strait_of_Hormuz",
+      "destination": "Wordle",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 3
+    },
+    {
+      "origin": "World_War_II",
+      "destination": "Meet_the_Parents",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 4
+    },
+    {
+      "origin": "Tyson_Fury",
+      "destination": "Jeffrey_Epstein",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 4
+    },
+    {
+      "origin": "Google",
+      "destination": "Nynetjer",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 4
+    },
+    {
+      "origin": "Alexander_Morton",
+      "destination": "Katy_Perry",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 5
+    },
+    {
+      "origin": "Coachella",
+      "destination": "2026_in_film",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 3
+    },
+    {
+      "origin": "YouTube",
+      "destination": "Instagram",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 1
+    },
+    {
+      "origin": "Meet_the_Parents",
+      "destination": "Rory_McIlroy",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 4
+    },
+    {
+      "origin": "Sue_Prado",
+      "destination": "Raindrop_cake",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 5
+    },
+    {
+      "origin": "Cubit",
+      "destination": "Sarah_Culberson",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 5
+    },
+    {
+      "origin": "YouTube",
+      "destination": "Dhurandhar:_The_Revenge",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 3
+    },
+    {
+      "origin": "Turbofan",
+      "destination": "Cubit",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 3
+    },
+    {
+      "origin": "Neatsville,_Kentucky",
+      "destination": "Russian_war_crimes",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 5
+    },
+    {
+      "origin": "Neatsville,_Kentucky",
+      "destination": "Jacob_Elordi",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 5
+    },
+    {
+      "origin": "WrestleMania_42",
+      "destination": "Benjamin_Netanyahu",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 3
+    },
+    {
+      "origin": "Instagram",
+      "destination": "2026_Iran_war",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 2
+    },
+    {
+      "origin": "LeBron_James",
+      "destination": "WrestleMania_42",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 3
+    },
+    {
+      "origin": "Cleopatra",
+      "destination": "YouTube",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 2
+    },
+    {
+      "origin": "Earth",
+      "destination": "UEFA_Europa_League",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 3
+    },
+    {
+      "origin": "Edward_VIII",
+      "destination": "NBA_play-in_tournament",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 4
+    },
+    {
+      "origin": "Earth",
+      "destination": "AEW_World_Championship",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 4
+    },
+    {
+      "origin": "Snapchat",
+      "destination": "Bridgerton",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 2
+    },
+    {
+      "origin": "Lata_Mangeshkar",
+      "destination": "China",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 2
+    },
+    {
+      "origin": "Periodic_table",
+      "destination": "WhatsApp",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 4
+    },
+    {
+      "origin": "Emily_Blunt",
+      "destination": "Linda_Cardellini",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 4
+    },
+    {
+      "origin": "Hezbollah",
+      "destination": "Russia",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 1
+    },
+    {
+      "origin": "Germany",
+      "destination": "Henry_VIII",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 2
+    },
+    {
+      "origin": "Selena",
+      "destination": "Tom_Holland",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 2
+    },
+    {
+      "origin": "BBC_World_Service",
+      "destination": "UEFA_Europa_League",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 2
+    },
+    {
+      "origin": "Anya_Taylor-Joy",
+      "destination": "Confessions_II",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 4
+    },
+    {
+      "origin": "Monty_Hall_problem",
+      "destination": "2026_NBA_playoffs",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 4
+    },
+    {
+      "origin": "Weather",
+      "destination": "Coeliac_disease",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 3
+    },
+    {
+      "origin": "Gen_V",
+      "destination": "One_Piece",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 2
+    },
+    {
+      "origin": "Coeliac_disease",
+      "destination": "Anya_Taylor-Joy",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 4
+    },
+    {
+      "origin": "FIFA_World_Cup",
+      "destination": "UEFA_Europa_League",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 2
+    },
+    {
+      "origin": "Earth",
+      "destination": "Jesus",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 2
+    },
+    {
+      "origin": "Apollo_13",
+      "destination": "Hezbollah",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 3
+    },
+    {
+      "origin": "Turkey",
+      "destination": "Z-Library",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 2
+    },
+    {
+      "origin": "Mexico",
+      "destination": "Victoria_Hall_disaster",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 4
+    },
+    {
+      "origin": "Wuthering_Heights",
+      "destination": "Ghazala_Hashmi",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 4
+    },
+    {
+      "origin": "NBC_Sports",
+      "destination": "1win",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 4
+    },
+    {
+      "origin": "BBC_World_Service",
+      "destination": "Gmail",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 2
+    },
+    {
+      "origin": "Singapore",
+      "destination": "Charles_III",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 2
+    },
+    {
+      "origin": "Brazil",
+      "destination": "Hentai",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 2
+    },
+    {
+      "origin": "Apollo_11",
+      "destination": "1win",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 4
+    },
+    {
+      "origin": "Scream_7",
+      "destination": "Scarlett_Johansson",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 5
+    },
+    {
+      "origin": "Earth",
+      "destination": "Artemis_program",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 2
+    },
+    {
+      "origin": "Black_hole",
+      "destination": "September_11_attacks",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 2
+    },
+    {
+      "origin": "Turkey",
+      "destination": "Jacqueline_Kennedy_Onassis",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 2
+    },
+    {
+      "origin": "Apollo_11",
+      "destination": "Earth",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 1
+    },
+    {
+      "origin": "Earth",
+      "destination": "Sykkuno",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 4
+    },
+    {
+      "origin": "George_V",
+      "destination": "Vijay_Kumar_Chaudhary",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 4
+    },
+    {
+      "origin": "Periodic_table",
+      "destination": "Philippines",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 2
+    },
+    {
+      "origin": "Boards_of_Canada",
+      "destination": "2026_NBA_playoffs",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 5
+    },
+    {
+      "origin": "Fidesz",
+      "destination": "Gmail",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 2
+    },
+    {
+      "origin": "Sexual_intercourse",
+      "destination": "Australia",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 2
+    },
+    {
+      "origin": "UEFA_coefficient",
+      "destination": "Snapchat",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 3
+    },
+    {
+      "origin": "China",
+      "destination": "Weather",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 2
+    },
+    {
+      "origin": "Titanic",
+      "destination": "Anya_Taylor-Joy",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 4
+    },
+    {
+      "origin": "Clint_Eastwood",
+      "destination": "Keanu_Reeves",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 4
+    },
+    {
+      "origin": "Al_Pacino",
+      "destination": "NBC_Sports",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 2
+    },
+    {
+      "origin": "UBlock_Origin",
+      "destination": "Anya_Taylor-Joy",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 5
+    },
+    {
+      "origin": "John_Tuggle",
+      "destination": "James_Gandolfini",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 5
+    },
+    {
+      "origin": "George_V",
+      "destination": "Rihanna",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 2
+    },
+    {
+      "origin": "FIFA_World_Cup",
+      "destination": "Chernobyl_disaster",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 2
+    },
+    {
+      "origin": "Keanu_Reeves",
+      "destination": "Artificial_intelligence",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 1
+    },
+    {
+      "origin": "Spain",
+      "destination": "George_V",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 2
+    },
+    {
+      "origin": "Doordarshan",
+      "destination": "BBC",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 2
+    },
+    {
+      "origin": "Selena",
+      "destination": "Jesus",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 2
+    },
+    {
+      "origin": "Apollo_13",
+      "destination": "YouTube",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 2
+    },
+    {
+      "origin": "Germany",
+      "destination": "Leonardo_DiCaprio",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 3
+    },
+    {
+      "origin": "XXXTentacion",
+      "destination": "Ansel_Adams",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 3
+    },
+    {
+      "origin": "Instagram",
+      "destination": "Candidates_Tournament_2026",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 3
+    },
+    {
+      "origin": "April_16",
+      "destination": "Japan",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 2
+    },
+    {
+      "origin": "Scooter_Braun",
+      "destination": "Robert_Pattinson",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 5
+    },
+    {
+      "origin": "Taiwan",
+      "destination": "Artemis_II",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 3
+    },
+    {
+      "origin": "Germany",
+      "destination": "Taiwan",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 2
+    },
+    {
+      "origin": "Mexico",
+      "destination": "Monty_Hall_problem",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 4
+    },
+    {
+      "origin": "Elisabeth_Shue",
+      "destination": "China",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 2
+    },
+    {
+      "origin": "World_War_I",
+      "destination": "Vietnam_War",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 2
+    },
+    {
+      "origin": "Phragmosis",
+      "destination": "Pursuit_of_Jade",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 5
+    },
+    {
+      "origin": "Ella_Langley",
+      "destination": "Taylor_Ortega",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 4
+    },
+    {
+      "origin": "Nynetjer",
+      "destination": "Dynatrace",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 4
+    },
+    {
+      "origin": "FC_Bayern_Munich",
+      "destination": "The_Florida_Project",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 4
+    },
+    {
+      "origin": "Diego_Simeone",
+      "destination": "Jesse_Itzler",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 4
+    },
+    {
+      "origin": "BBC_World_Service",
+      "destination": "Coachella",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 3
+    },
+    {
+      "origin": "Meet_the_Parents",
+      "destination": "Raindrop_cake",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 4
+    },
+    {
+      "origin": "Pope",
+      "destination": "George_V",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 2
+    },
+    {
+      "origin": "Artificial_intelligence",
+      "destination": "FIFA_World_Cup",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 3
+    },
+    {
+      "origin": "Raye",
+      "destination": "Steven_Yeun",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 4
+    },
+    {
+      "origin": "California",
+      "destination": "Lebanon",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 2
+    },
+    {
+      "origin": "China",
+      "destination": "UEFA_Europa_League",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 2
+    },
+    {
+      "origin": "Apollo_13",
+      "destination": "Roblox",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 4
+    },
+    {
+      "origin": "Meet_the_Parents",
+      "destination": "Looksmaxxing",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 4
+    },
+    {
+      "origin": "Katie_Holmes",
+      "destination": "WhatsApp",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 2
+    },
+    {
+      "origin": "North_America",
+      "destination": "UEFA_Champions_League",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 2
+    },
+    {
+      "origin": "Brazil",
+      "destination": "Earth",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 2
+    },
+    {
+      "origin": "Hezbollah",
+      "destination": "Anthropic",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 2
+    },
+    {
+      "origin": "Ralph_Northam",
+      "destination": "Hilary_Duff",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 4
+    },
+    {
+      "origin": "Brazil",
+      "destination": "UEFA_Champions_League",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 2
+    },
+    {
+      "origin": "Strawberry",
+      "destination": "Pragmata",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 4
+    },
+    {
+      "origin": "Microsoft_Word",
+      "destination": "Mckenna_Grace",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 4
+    },
+    {
+      "origin": "UEFA_Champions_League",
+      "destination": "NBC_Sports",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 2
+    },
+    {
+      "origin": "Rihanna",
+      "destination": "Artemis_II",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 3
+    },
+    {
+      "origin": "Jesus",
+      "destination": "English_language",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 2
+    },
+    {
+      "origin": "QR_code",
+      "destination": "Rihanna",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 3
+    },
+    {
+      "origin": "Strait_of_Hormuz",
+      "destination": "BBC_World_Service",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 2
+    },
+    {
+      "origin": "Artificial_intelligence",
+      "destination": "Germany",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 2
+    },
+    {
+      "origin": "Cameroon",
+      "destination": "Brooklyn",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 2
+    },
+    {
+      "origin": "QR_code",
+      "destination": "Katherine_LaNasa",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 4
+    },
+    {
+      "origin": "Daphne_Zuniga",
+      "destination": "Ralph_Northam",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 3
+    },
+    {
+      "origin": "Gmail",
+      "destination": "Game_of_Thrones",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 2
+    },
+    {
+      "origin": "April_16",
+      "destination": "Meet_the_Parents",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 3
+    },
+    {
+      "origin": "Barack_Obama",
+      "destination": "Zendaya",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 2
+    },
+    {
+      "origin": "Nynetjer",
+      "destination": "Zendaya",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 4
+    },
+    {
+      "origin": "Monty_Hall_problem",
+      "destination": "FIFA_World_Cup",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 3
+    },
+    {
+      "origin": "Enya",
+      "destination": "Suicide_methods",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 3
+    },
+    {
+      "origin": "Chernobyl_disaster",
+      "destination": "Israel",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 2
+    },
+    {
+      "origin": "Real_estate_investing",
+      "destination": "Nicholasville,_Kentucky",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 4
+    },
+    {
+      "origin": "Singapore",
+      "destination": "Human_penis",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 3
+    },
+    {
+      "origin": "Data_manipulation_language",
+      "destination": "FD_Trinitron/WEGA",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 5
+    },
+    {
+      "origin": "Nicotine_marketing",
+      "destination": "OWIS",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 4
+    },
+    {
+      "origin": "JC_Santos",
+      "destination": "Mexico",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 2
+    },
+    {
+      "origin": "Dnepropetrovsk_maniacs",
+      "destination": "2026_Iran_war",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 3
+    },
+    {
+      "origin": "Sectarianism_in_Lebanon",
+      "destination": "Apollo_1",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 5
+    },
+    {
+      "origin": "Facebook",
+      "destination": "Incel",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 2
+    },
+    {
+      "origin": "Shooter's_Hill",
+      "destination": "Eurotophobia",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 4
+    },
+    {
+      "origin": "FC_Khimki",
+      "destination": "Rush_to_Judgment",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 4
+    },
+    {
+      "origin": "Wuthering_Heights",
+      "destination": "Selena_Gomez",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 4
+    },
+    {
+      "origin": "Contributor_license_agreement",
+      "destination": "Jack_Henry-Francis",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 4
+    },
+    {
+      "origin": "Langeoog",
+      "destination": "Vidalia,_Louisiana",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 5
+    },
+    {
+      "origin": "Diving_cylinder",
+      "destination": "Controlled_airspace",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 2
+    },
+    {
+      "origin": "Predatory_publishing",
+      "destination": "Effigy_mound",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 4
+    },
+    {
+      "origin": "Principle_of_explosion",
+      "destination": "Dnepropetrovsk_maniacs",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 5
+    },
+    {
+      "origin": "Pomerode",
+      "destination": "WWE_Diva_Search",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 4
+    },
+    {
+      "origin": "Peru_2000",
+      "destination": "Kinako",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 5
+    },
+    {
+      "origin": "Belize_dollar",
+      "destination": "Glycogenesis",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 4
+    },
+    {
+      "origin": "Apollo_13",
+      "destination": "Pope_Leo_XIV",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 2
+    },
+    {
+      "origin": "Patriots_of_Russia",
+      "destination": "Anticlea",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 3
+    },
+    {
+      "origin": "WSVN",
+      "destination": "Biosafety_cabinet",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 4
+    },
+    {
+      "origin": "Gmail",
+      "destination": "NBA_play-in_tournament",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 4
+    },
+    {
+      "origin": "Limonene",
+      "destination": "Russian_war_crimes",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 4
+    },
+    {
+      "origin": "Narnaul",
+      "destination": "William_Shakespeare",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 3
+    },
+    {
+      "origin": "Palatines",
+      "destination": "Mercury-arc_valve",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 3
+    },
+    {
+      "origin": "Elizabeth_Banks",
+      "destination": "Philippines",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 2
+    },
+    {
+      "origin": "USS_Gravely",
+      "destination": "Mummering",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 5
+    },
+    {
+      "origin": "Waiting_room",
+      "destination": "Dipping_sauce",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 3
+    },
+    {
+      "origin": "Commander-in-Chief,_North_America",
+      "destination": "Flualprazolam",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 5
+    },
+    {
+      "origin": "BBC_World_Service",
+      "destination": "September_11_attacks",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 2
+    },
+    {
+      "origin": "Bosnia_vilayet",
+      "destination": "Thermal_destratification",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 4
+    },
+    {
+      "origin": "1872_Cavite_mutiny",
+      "destination": "Sawyer_Sweeten",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 5
+    },
+    {
+      "origin": "Iran",
+      "destination": "Sex",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 3
+    },
+    {
+      "origin": "Sanborns",
+      "destination": "Loverboy_discography",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 4
+    },
+    {
+      "origin": "Artificial_intelligence",
+      "destination": "Charlie_Chaplin",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 2
+    },
+    {
+      "origin": "Tondaiman",
+      "destination": "1944_World_Series",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 4
+    },
+    {
+      "origin": "Gmail",
+      "destination": "YouTube",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 1
+    },
+    {
+      "origin": "11th_Legislative_Yuan",
+      "destination": "Neurofibroma",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 4
+    },
+    {
+      "origin": "Matterport",
+      "destination": "Zvolen",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 3
+    },
+    {
+      "origin": "Baby_transport",
+      "destination": "Power_Macintosh_6100",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 4
+    },
+    {
+      "origin": "Henry_VIII",
+      "destination": "Singapore",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 2
+    },
+    {
+      "origin": "Capacitation",
+      "destination": "Life_and_Fate",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 3
+    },
+    {
+      "origin": "Ethyl_eicosapentaenoic_acid",
+      "destination": "Pfam",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 2
+    },
+    {
+      "origin": "Moral_support",
+      "destination": "Philippines",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 3
+    },
+    {
+      "origin": "Decipherment",
+      "destination": "Eschrichtiidae",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 5
+    },
+    {
+      "origin": "Drone_art",
+      "destination": "Contraband",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 3
+    },
+    {
+      "origin": "Mansio",
+      "destination": "Second_Franco-Dahomean_War",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 3
+    },
+    {
+      "origin": "Guillotine_choke",
+      "destination": "High-Level_Shader_Language",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 5
+    },
+    {
+      "origin": "Heat_exhaustion",
+      "destination": "Paris_Saint-Germain_FC",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 5
+    }
+  ],
+  "triples": [
+    {
+      "targets": [
+        "Real_Madrid_CF",
+        "UEFA_Champions_League",
+        "Madonna"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        1,
+        2
+      ]
+    },
+    {
+      "targets": [
+        "April_16",
+        "Lebanon",
+        "Dnepropetrovsk_maniacs"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        2,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "FC_Bayern_Munich",
+        "Meet_the_Parents",
+        "Google"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        4,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "UEFA_Champions_League",
+        "Meet_the_Fockers",
+        "JD_Vance"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        4,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "Limonene",
+        "YouTube",
+        "Wordle"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        3,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "Dhurandhar:_The_Revenge",
+        "Elizabeth_Banks",
+        "Christina_Koch"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        4,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "Meet_the_Parents",
+        "Scrubs_season_10",
+        "Jackie_Robinson"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        3,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "Alex_Manninger",
+        "Michelle_Pfeiffer",
+        "Christy_Martin"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        5,
+        5
+      ]
+    },
+    {
+      "targets": [
+        "Iran",
+        "Strait_of_Hormuz",
+        "2026_in_film"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        1,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "Cat",
+        "Nynetjer",
+        "Zendaya"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        3,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "Turbofan",
+        "Nynetjer",
+        "Artemis_II"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        4,
+        2
+      ]
+    },
+    {
+      "targets": [
+        "Real_Madrid_CF",
+        "Meet_the_Fockers",
+        "Rory_McIlroy"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        4,
+        2
+      ]
+    },
+    {
+      "targets": [
+        "Gina_Carano",
+        "Callina_Liang",
+        "Elliot_Rodger"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        3,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "Brooklyn",
+        "Turbofan",
+        "Cubit"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        3,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "Nynetjer",
+        "Zendaya",
+        "Artemis_II"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        4,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "Lebanon",
+        "Zendaya",
+        "Allbirds"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        3,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "Cerina_Fairfax",
+        "Ruby_Ridge_standoff",
+        "Michael_Jackson"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        3,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "Rory_McIlroy",
+        "Zendaya",
+        "Artemis_II"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        4,
+        2
+      ]
+    },
+    {
+      "targets": [
+        "Dnepropetrovsk_maniacs",
+        "Artemis_II",
+        "Daredevil:_Born_Again"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        3,
+        5
+      ]
+    },
+    {
+      "targets": [
+        "Cat",
+        "World_War_II",
+        "Meet_the_Parents"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        2,
+        2
+      ]
+    },
+    {
+      "targets": [
+        "Cat",
+        "Ruby_Ridge_standoff",
+        "Elizabeth_II"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        4,
+        2
+      ]
+    },
+    {
+      "targets": [
+        "Coachella",
+        "Meet_the_Fockers",
+        "ChatGPT"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        4,
+        2
+      ]
+    },
+    {
+      "targets": [
+        "Sex",
+        "Brooklyn",
+        "Ronaldinho"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        3,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "Daredevil:_Born_Again",
+        "Matthew_Garber",
+        "Azzi_Fudd"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        4,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "Turbofan",
+        "YouTube",
+        "Zendaya"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        3,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "Charles_III",
+        "Paris_Saint-Germain_FC",
+        "Canada"
+      ],
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "distances": [
+        4,
+        1
+      ]
+    },
+    {
+      "targets": [
+        "Clint_Eastwood",
+        "Edward_VIII",
+        "Wiki"
+      ],
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "distances": [
+        2,
+        2
+      ]
+    },
+    {
+      "targets": [
+        "QR_code",
+        "Phragmosis",
+        "Anya_Taylor-Joy"
+      ],
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "distances": [
+        4,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "Germany",
+        "Weather",
+        "UBlock_Origin"
+      ],
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "distances": [
+        2,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "Gmail",
+        "Anya_Taylor-Joy",
+        "Artemis_program"
+      ],
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "distances": [
+        3,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "Germany",
+        "Hezbollah",
+        "BBC_World_Service"
+      ],
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "distances": [
+        2,
+        2
+      ]
+    },
+    {
+      "targets": [
+        "Wiki",
+        "Hillsborough_disaster",
+        "Charles_III"
+      ],
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "distances": [
+        4,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "Elisabeth_Shue",
+        "Hillsborough_disaster",
+        "Lok_Sabha"
+      ],
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "distances": [
+        3,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "Charles_III",
+        "UEFA_Europa_League",
+        "Winsome_Earle-Sears"
+      ],
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "distances": [
+        2,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "Ashley_Cole",
+        "Rosamund_Pike",
+        "George_VI"
+      ],
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "distances": [
+        4,
+        2
+      ]
+    },
+    {
+      "targets": [
+        "Weather",
+        "BBC_World_Service",
+        "Economy_of_India"
+      ],
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "distances": [
+        2,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "Apollo_13",
+        "UBlock_Origin",
+        "Confessions_II"
+      ],
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "distances": [
+        3,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "FC_Barcelona",
+        "Ben_McKenzie",
+        "Looksmaxxing"
+      ],
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "distances": [
+        4,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "Napoleon",
+        "Heated_Rivalry",
+        "Sun"
+      ],
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "distances": [
+        4,
+        2
+      ]
+    },
+    {
+      "targets": [
+        "Venus",
+        "Roblox",
+        "Gen_V"
+      ],
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "distances": [
+        4,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "Apollo_1",
+        "Germany",
+        "George_VI"
+      ],
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "distances": [
+        2,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "The_Testaments",
+        "Mckenna_Grace",
+        "TikTok"
+      ],
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "distances": [
+        2,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "BBC_World_Service",
+        "Gmail",
+        "NBC_Sports"
+      ],
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "distances": [
+        2,
+        2
+      ]
+    },
+    {
+      "targets": [
+        "China",
+        "Japan",
+        "Chernobyl_disaster"
+      ],
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "distances": [
+        1,
+        2
+      ]
+    },
+    {
+      "targets": [
+        "Artificial_intelligence",
+        "Singapore",
+        "QR_code"
+      ],
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "distances": [
+        1,
+        2
+      ]
+    },
+    {
+      "targets": [
+        "Dungeon_Crawler_Carl",
+        "Apollo_1",
+        "Charles_Melton"
+      ],
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "distances": [
+        5,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "Andrew_Tate",
+        "Andre_Drummond",
+        "Erik_Per_Sullivan"
+      ],
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "distances": [
+        4,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "Apollo_program",
+        "Taiwan",
+        "Spaceballs"
+      ],
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "distances": [
+        2,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "Apollo_11",
+        "Russia",
+        "Economy_of_India"
+      ],
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "distances": [
+        2,
+        2
+      ]
+    },
+    {
+      "targets": [
+        "Apollo_11",
+        "Earth",
+        "Rihanna"
+      ],
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "distances": [
+        1,
+        2
+      ]
+    },
+    {
+      "targets": [
+        "Brazil",
+        "FC_Barcelona",
+        "Paris_Saint-Germain_FC"
+      ],
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "distances": [
+        4,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "Al_Pacino",
+        "Amanda_Seyfried",
+        "Augustine_of_Hippo"
+      ],
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "distances": [
+        4,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "Pat_Benatar",
+        "Vietnam_War",
+        "Pierre_Kompany"
+      ],
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "distances": [
+        2,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "Human_penis",
+        "Rodent",
+        "Artemis_II"
+      ],
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "distances": [
+        2,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "Sexual_intercourse",
+        "Ben_McKenzie",
+        "Monty_Hall_problem"
+      ],
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "distances": [
+        3,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "UEFA_Europa_League",
+        "PinkPantheress",
+        "Andre_Agassi"
+      ],
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "distances": [
+        4,
+        2
+      ]
+    },
+    {
+      "targets": [
+        "China",
+        "Cat",
+        "Enya"
+      ],
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "distances": [
+        2,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "Pakistan",
+        "Taiwan",
+        "Sun"
+      ],
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "distances": [
+        2,
+        2
+      ]
+    },
+    {
+      "targets": [
+        "Sexual_intercourse",
+        "Napoleon",
+        "QR_code"
+      ],
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "distances": [
+        2,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "Earth",
+        "Italy",
+        "Leonardo_DiCaprio"
+      ],
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "distances": [
+        3,
+        2
+      ]
+    },
+    {
+      "targets": [
+        "WrestleMania_42",
+        "Angine_de_Poitrine",
+        "Jana_Nayagan"
+      ],
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "distances": [
+        3,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "Zendaya",
+        "Hentai",
+        "Joy_Harmon"
+      ],
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "distances": [
+        3,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "India",
+        "Singapore",
+        "Phragmosis"
+      ],
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "distances": [
+        1,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "Rory_McIlroy",
+        "Angus_Cloud",
+        "Orville_Peck"
+      ],
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "distances": [
+        4,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "Matthew_Garber",
+        "Ruby_Ridge_standoff",
+        "Pornhub"
+      ],
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "distances": [
+        5,
+        5
+      ]
+    },
+    {
+      "targets": [
+        "Chernobyl_disaster",
+        "Hailey_Bieber",
+        "Al_Horford"
+      ],
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "distances": [
+        4,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "Rachel_Bilson",
+        "Pakistan",
+        "Glenn_Youngkin"
+      ],
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "distances": [
+        2,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "FC_Bayern_Munich",
+        "Limonene",
+        "Dynatrace"
+      ],
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "distances": [
+        3,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "Chernobyl_disaster",
+        "Zara_Larsson",
+        "Alexa_Demie"
+      ],
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "distances": [
+        3,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "Monty_Hall_problem",
+        "Roger_Fairfax",
+        "Pornhub"
+      ],
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "distances": [
+        4,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "Philippines",
+        "Weather",
+        "Iran"
+      ],
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "distances": [
+        2,
+        1
+      ]
+    },
+    {
+      "targets": [
+        "Strait_of_Hormuz",
+        "Limonene",
+        "Rory_McIlroy"
+      ],
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "distances": [
+        3,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "Brooklyn",
+        "Gmail",
+        "XNXX"
+      ],
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "distances": [
+        3,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "Real_Madrid_CF",
+        "Brooklyn",
+        "Nynetjer"
+      ],
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "distances": [
+        3,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "Elizabeth_Taylor",
+        "Spaceballs_2",
+        "Daredevil:_Born_Again"
+      ],
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "distances": [
+        4,
+        2
+      ]
+    },
+    {
+      "targets": [
+        "Laryngeal_cancer",
+        "YouTube",
+        "Muhammad_Ali"
+      ],
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "distances": [
+        2,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "Piadina_romagnola",
+        "Prayer_in_C",
+        "Ruby_Ridge_standoff"
+      ],
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "distances": [
+        5,
+        5
+      ]
+    },
+    {
+      "targets": [
+        "Forza_Motorsport_2",
+        "WebCite",
+        "LIV_Golf"
+      ],
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "distances": [
+        3,
+        5
+      ]
+    },
+    {
+      "targets": [
+        "Budini",
+        "BentallGreenOak",
+        "LaMelo_Ball"
+      ],
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "distances": [
+        5,
+        5
+      ]
+    },
+    {
+      "targets": [
+        "Strait_of_Hormuz",
+        "FC_Bayern_Munich",
+        "Cubit"
+      ],
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "distances": [
+        4,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "Lophophore",
+        "Opposition_to_pornography",
+        "Philippines"
+      ],
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "distances": [
+        5,
+        2
+      ]
+    },
+    {
+      "targets": [
+        "Triller_TV",
+        "De_Boor's_algorithm",
+        "Dal_bati"
+      ],
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "distances": [
+        4,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "Avenger-class_escort_carrier",
+        "Doug_McConnell",
+        "Ifakara"
+      ],
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "distances": [
+        4,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "Nilpotent",
+        "Wiki",
+        "Ken_Jennings"
+      ],
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "distances": [
+        3,
+        5
+      ]
+    },
+    {
+      "targets": [
+        "Eric_Nam",
+        "Mojtaba_Khamenei",
+        "France"
+      ],
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "distances": [
+        3,
+        2
+      ]
+    },
+    {
+      "targets": [
+        "Big_wave_surfing",
+        "Palawan_stink_badger",
+        "Harvest_Moon_64"
+      ],
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "distances": [
+        3,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "April_16",
+        "Rory_McIlroy",
+        "Paula_White-Cain"
+      ],
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "distances": [
+        2,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "Battle_of_Dilling",
+        "Hypermetabolism",
+        "Substantive_equality"
+      ],
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "distances": [
+        5,
+        5
+      ]
+    },
+    {
+      "targets": [
+        "University_of_Lviv",
+        "Turbofan",
+        "Dynatrace"
+      ],
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "distances": [
+        3,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "Black-headed_spider_monkey",
+        "Roman_Reigns",
+        "Spaceballs"
+      ],
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "distances": [
+        5,
+        5
+      ]
+    },
+    {
+      "targets": [
+        "Profinet",
+        "Super_Aguri_F1",
+        "Bifid_nose"
+      ],
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "distances": [
+        3,
+        5
+      ]
+    },
+    {
+      "targets": [
+        "Iran",
+        "Gmail",
+        "Rodent"
+      ],
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "distances": [
+        2,
+        2
+      ]
+    },
+    {
+      "targets": [
+        "Megalithic_art",
+        "Meat_Puppets_II",
+        "Illuyanka"
+      ],
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "distances": [
+        4,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "Springfield,_Kentucky",
+        "Batik_in_Indonesia",
+        "PinkPantheress"
+      ],
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "distances": [
+        3,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "Strait_of_Hormuz",
+        "Turbofan",
+        "Ronaldinho"
+      ],
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "distances": [
+        2,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "Sun",
+        "Paul_McCartney",
+        "Focker-in-Law"
+      ],
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "distances": [
+        3,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "Artemisia_argyi",
+        "Cryptococcus_neoformans",
+        "Scutum"
+      ],
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "distances": [
+        3,
+        5
+      ]
+    },
+    {
+      "targets": [
+        "Error_level_analysis",
+        "Apollo_11",
+        "Strawberry"
+      ],
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "distances": [
+        3,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "Galactic",
+        "South_Africa",
+        "Mexico"
+      ],
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "distances": [
+        5,
+        2
+      ]
+    },
+    {
+      "targets": [
+        "Ethnic_joke",
+        "Blue_duiker",
+        "Tolvaptan"
+      ],
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "distances": [
+        3,
+        3
+      ]
+    }
+  ]
+}

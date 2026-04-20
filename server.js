@@ -193,7 +193,7 @@ function getPageViews(titles, lang = DEFAULT_LANG) {
     const encodedTitle = encodeURIComponent(title.replace(/ /g, '_'));
     const apiUrl = `https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/${project}/all-access/all-agents/${encodedTitle}/daily/${startDate}/${endDate}`;
     return new Promise((resolve) => {
-      https.get(apiUrl, { headers: { 'User-Agent': 'WikiSpeedrun/1.0' } }, (res) => {
+      https.get(apiUrl, { headers: { 'User-Agent': 'WikiSpeedrun/1.0 (https://wikispeedrun.io)' } }, (res) => {
         let data = '';
         res.on('data', chunk => data += chunk);
         res.on('end', () => {
@@ -236,7 +236,7 @@ async function getTopViewedArticles(lang = DEFAULT_LANG) {
 
       try {
         const result = await new Promise((resolve, reject) => {
-          https.get(apiUrl, { headers: { 'User-Agent': 'WikiSpeedrun/1.0' } }, (res) => {
+          https.get(apiUrl, { headers: { 'User-Agent': 'WikiSpeedrun/1.0 (https://wikispeedrun.io)' } }, (res) => {
             let data = '';
             res.on('data', chunk => data += chunk);
             res.on('end', () => {
@@ -398,36 +398,106 @@ async function fetchRandomArticles(count, lang = DEFAULT_LANG) {
   return good;
 }
 
+// ─── Puzzle pool ───
+// Pre-generated pairs/triples per language. At game start we try the pool
+// first — this avoids 5+ Wikipedia queries per new game and shields us from
+// rate limiting. See scripts/generatePool.js.
+const puzzlePools = {}; // { [lang]: { pairs: [], triples: [] } }
+
+function loadPuzzlePools() {
+  for (const lang of Object.keys(WIKI_HOSTS)) {
+    const p = path.join(__dirname, 'data', `puzzlePool.${lang}.json`);
+    try {
+      if (fs.existsSync(p)) {
+        const raw = JSON.parse(fs.readFileSync(p, 'utf8'));
+        puzzlePools[lang] = {
+          pairs: Array.isArray(raw.pairs) ? raw.pairs : [],
+          triples: Array.isArray(raw.triples) ? raw.triples : [],
+        };
+        console.log(`[pool:${lang}] loaded ${puzzlePools[lang].pairs.length} pairs + ${puzzlePools[lang].triples.length} triples`);
+      } else {
+        puzzlePools[lang] = { pairs: [], triples: [] };
+        console.log(`[pool:${lang}] no pool file found — will use live generation`);
+      }
+    } catch (e) {
+      console.error(`[pool:${lang}] failed to load:`, e.message);
+      puzzlePools[lang] = { pairs: [], triples: [] };
+    }
+  }
+}
+loadPuzzlePools();
+
+// Range overlap: does entry's viewRange overlap with requested?
+// Null requested range = accept anything.
+function rangeMatches(entry, requested) {
+  if (!requested) return true;
+  if (!entry.viewRange) return true;
+  const [a, b] = entry.viewRange;
+  const [c, d] = requested;
+  return a <= d && c <= b;
+}
+
+function pickFromPool(kind, lang, viewRange) {
+  const pool = puzzlePools[lang];
+  if (!pool) return null;
+  const entries = pool[kind === 'pair' ? 'pairs' : 'triples'];
+  if (!entries || entries.length === 0) return null;
+  // First narrow to entries whose view-range overlaps the request.
+  const matching = entries.filter(e => rangeMatches(e, viewRange));
+  const candidates = matching.length > 0 ? matching : entries; // last-resort: any entry
+  return candidates[Math.floor(Math.random() * candidates.length)];
+}
+
 async function getRandomPair(viewRange, lang = DEFAULT_LANG) {
-  const articles = await getGoodRandomArticles(2, viewRange, lang);
-  // Ensure no duplicates
-  if (articles.length >= 2 && normalizeArticle(articles[0]) !== normalizeArticle(articles[1])) {
-    return { origin: articles[0], destination: articles[1] };
+  // Try the pool first — most games will never touch Wikipedia.
+  const pooled = pickFromPool('pair', lang, viewRange);
+  if (pooled) {
+    // Pool entries are already canonical (validated at generation time), so
+    // the caller can skip resolveRedirect → saves 2 API calls / ~300ms.
+    return { origin: pooled.origin, destination: pooled.destination, fromPool: true };
   }
-  // Retry once if we got a duplicate
-  const retry = await getGoodRandomArticles(2, viewRange, lang);
-  if (retry.length >= 2 && normalizeArticle(retry[0]) !== normalizeArticle(retry[1])) {
-    return { origin: retry[0], destination: retry[1] };
+
+  // Pool empty / no match — fall through to live generation, with pool fallback
+  // on any failure (429 or otherwise).
+  try {
+    const articles = await getGoodRandomArticles(2, viewRange, lang);
+    if (articles.length >= 2 && normalizeArticle(articles[0]) !== normalizeArticle(articles[1])) {
+      return { origin: articles[0], destination: articles[1] };
+    }
+    const retry = await getGoodRandomArticles(2, viewRange, lang);
+    if (retry.length >= 2 && normalizeArticle(retry[0]) !== normalizeArticle(retry[1])) {
+      return { origin: retry[0], destination: retry[1] };
+    }
+  } catch (e) {
+    console.warn(`[pool] live pair gen failed (${e.message}) — falling back to any pool entry`);
+    const any = pickFromPool('pair', lang, null);
+    if (any) return { origin: any.origin, destination: any.destination };
   }
-  // Safe fallback per language.
+  // Last-resort hardcoded fallback.
   return lang === 'zh'
     ? { origin: '披萨', destination: '月球' }
     : { origin: 'Pizza', destination: 'Moon' };
 }
 
 async function getRandomTriple(viewRange, lang = DEFAULT_LANG) {
-  const articles = await getGoodRandomArticles(3, viewRange, lang);
-  // Ensure all 3 are unique
-  const norms = articles.map(a => normalizeArticle(a));
-  const unique = norms.length === 3 && new Set(norms).size === 3;
-  if (unique) {
-    return { targets: [articles[0], articles[1], articles[2]] };
-  }
-  // Retry once
-  const retry = await getGoodRandomArticles(3, viewRange, lang);
-  const rNorms = retry.map(a => normalizeArticle(a));
-  if (rNorms.length === 3 && new Set(rNorms).size === 3) {
-    return { targets: [retry[0], retry[1], retry[2]] };
+  const pooled = pickFromPool('triple', lang, viewRange);
+  if (pooled) return { targets: pooled.targets.slice() };
+
+  try {
+    const articles = await getGoodRandomArticles(3, viewRange, lang);
+    const norms = articles.map(a => normalizeArticle(a));
+    if (norms.length === 3 && new Set(norms).size === 3) {
+      return { targets: [articles[0], articles[1], articles[2]] };
+    }
+    const retry = await getGoodRandomArticles(3, viewRange, lang);
+    const rNorms = retry.map(a => normalizeArticle(a));
+    if (rNorms.length === 3 && new Set(rNorms).size === 3) {
+      return { targets: [retry[0], retry[1], retry[2]] };
+    }
+  } catch (e) {
+    console.warn(`[pool] live triple gen failed (${e.message}) — falling back to any pool entry`);
+    const any = pickFromPool('triple', lang, null);
+    if (any) return { targets: any.targets.slice() };
   }
   return lang === 'zh'
     ? { targets: ['月球', '恐龙', '爵士乐'] }
@@ -462,7 +532,9 @@ async function resolveRedirect(title, lang = DEFAULT_LANG) {
 // LRU-ish caches with size + TTL bounds. Long-running servers otherwise grow
 // unbounded since every navigated article gets cached indefinitely.
 const CACHE_MAX = 5000;
-const CACHE_TTL_MS = 30 * 60 * 1000; // 30 min
+// Wikipedia links/backlinks change rarely. 24h lets a warm process amortise
+// initial fetches across many games and shields us from rate limits.
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 h
 const linkCache = new Map(); // title -> { value: Set, expires: number }
 const backlinkCache = new Map(); // title -> { value: Set, expires: number }
 
@@ -498,7 +570,7 @@ function wikiAPIOnce(params, lang = DEFAULT_LANG) {
     const qs = new URLSearchParams(finalParams);
     const host = WIKI_HOSTS[lang] || WIKI_HOSTS[DEFAULT_LANG];
     const reqUrl = `https://${host}/w/api.php?${qs}`;
-    https.get(reqUrl, { headers: { 'User-Agent': 'WikiSpeedrun/1.0 (contact: local)' } }, (res) => {
+    https.get(reqUrl, { headers: { 'User-Agent': 'WikiSpeedrun/1.0 (https://wikispeedrun.io)' } }, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
@@ -515,9 +587,11 @@ function wikiAPIOnce(params, lang = DEFAULT_LANG) {
   });
 }
 
-// Retry transient failures (rate limiting, transient 5xx) with exponential
-// backoff. After `attempts` tries the final error bubbles to the caller,
-// where it's caught and logged without poisoning the cache.
+// Retry transient failures with short exponential backoff. Critical: user-
+// facing requests (navigate → resolveRedirect) are awaited synchronously, so
+// we keep the total retry budget small — no more than ~1.5s — to protect p99.
+// Background cache workers live behind a semaphore (cacheDestination) and
+// their 429s don't stall any user path.
 async function wikiAPI(params, lang = DEFAULT_LANG, attempts = 3) {
   let lastErr;
   for (let i = 0; i < attempts; i++) {
@@ -525,7 +599,9 @@ async function wikiAPI(params, lang = DEFAULT_LANG, attempts = 3) {
     catch (e) {
       lastErr = e;
       if (i < attempts - 1) {
-        const delay = 250 * Math.pow(2, i) + Math.floor(Math.random() * 100);
+        // 250ms → 500ms → 1s worst case (~1.75s total). Tight enough that a
+        // 429 on a user-facing endpoint doesn't blow p99.
+        const delay = 250 * Math.pow(2, i) + Math.floor(Math.random() * 150);
         await new Promise(r => setTimeout(r, delay));
       }
     }
@@ -698,7 +774,42 @@ async function computeDistance(currentArticle, destination, destData, lang = DEF
 //   hop1: articles that link directly to destination (1 hop away)
 //   hop2: articles that link to a hop1 article (2 hops away)
 // This makes distance checks 0-3 instant and 100% accurate (within cache limits)
+// Cap how many destinations we cache at once. Each destination fires ~15
+// backlink requests over its hop2 sample; unbounded concurrency (10+ games
+// starting simultaneously) reliably trips Wikipedia's rate limiter. With 2
+// in flight, peak is ~30 concurrent requests — well under the threshold.
+const CACHE_DEST_CONCURRENCY = 2;
+let cacheDestInflight = 0;
+const cacheDestQueue = [];
+function acquireCacheSlot() {
+  return new Promise(resolve => {
+    const tryAcquire = () => {
+      if (cacheDestInflight < CACHE_DEST_CONCURRENCY) {
+        cacheDestInflight++;
+        resolve();
+      } else {
+        cacheDestQueue.push(tryAcquire);
+      }
+    };
+    tryAcquire();
+  });
+}
+function releaseCacheSlot() {
+  cacheDestInflight--;
+  const next = cacheDestQueue.shift();
+  if (next) next();
+}
+
 async function cacheDestination(destination, lang = DEFAULT_LANG) {
+  await acquireCacheSlot();
+  try {
+    return await cacheDestinationInner(destination, lang);
+  } finally {
+    releaseCacheSlot();
+  }
+}
+
+async function cacheDestinationInner(destination, lang = DEFAULT_LANG) {
   console.log(`[cache:${lang}] Building distance cache for: ${destination}`);
   const start = Date.now();
 
@@ -717,20 +828,18 @@ async function cacheDestination(destination, lang = DEFAULT_LANG) {
   const hop1 = await getBacklinks(destination, 2000, lang);
   console.log(`[cache:${lang}] hop1: ${hop1.size} backlinks to ${destination}`);
 
-  // hop2: backlinks to the hop1 articles
-  // Fetching ALL hop1 backlinks would be too many API calls.
-  // Sample up to 50 hop1 articles and fetch their backlinks.
-  // Prioritize hop1 articles that are likely "hub" pages (common topics).
+  // hop2: backlinks to the hop1 articles. Fetching ALL hop1 backlinks would
+  // be too many API calls, so we sample. Previous knobs: 50 sample × 4 batch
+  // tripped rate limits when 10 games started in a burst. Trimmed to 30 × 2
+  // to halve peak QPS per destination while still giving distance-3 coverage.
   const hop1Array = [...hop1];
-  const hop1Sample = hop1Array.length <= 50
+  const HOP1_SAMPLE_SIZE = 30;
+  const hop1Sample = hop1Array.length <= HOP1_SAMPLE_SIZE
     ? hop1Array
-    : hop1Array.sort(() => Math.random() - 0.5).slice(0, 50);
+    : hop1Array.sort(() => Math.random() - 0.5).slice(0, HOP1_SAMPLE_SIZE);
 
   const hop2 = new Set();
-  // Batches of 10 in parallel tripped Wikipedia's rate limiter (429/503 →
-  // server returned an HTML error page that JSON.parse choked on, leaving
-  // whole hop2 sample empty). 4 at a time stays under the limit in practice.
-  const HOP2_BATCH = 4;
+  const HOP2_BATCH = 2;
   for (let i = 0; i < hop1Sample.length; i += HOP2_BATCH) {
     const batch = hop1Sample.slice(i, i + HOP2_BATCH);
     const results = await Promise.all(
@@ -829,11 +938,13 @@ async function startGameForRoom(room, roomCode) {
     } else {
       room.pair = await getRandomPair(viewRange, lang);
     }
-    // Resolve redirects to canonical titles, keep originals for fallback matching
-    const origOrigin = room.pair.origin;
+    // Resolve redirects to canonical titles, keep originals for fallback matching.
+    // Pool pairs are already canonical — skip the network roundtrip.
     const origDest = room.pair.destination;
-    room.pair.origin = await resolveRedirect(room.pair.origin, lang);
-    room.pair.destination = await resolveRedirect(room.pair.destination, lang);
+    if (!room.pair.fromPool) {
+      room.pair.origin = await resolveRedirect(room.pair.origin, lang);
+      room.pair.destination = await resolveRedirect(room.pair.destination, lang);
+    }
     room.pair.destinationOriginal = origDest;
     for (const [, p] of room.players) {
       Object.assign(p, { path: [room.pair.origin], finished: false, finishTime: null, visited: [], distances: [] });
@@ -1540,7 +1651,25 @@ const server = http.createServer(async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 const HOST = '0.0.0.0';
-server.listen(PORT, HOST, () => {
-  console.log(`\n  🎮 WikiSpeedrun is running!`);
-  console.log(`  Open http://localhost:${PORT} in your browser\n`);
-});
+
+// Only start the HTTP server when run directly. The pool generator imports
+// this file to reuse the Wikipedia helpers without opening a port.
+if (require.main === module) {
+  server.listen(PORT, HOST, () => {
+    console.log(`\n  🎮 WikiSpeedrun is running!`);
+    console.log(`  Open http://localhost:${PORT} in your browser\n`);
+  });
+}
+
+// Exports for scripts/generatePool.js (no impact when server is run directly).
+module.exports = {
+  getRandomPair,
+  getRandomTriple,
+  getGoodRandomArticles,
+  cacheDestination,
+  computeDistance,
+  resolveRedirect,
+  normalizeArticle,
+  WIKI_HOSTS,
+  DEFAULT_LANG,
+};
