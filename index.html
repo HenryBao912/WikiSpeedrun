@@ -667,11 +667,18 @@
     background: var(--surface2);
     border-radius: 3px;
   }
+  /* The gradient stays anchored to the FULL track: tf→red sits at the track's
+     left edge, ez→green at the right. We stretch the background and shift its
+     position so the fill only reveals the matching slice of that fixed gradient,
+     not a compressed tf→ez rainbow inside the user's selected range. */
   .diff-fill {
     position: absolute;
     height: 6px;
     border-radius: 3px;
     background: linear-gradient(90deg, var(--red), var(--gold), var(--green));
+    background-size: var(--fill-bg-size, 100%) 100%;
+    background-position: var(--fill-bg-pos, 0%) 0;
+    background-repeat: no-repeat;
   }
   .diff-range-wrap input[type="range"] {
     -webkit-appearance: none;
@@ -2495,7 +2502,9 @@ async function quickPlay() {
       type: 'start_single',
       name: 'Single Player',
       mode: 'classic',
-      viewRange: null,
+      // Quick Play skews popular: 10K–1M monthly views filters out the obscure
+      // long-tail so newcomers don't get stuck on an article with few links.
+      viewRange: [10000, 1000000],
       lang: wikiLangChoice,
     });
     if (result.ok) {
@@ -2598,6 +2607,8 @@ function updateSinglePlayerDiffSlider() {
   const fill = document.getElementById('spDiffFill');
   fill.style.left = lo + '%';
   fill.style.width = (hi - lo) + '%';
+  // Anchor the red→green gradient to the full track, not to the fill box.
+  setFillGradient(fill, lo, hi);
   document.getElementById('spDiffDesc').textContent = getDiffDescription(lo, hi);
 
   if (lo === 0 && hi === 100) {
@@ -2690,6 +2701,7 @@ function updateMultiplayerDiffSlider() {
   const fill = document.getElementById('mpDiffFill');
   fill.style.left = lo + '%';
   fill.style.width = (hi - lo) + '%';
+  setFillGradient(fill, lo, hi);
   document.getElementById('mpDiffDesc').textContent = getDiffDescription(lo, hi);
 
   if (!isHost) return;
@@ -3024,6 +3036,18 @@ function sendGiveUpVote() {
 function sliderToViews(val) {
   const t = val / 100;
   return Math.round(DIFF_VIEW_MIN * Math.pow(DIFF_VIEW_MAX / DIFF_VIEW_MIN, t));
+}
+
+// Keeps the red→green gradient anchored to the full track. The fill element
+// only shows the slice of that fixed gradient that falls within its window,
+// so a 70–100% selection reveals just the green end (not a compressed rainbow).
+// background-position-% pins image-X% to element-X%, so pos = lo/(100-span):
+// lo=0→0% (red end aligns left), lo=70 span=30→100% (green end aligns right).
+function setFillGradient(fill, lo, hi) {
+  const span = Math.max(1, hi - lo);
+  fill.style.setProperty('--fill-bg-size', (10000 / span) + '%');
+  const denom = 100 - span;
+  fill.style.setProperty('--fill-bg-pos', denom === 0 ? '0%' : (100 * lo / denom) + '%');
 }
 
 function getDiffDescription(minVal, maxVal) {
@@ -4340,6 +4364,14 @@ function populateShareCard(msg) {
 }
 
 function playAgain() {
+  // Quick Play replays should stay zero-friction: fire a fresh random game
+  // instead of dropping the user on the word-input setup screen.
+  if (isSinglePlayer && isQuickPlaySession) {
+    clearInterval(timerInterval);
+    resultsAnimationTimeouts.forEach(t => clearTimeout(t));
+    quickPlay();
+    return;
+  }
   if (isSinglePlayer) {
     // Go back to SP setup screen so player can choose words
     clearInterval(timerInterval);
