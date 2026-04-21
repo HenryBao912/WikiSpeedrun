@@ -413,7 +413,27 @@ async function fetchRandomArticles(count, lang = DEFAULT_LANG) {
 // Pre-generated pairs/triples per language. At game start we try the pool
 // first — this avoids 5+ Wikipedia queries per new game and shields us from
 // rate limiting. See scripts/generatePool.js.
-const puzzlePools = {}; // { [lang]: { pairs: [], triples: [] } }
+const puzzlePools = {}; // { [lang]: { pairs: [], triples: [], hubs: Set<string> } }
+
+// "Hubs" are titles that appear in ≥2 pool entries (pairs or triples).
+// Rationale: the pool validates PAIRS (X→Y is solvable), not individual titles.
+// The `?` button picks two titles independently, so the resulting combo was
+// never validated. Filtering to hubs (well-connected articles like
+// United_States, Donald_Trump) means any two independent picks are very
+// likely to produce a solvable pair. Obscure single-appearance terminals
+// (Jesse_Itzler, Orville_Peck) get excluded — they're valid as the destination
+// of ONE specific validated pair, but dead-end for any random origin.
+const HUB_MIN_APPEARANCES = 2;
+
+function computeHubs(pool) {
+  const count = new Map();
+  const bump = t => count.set(t, (count.get(t) || 0) + 1);
+  for (const p of (pool.pairs || []))   { bump(p.origin); bump(p.destination); }
+  for (const t of (pool.triples || [])) { for (const title of t.targets) bump(title); }
+  const hubs = new Set();
+  for (const [title, n] of count) { if (n >= HUB_MIN_APPEARANCES) hubs.add(title); }
+  return hubs;
+}
 
 function loadPuzzlePools() {
   for (const lang of Object.keys(WIKI_HOSTS)) {
@@ -421,18 +441,20 @@ function loadPuzzlePools() {
     try {
       if (fs.existsSync(p)) {
         const raw = JSON.parse(fs.readFileSync(p, 'utf8'));
-        puzzlePools[lang] = {
+        const pool = {
           pairs: Array.isArray(raw.pairs) ? raw.pairs : [],
           triples: Array.isArray(raw.triples) ? raw.triples : [],
         };
-        console.log(`[pool:${lang}] loaded ${puzzlePools[lang].pairs.length} pairs + ${puzzlePools[lang].triples.length} triples`);
+        pool.hubs = computeHubs(pool);
+        puzzlePools[lang] = pool;
+        console.log(`[pool:${lang}] loaded ${pool.pairs.length} pairs + ${pool.triples.length} triples (${pool.hubs.size} hubs for ? button)`);
       } else {
-        puzzlePools[lang] = { pairs: [], triples: [] };
+        puzzlePools[lang] = { pairs: [], triples: [], hubs: new Set() };
         console.log(`[pool:${lang}] no pool file found — will use live generation`);
       }
     } catch (e) {
       console.error(`[pool:${lang}] failed to load:`, e.message);
-      puzzlePools[lang] = { pairs: [], triples: [] };
+      puzzlePools[lang] = { pairs: [], triples: [], hubs: new Set() };
     }
   }
 }
@@ -460,11 +482,14 @@ function pickFromPool(kind, lang, viewRange) {
 }
 
 // Mine single article titles out of the pool for the `?` random-word button.
-// A pool of 200 pairs + 100 triples gives us 400 + 300 = 700 pre-validated
-// titles to pick from — instant, no Wikipedia call, no rate limit.
+// Restricted to "hubs" (titles in ≥2 pool entries) so two independent `?`
+// clicks produce a pair that's likely solvable — single-appearance terminals
+// (Jesse_Itzler: 103 backlinks, 0 hop2) were causing unwinnable games in
+// production. See HUB_MIN_APPEARANCES note above.
 function pickWordFromPool(lang, viewRange, excludeSet) {
   const pool = puzzlePools[lang];
   if (!pool) return null;
+  const hubs = pool.hubs || new Set();
   const candidates = [];
   for (const p of (pool.pairs || [])) {
     if (rangeMatches(p, viewRange)) { candidates.push(p.origin, p.destination); }
@@ -475,6 +500,13 @@ function pickWordFromPool(lang, viewRange, excludeSet) {
   if (candidates.length === 0) return null;
   // Dedup same title appearing as both origin and destination in different pairs.
   let unique = [...new Set(candidates)];
+  // Filter to hubs. Fall back to the full set if no hubs match this viewRange
+  // (e.g., a thin difficulty bucket) — better a single-appearance title than
+  // a 500 error.
+  if (hubs.size > 0) {
+    const hubsOnly = unique.filter(t => hubs.has(t));
+    if (hubsOnly.length > 0) unique = hubsOnly;
+  }
   // Remove recent picks so rapid clicking doesn't re-serve the same word.
   // If the exclusion empties the set, fall back to the full pool — better a
   // repeat than no result.
