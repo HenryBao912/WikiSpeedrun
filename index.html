@@ -318,6 +318,264 @@
     z-index: 1;
   }
 
+  /* Info button: mirrors .back-btn position (top-right instead of left).
+     Shown on the home screen so the explainer text doesn't crowd the hero. */
+  .info-btn {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    width: 36px;
+    height: 36px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: var(--text2);
+    font-size: 1.1rem;
+    font-weight: 700;
+    cursor: pointer;
+    border-radius: 50%;
+    transition: color 0.2s, background 0.2s, border-color 0.2s, transform 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+  }
+  .info-btn:hover {
+    color: var(--text);
+    background: var(--surface2);
+    border-color: var(--accent);
+    transform: translateY(-1px);
+  }
+
+  /* How-to-play modal */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    animation: modalFadeIn 0.2s ease;
+  }
+  @keyframes modalFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  .modal-panel {
+    background: var(--surface);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    padding: 28px 28px 24px;
+    max-width: 440px;
+    width: 100%;
+    position: relative;
+    box-shadow: 0 24px 64px rgba(0,0,0,0.6);
+    animation: modalPanelIn 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  @keyframes modalPanelIn {
+    from { opacity: 0; transform: translateY(12px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .modal-close {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 32px;
+    height: 32px;
+    background: none;
+    border: none;
+    color: var(--text2);
+    font-size: 1.4rem;
+    cursor: pointer;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    transition: color 0.2s, background 0.2s;
+  }
+  .modal-close:hover { color: var(--text); background: var(--surface2); }
+  .modal-title {
+    font-size: 1.4rem;
+    font-weight: 800;
+    margin-bottom: 14px;
+    background: linear-gradient(90deg, var(--accent), var(--green));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .modal-text {
+    font-size: 0.95rem;
+    line-height: 1.55;
+    color: var(--text);
+    margin-bottom: 18px;
+  }
+  .modal-text .mock-wiki-link { padding: 0 2px; }
+
+  /* Interactive mini tutorial: nav chips (Pizza → Italy), mock article with
+     the Italy blue link, and a success state that reveals after the click. */
+  .htp-visual {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 16px 0;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px;
+    padding: 14px;
+  }
+  .htp-nav {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+  .htp-chip {
+    padding: 5px 12px;
+    border-radius: 999px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: white;
+    white-space: nowrap;
+  }
+  .htp-chip-origin { background: var(--accent); }
+  .htp-chip-dest {
+    background: var(--green);
+    transition: transform 0.3s ease;
+  }
+  .htp-chip-dest.won {
+    animation: destWon 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .htp-chip-dest.won::before { content: '✓ '; }
+  @keyframes destWon {
+    0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(0, 184, 148, 0.6); }
+    40% { transform: scale(1.2); box-shadow: 0 0 0 8px rgba(0, 184, 148, 0); }
+    100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(0, 184, 148, 0); }
+  }
+  .htp-chip-arrow { color: var(--text2); font-size: 0.95rem; }
+
+  .mock-wiki {
+    background: #fafafa;
+    color: #222;
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-family: 'Georgia', serif;
+    font-size: 0.78rem;
+    line-height: 1.4;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    min-width: 0;
+    transition: opacity 0.25s ease;
+  }
+  .mock-wiki-header {
+    font-size: 1rem;
+    font-weight: 700;
+    border-bottom: 1px solid #ccc;
+    padding-bottom: 4px;
+    margin-bottom: 6px;
+  }
+  .mock-wiki-link {
+    color: #0645ad;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+  /* Pulsing blue ring draws the eye to the clickable link without drifting
+     away from real Wikipedia styling (no yellow highlighters in the wild). */
+  .mock-wiki-link.highlight {
+    position: relative;
+    border-radius: 2px;
+    animation: linkPulse 1.6s ease-in-out infinite;
+  }
+  @keyframes linkPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(6, 69, 173, 0.55); }
+    50% { box-shadow: 0 0 0 5px rgba(6, 69, 173, 0); }
+  }
+  .mock-wiki-cursor {
+    display: inline-block;
+    margin-left: 4px;
+    font-size: 0.85em;
+    opacity: 0.85;
+    animation: cursorBob 1.6s ease-in-out infinite;
+  }
+  @keyframes cursorBob {
+    0%, 100% { transform: translate(0, 0); }
+    50% { transform: translate(1px, -2px); }
+  }
+
+  .htp-success {
+    display: none;
+    text-align: center;
+    padding: 8px 12px;
+    background: rgba(0, 184, 148, 0.14);
+    border: 1px solid rgba(0, 184, 148, 0.3);
+    border-radius: 8px;
+    color: var(--green);
+    font-weight: 600;
+    font-size: 0.85rem;
+  }
+  .htp-success.show {
+    display: block;
+    animation: successIn 0.4s ease;
+  }
+  @keyframes successIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .modal-tips {
+    list-style: none;
+    padding: 0;
+    margin: 12px 0 0;
+    font-size: 0.85rem;
+    color: var(--text2);
+    line-height: 1.6;
+  }
+  .modal-tips li { padding-left: 18px; position: relative; }
+  .modal-tips li::before {
+    content: '•';
+    position: absolute;
+    left: 6px;
+    color: var(--accent2);
+  }
+
+  @media (max-width: 600px) {
+    .info-btn { width: 32px; height: 32px; font-size: 1rem; top: 16px; right: 16px; }
+    .modal-panel { padding: 22px 20px 18px; }
+    .modal-title { font-size: 1.2rem; }
+    .htp-visual { gap: 8px; padding: 12px; }
+    .htp-chip { font-size: 0.78rem; padding: 4px 10px; }
+  }
+
+  .home-buttons-primary { margin-bottom: 2px; }
+  .home-buttons-primary .home-btn { flex: 1; }
+
+  .home-btn.quick {
+    background: linear-gradient(135deg, #f59e0b, #f97316);
+    box-shadow: 0 4px 24px rgba(249, 115, 22, 0.4), inset 0 1px 0 rgba(255,255,255,0.2);
+    padding: 18px 24px;
+    font-size: 1.2rem;
+  }
+  .home-btn.quick::before {
+    background: linear-gradient(135deg, #fbbf24, #fb923c);
+  }
+  .home-btn.quick:hover {
+    box-shadow: 0 8px 32px rgba(249, 115, 22, 0.6), inset 0 1px 0 rgba(255,255,255,0.2);
+  }
+  .home-btn.quick:hover::before { opacity: 1; }
+  .home-btn.quick::after {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: linear-gradient(transparent, rgba(255,255,255,0.08), transparent);
+    transform: rotate(30deg);
+    animation: btnSheen 3.5s ease-in-out infinite;
+  }
+
   @keyframes btnSheen {
     0%, 100% { transform: rotate(30deg) translateX(-100%); }
     50% { transform: rotate(30deg) translateX(100%); }
@@ -1474,6 +1732,7 @@
     .logo-sub { font-size: 0.85rem; }
     .home-buttons { gap: 10px; max-width: 340px; }
     .home-btn { padding: 14px 12px; font-size: 0.95rem; }
+    .home-btn.quick { padding: 16px 14px; font-size: 1.05rem; }
     .room-code-display { font-size: 2rem; letter-spacing: 4px; }
 
     /* Game header: stack nav-info and stats on two rows so tri-mode targets
@@ -1612,6 +1871,7 @@
 <!-- ─── Home Screen ─── -->
 <div id="home" class="screen active">
   <div class="bg-words" id="bgWords"></div>
+  <button class="info-btn" onclick="openHowToPlay()" aria-label="How to play">?</button>
   <div class="hero-content">
     <h1 class="logo"><span class="wiki">Wiki</span><span class="speed">Speed</span><span class="run">run</span></h1>
     <div class="logo-row" id="heroLinkRow">
@@ -1624,9 +1884,12 @@
       <span class="logo-link dest" id="heroLink4"><span class="logo-link-inner">Evolution</span></span>
     </div>
     <p class="logo-sub">Navigate Wikipedia | Race to the destination</p>
+    <div class="home-buttons home-buttons-primary">
+      <button class="home-btn quick" onclick="quickPlay()"><span>Quick Play</span></button>
+    </div>
     <div class="home-buttons">
-      <button class="home-btn sp" onclick="showScreen('sp-setup')"><span>Singleplayer</span></button>
-      <button class="home-btn mp" onclick="showScreen('mp-setup')"><span>Multiplayer</span></button>
+      <button class="home-btn sp" onclick="selectMode('singleplayer')"><span>Singleplayer</span></button>
+      <button class="home-btn mp" onclick="selectMode('multiplayer')"><span>Multiplayer</span></button>
     </div>
   </div>
 </div>
@@ -1822,6 +2085,31 @@
   </div>
 </div>
 
+<!-- ─── How To Play Modal ─── -->
+<div id="howToPlayModal" class="modal-backdrop" style="display:none;" onclick="closeHowToPlay(event)">
+  <div class="modal-panel" onclick="event.stopPropagation()">
+    <button class="modal-close" onclick="closeHowToPlay()" aria-label="Close">×</button>
+    <h2 class="modal-title">How to play</h2>
+    <p class="modal-text">You start on a random Wikipedia article. Click the <span class="mock-wiki-link">blue links</span> inside the article to jump to new articles. Reach the destination in as few clicks as possible.</p>
+    <div class="htp-visual">
+      <div class="htp-nav">
+        <span class="htp-chip htp-chip-origin">Pizza</span>
+        <span class="htp-chip-arrow">→</span>
+        <span class="htp-chip htp-chip-dest" id="htpDestChip">Italy</span>
+      </div>
+      <div class="mock-wiki" id="htpMockWiki">
+        <div class="mock-wiki-header" id="htpMockTitle">Pizza</div>
+        <div id="htpMockBody">Pizza is a popular dish that originated in <span class="mock-wiki-link highlight" onclick="htpClickLink()">Italy</span><span class="mock-wiki-cursor" aria-hidden="true">👆</span> during the late 19th century…</div>
+      </div>
+      <div class="htp-success" id="htpSuccess">🎉 Nice — you reached Italy in 1 click!</div>
+    </div>
+    <ul class="modal-tips">
+      <li>Only blue links count — images and headings don't.</li>
+      <li>Click the destination chip anytime to preview it.</li>
+    </ul>
+  </div>
+</div>
+
 <script>
 // ─── Floating Background Words ───
 const WIKI_WORDS = [
@@ -1919,6 +2207,10 @@ let isHost = false;
 let currentGameMode = 'classic';
 let currentGameDifficulty = null; // [minViews, maxViews] or null
 let isSinglePlayer = false;
+// True iff the current game was launched via the Quick Play button (no setup).
+// Controls the results-screen CTA label: Quick Play sessions get "Try other
+// modes" to nudge exploration; all other sessions keep "Back to Home".
+let isQuickPlaySession = false;
 
 // Wikipedia language. `wikiLangChoice` is the user's preference (what new
 // games/rooms use); `currentGameLang` is locked to whatever the active room
@@ -2131,6 +2423,90 @@ async function fetchWithTimeout(url, opts = {}, timeoutMs = 5000) {
   }
 }
 
+// ─── Home ───
+// How-to-play modal. Lives on the home screen to teach newcomers the mechanic
+// without crowding the hero. Closable via backdrop click, × button, or Esc.
+function openHowToPlay() {
+  const m = document.getElementById('howToPlayModal');
+  if (m) m.style.display = 'flex';
+  htpResetTutorial();
+  try { window.gtag?.('event', 'how_to_play_opened'); } catch (e) {}
+}
+function closeHowToPlay(e) {
+  if (e && e.target !== e.currentTarget) return;
+  const m = document.getElementById('howToPlayModal');
+  if (m) m.style.display = 'none';
+}
+
+// Interactive tutorial: clicking the Italy link inside the mock Pizza article
+// swaps the article content to Italy and celebrates on the destination chip,
+// mirroring the real game's "reach the destination" moment.
+const HTP_INITIAL_BODY = 'Pizza is a popular dish that originated in <span class="mock-wiki-link highlight" onclick="htpClickLink()">Italy</span><span class="mock-wiki-cursor" aria-hidden="true">👆</span> during the late 19th century…';
+function htpResetTutorial() {
+  const title = document.getElementById('htpMockTitle');
+  const body = document.getElementById('htpMockBody');
+  const dest = document.getElementById('htpDestChip');
+  const success = document.getElementById('htpSuccess');
+  if (title) title.textContent = 'Pizza';
+  if (body) body.innerHTML = HTP_INITIAL_BODY;
+  if (dest) { dest.classList.remove('won'); /* restart CSS animation on next win */ void dest.offsetWidth; }
+  if (success) success.classList.remove('show');
+}
+function htpClickLink() {
+  const title = document.getElementById('htpMockTitle');
+  const body = document.getElementById('htpMockBody');
+  const dest = document.getElementById('htpDestChip');
+  const success = document.getElementById('htpSuccess');
+  if (!title || !body || !dest || !success || dest.classList.contains('won')) return;
+  title.textContent = 'Italy';
+  body.innerHTML = 'Italy is a country in Southern Europe, known for its rich history, cuisine, and contributions to art and science…';
+  dest.classList.add('won');
+  success.classList.add('show');
+}
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    const m = document.getElementById('howToPlayModal');
+    if (m && m.style.display !== 'none') closeHowToPlay();
+  }
+});
+
+// Fire a GA event when the user picks a lane from the home screen. Fills the
+// gap between session_start and game_start so we can see where people bounce.
+function selectMode(choice) {
+  try {
+    window.gtag?.('event', 'mode_selected', { selection: choice });
+  } catch (e) { /* gtag blocked — skip */ }
+  if (choice === 'singleplayer') showScreen('sp-setup');
+  else if (choice === 'multiplayer') showScreen('mp-setup');
+}
+
+// One-click game: classic mode, default difficulty, server-picked random pair.
+// Skips sp-setup entirely to cut the landing→playing path to a single tap.
+async function quickPlay() {
+  try {
+    window.gtag?.('event', 'mode_selected', { selection: 'quick_play' });
+  } catch (e) { /* gtag blocked — skip */ }
+  try {
+    await connectSSE();
+    isSinglePlayer = true;
+    isQuickPlaySession = true;
+    currentGameMode = 'classic';
+    const result = await send({
+      type: 'start_single',
+      name: 'Single Player',
+      mode: 'classic',
+      viewRange: null,
+      lang: wikiLangChoice,
+    });
+    if (result.ok) {
+      currentRoomCode = result.code;
+      isHost = true;
+    }
+  } catch (e) {
+    console.error('Quick play failed:', e);
+  }
+}
+
 // ─── Single Player ───
 function setSinglePlayerMode(mode) {
   currentGameMode = mode;
@@ -2235,6 +2611,7 @@ async function startSinglePlayer() {
   try {
     await connectSSE();
     isSinglePlayer = true;
+    isQuickPlaySession = false;
     const payload = {
       type: 'start_single',
       name: 'Single Player',
@@ -2596,6 +2973,7 @@ function copyCode() {
 }
 
 function startMultiplayerGame() {
+  isQuickPlaySession = false;
   // Gather words from the input fields
   if (mpCurrentMode === 'classic') {
     const originEl = document.getElementById('rwOrigin');
@@ -3675,7 +4053,11 @@ function showResults(msg) {
   }
 
   document.getElementById('playAgainBtn').style.display = isHost ? '' : 'none';
-  document.getElementById('backToHomeBtn').style.display = (isSinglePlayer || isHost) ? '' : 'none';
+  const backBtn = document.getElementById('backToHomeBtn');
+  backBtn.style.display = (isSinglePlayer || isHost) ? '' : 'none';
+  // Nudge Quick Play finishers toward other modes; everyone else sees the
+  // neutral "Back to Home" they'd expect.
+  backBtn.textContent = isQuickPlaySession ? 'Try other modes' : 'Back to Home';
   showScreen('results');
 
   // Animate results
