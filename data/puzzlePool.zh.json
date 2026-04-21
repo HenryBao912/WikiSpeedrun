@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-04-20T01:10:44.456Z",
+  "generatedAt": "2026-04-21T04:52:18.973Z",
   "lang": "zh",
   "pairs": [
     {
@@ -53,7 +53,7 @@
       "dist": 3
     },
     {
-      "origin": "史瓦帝尼",
+      "origin": "斯威士兰",
       "destination": "河智苑",
       "viewRange": [
         500000,
@@ -84,7 +84,7 @@
     },
     {
       "origin": "匈牙利",
-      "destination": "黃秋生",
+      "destination": "黄秋生",
       "viewRange": [
         500000,
         100000000
@@ -193,7 +193,7 @@
       "dist": 2
     },
     {
-      "origin": "霍爾木茲海峽",
+      "origin": "霍尔木兹海峡",
       "destination": "入间同学入魔了！",
       "viewRange": [
         500000,
@@ -273,16 +273,6 @@
       "dist": 1
     },
     {
-      "origin": "逐玉",
-      "destination": "李貞秀",
-      "viewRange": [
-        500000,
-        100000000
-      ],
-      "difficulty": "easy",
-      "dist": 3
-    },
-    {
       "origin": "阿拉伯联合酋长国",
       "destination": "向华强",
       "viewRange": [
@@ -304,7 +294,7 @@
     },
     {
       "origin": "4月16日",
-      "destination": "Talk:简化字",
+      "destination": "简化字",
       "viewRange": [
         500000,
         100000000
@@ -324,17 +314,7 @@
     },
     {
       "origin": "维基百科",
-      "destination": "何潤東",
-      "viewRange": [
-        500000,
-        100000000
-      ],
-      "difficulty": "easy",
-      "dist": 4
-    },
-    {
-      "origin": "李貞秀",
-      "destination": "张凌赫",
+      "destination": "何润东",
       "viewRange": [
         500000,
         100000000
@@ -344,7 +324,7 @@
     },
     {
       "origin": "江图",
-      "destination": "張善為",
+      "destination": "张善为",
       "viewRange": [
         500000,
         100000000
@@ -594,7 +574,7 @@
     },
     {
       "origin": "文化大革命",
-      "destination": "媽祖",
+      "destination": "妈祖",
       "viewRange": [
         50000,
         500000
@@ -673,8 +653,8 @@
       "dist": 3
     },
     {
-      "origin": "顏慶章",
-      "destination": "金賽綸",
+      "origin": "颜庆章",
+      "destination": "金赛纶",
       "viewRange": [
         50000,
         500000
@@ -734,7 +714,7 @@
     },
     {
       "origin": "4月16日",
-      "destination": "鍾漢良",
+      "destination": "钟汉良",
       "viewRange": [
         50000,
         500000
@@ -973,7 +953,7 @@
       "dist": 3
     },
     {
-      "origin": "張敬軒",
+      "origin": "张敬轩",
       "destination": "大谷翔平",
       "viewRange": [
         50000,
@@ -1043,7 +1023,7 @@
       "dist": 2
     },
     {
-      "origin": "臺南縣",
+      "origin": "台南县",
       "destination": "TWICE",
       "viewRange": [
         5000,
@@ -1113,7 +1093,7 @@
       "dist": 1
     },
     {
-      "origin": "蔣萬安",
+      "origin": "蒋万安",
       "destination": "崔叡娜",
       "viewRange": [
         5000,
@@ -1453,7 +1433,7 @@
       "dist": 3
     },
     {
-      "origin": "臺南縣",
+      "origin": "台南县",
       "destination": "ONE_PIECE",
       "viewRange": [
         5000,
@@ -1694,7 +1674,7 @@
     },
     {
       "origin": "中国音乐家协会",
-      "destination": "秘密特工",
+      "destination": "隐蔽行动",
       "viewRange": [
         1000,
         5000
@@ -1733,8 +1713,8 @@
       "dist": 3
     },
     {
-      "origin": "聲入人心",
-      "destination": "阿拉伯馬",
+      "origin": "声入人心",
+      "destination": "阿拉伯马",
       "viewRange": [
         1000,
         5000
@@ -1783,7 +1763,7 @@
       "dist": 4
     },
     {
-      "origin": "聖訓",
+      "origin": "圣训",
       "destination": "申瑟琪",
       "viewRange": [
         1000,
@@ -1803,8 +1783,8 @@
       "dist": 5
     },
     {
-      "origin": "拉延·謝爾基",
-      "destination": "中鐵綫",
+      "origin": "拉延·谢尔基",
+      "destination": "中铁线",
       "viewRange": [
         1000,
         5000
@@ -1923,7 +1903,7 @@
       "dist": 4
     },
     {
-      "origin": "佐敦薈",
+      "origin": "佐敦荟",
       "destination": "邓惠文",
       "viewRange": [
         1000,
@@ -1933,7 +1913,7 @@
       "dist": 4
     },
     {
-      "origin": "滿東邨",
+      "origin": "满东邨",
       "destination": "孙玉菡",
       "viewRange": [
         1000,
@@ -1994,7 +1974,7 @@
     },
     {
       "origin": "魔岩唱片",
-      "destination": "陸子玄",
+      "destination": "陆子玄",
       "viewRange": [
         1000,
         5000
@@ -2039,7 +2019,7 @@
     {
       "targets": [
         "中国国民党",
-        "媽祖",
+        "妈祖",
         "迈克尔·杰克逊"
       ],
       "viewRange": [
@@ -2050,22 +2030,6 @@
       "distances": [
         2,
         3
-      ]
-    },
-    {
-      "targets": [
-        "李貞秀",
-        "逐玉",
-        "张凌赫"
-      ],
-      "viewRange": [
-        500000,
-        100000000
-      ],
-      "difficulty": "easy",
-      "distances": [
-        4,
-        4
       ]
     },
     {
@@ -2199,7 +2163,7 @@
     {
       "targets": [
         "罗志祥",
-        "科切拉音乐节",
+        "科切拉谷音乐艺术节",
         "关景鸿"
       ],
       "viewRange": [
@@ -2296,7 +2260,7 @@
       "targets": [
         "中华人民共和国",
         "引号",
-        "九記牛腩"
+        "九记牛腩"
       ],
       "viewRange": [
         500000,
@@ -2342,8 +2306,8 @@
     },
     {
       "targets": [
-        "江和樹",
-        "陳嵐",
+        "江和树",
+        "陈岚",
         "Official髭男dism"
       ],
       "viewRange": [
@@ -2360,7 +2324,7 @@
       "targets": [
         "林彪",
         "薄熙来",
-        "史瓦帝尼"
+        "斯威士兰"
       ],
       "viewRange": [
         500000,
@@ -2407,8 +2371,8 @@
     {
       "targets": [
         "弗拉基米尔·列宁",
-        "周杰倫",
-        "鍾漢良"
+        "周杰伦",
+        "钟汉良"
       ],
       "viewRange": [
         50000,
@@ -2423,7 +2387,7 @@
     {
       "targets": [
         "中华人民共和国",
-        "佘詩曼",
+        "佘诗曼",
         "魏哲家"
       ],
       "viewRange": [
@@ -2662,9 +2626,9 @@
     },
     {
       "targets": [
-        "唐納·川普",
-        "金賽綸",
-        "柯震東"
+        "唐纳德·特朗普",
+        "金赛纶",
+        "柯震东"
       ],
       "viewRange": [
         50000,
@@ -2887,8 +2851,8 @@
     {
       "targets": [
         "清朝",
-        "九記牛腩",
-        "蕭薔"
+        "九记牛腩",
+        "萧蔷"
       ],
       "viewRange": [
         5000,
@@ -3048,7 +3012,7 @@
       "targets": [
         "日本",
         "香港",
-        "艾爾·霍福德"
+        "艾尔·霍弗德"
       ],
       "viewRange": [
         5000,
@@ -3062,7 +3026,7 @@
     },
     {
       "targets": [
-        "梁朝偉",
+        "梁朝伟",
         "俞可程",
         "IVE"
       ],
@@ -3144,7 +3108,7 @@
       "targets": [
         "荒川弘",
         "高智能方程式",
-        "許紹雄"
+        "许绍雄"
       ],
       "viewRange": [
         5000,
@@ -3240,7 +3204,7 @@
       "targets": [
         "导盲犬小Q",
         "鲁迪乌斯·格雷拉特",
-        "波特蘭水泥"
+        "波特兰水泥"
       ],
       "viewRange": [
         1000,
@@ -3255,7 +3219,7 @@
     {
       "targets": [
         "迦太基",
-        "萬豪酒店",
+        "万豪酒店",
         "文化大革命"
       ],
       "viewRange": [
@@ -3319,7 +3283,7 @@
     {
       "targets": [
         "中国共产主义青年团中央委员会",
-        "唐宮美人天下",
+        "唐宫美人天下",
         "欧乌鸫"
       ],
       "viewRange": [
@@ -3384,7 +3348,7 @@
       "targets": [
         "Γ函数",
         "疾风战士",
-        "POP_TEAM_EPIC"
+        "pop子和pipi美的日常"
       ],
       "viewRange": [
         1000,
@@ -3464,7 +3428,7 @@
       "targets": [
         "2月4日",
         "毕尔巴鄂古根海姆美术馆",
-        "威廉·H·苏厄德"
+        "威廉·亨利·苏厄德"
       ],
       "viewRange": [
         1000,
@@ -3479,7 +3443,7 @@
     {
       "targets": [
         "弧分和弧秒",
-        "戀屍",
+        "恋尸",
         "铁矿"
       ],
       "viewRange": [
