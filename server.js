@@ -1069,6 +1069,18 @@ async function startGameForRoom(room, roomCode) {
       room.pair.destination = await resolveRedirect(room.pair.destination, lang);
     }
     room.pair.destinationOriginal = origDest;
+    // Variant aliases: on zh, the canonical wiki title can be Traditional
+    // (太平天國) while our pool stores Simplified (太平天国). A player navigating
+    // via a zh-TW/zh-HK link lands on the Traditional form, so plain string
+    // equality misses the win. Build an alias set covering both forms.
+    const destAliases = new Set([room.pair.destination, origDest]);
+    if (WIKI_VARIANTS[lang]) {
+      try {
+        const variantForm = await toVariantTitle(room.pair.destination, lang);
+        if (variantForm) destAliases.add(variantForm);
+      } catch (e) { /* best-effort — fall back to existing aliases */ }
+    }
+    room.pair.destinationAliases = [...destAliases];
     for (const [, p] of room.players) {
       Object.assign(p, { path: [room.pair.origin], finished: false, finishTime: null, visited: [], distances: [] });
     }
@@ -1194,10 +1206,12 @@ function getDistanceMap(room) {
 function checkWin(room, rp, article) {
   if (room.mode === 'classic') {
     const current = normalizeArticle(article);
-    // Check against both resolved and original destination
-    const destResolved = normalizeArticle(room.pair.destination);
-    const destOriginal = room.pair.destinationOriginal ? normalizeArticle(room.pair.destinationOriginal) : null;
-    if (current === destResolved || (destOriginal && current === destOriginal)) return true;
+    // Check against every known alias of the destination. destinationAliases
+    // covers canonical + pool form + (on zh) the variant-converted form so
+    // Traditional↔Simplified mismatches don't hide wins.
+    const aliases = room.pair.destinationAliases
+      || [room.pair.destination, room.pair.destinationOriginal].filter(Boolean);
+    if (aliases.some(a => normalizeArticle(a) === current)) return true;
     // Also check if the navigated article redirects to the destination
     // (async check stored for next comparison)
     return false;
@@ -1389,11 +1403,27 @@ async function handleAction(playerId, msg) {
       const roomLang = room.lang || DEFAULT_LANG;
       // Check win — first quick check, then resolve redirect if needed
       let won = checkWin(room, rp, article);
-      if (!won && room.mode === 'classic') {
+      // Detect whether the quick check already registered a checkpoint (tri
+      // mode mutates rp.visited in checkWin); if nothing happened, fall
+      // through to redirect + variant fallbacks below.
+      const progressedBefore = won || rp.visited.length > visitedBefore;
+      if (!progressedBefore) {
         // Try resolving the article in case it's a redirect to the destination
         const resolved = await resolveRedirect(article, roomLang);
         if (normalizeArticle(resolved) !== normalizeArticle(article)) {
           won = checkWin(room, rp, resolved);
+        }
+        // For zh: player may arrive on the Traditional form of a page whose
+        // Simplified form is the destination/target (pool stores Simplified).
+        // Convert the incoming title through the wiki's variant and retry.
+        const progressedAfterResolve = won || rp.visited.length > visitedBefore;
+        if (!progressedAfterResolve && WIKI_VARIANTS[roomLang]) {
+          try {
+            const variantForm = await toVariantTitle(article, roomLang);
+            if (variantForm && normalizeArticle(variantForm) !== normalizeArticle(article)) {
+              won = checkWin(room, rp, variantForm);
+            }
+          } catch (e) { /* best-effort — fall through */ }
         }
       }
       if (won) {
