@@ -2116,6 +2116,21 @@ async function send(msg) {
   }
 }
 
+// Wrapper for external (Wikipedia) fetches that need a hard timeout — without
+// this, a slow/hung WMF endpoint can leave hover tooltips "Loading..." forever
+// and pile up in-flight requests across hovers. Aborts via AbortController;
+// callers' existing try/catch receives an AbortError they can handle the same
+// way as any network failure.
+async function fetchWithTimeout(url, opts = {}, timeoutMs = 5000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...opts, signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // ─── Single Player ───
 function setSinglePlayerMode(mode) {
   currentGameMode = mode;
@@ -2477,7 +2492,7 @@ async function _fetchAutocompleteNow(query, listId, inputId) {
     const lang = activeWikiLang();
     const variant = wikiVariant(lang);
     const variantQS = variant ? `&variant=${variant}` : '';
-    const resp = await fetch(`https://${wikiHost(lang)}/w/api.php?action=opensearch&search=${encodeURIComponent(query)}&limit=5&namespace=0&origin=*${variantQS}`);
+    const resp = await fetchWithTimeout(`https://${wikiHost(lang)}/w/api.php?action=opensearch&search=${encodeURIComponent(query)}&limit=5&namespace=0&origin=*${variantQS}`);
     const [, titles] = await resp.json();
     const list = document.getElementById(listId);
     // Build items with DOM APIs so titles containing quotes can't break out
@@ -3002,7 +3017,19 @@ function startTimer() {
 }
 
 // ─── Summary Tooltip ───
+// Bounded LRU — without a cap, summaryCache grew forever over long sessions
+// (~200 bytes × thousands of article views = real memory on mobile). Map's
+// insertion-order iteration lets us evict the oldest entry when we overflow.
+const SUMMARY_CACHE_MAX = 200;
 const summaryCache = new Map();
+function summaryCachePut(key, val) {
+  if (summaryCache.has(key)) summaryCache.delete(key); // move to newest
+  summaryCache.set(key, val);
+  if (summaryCache.size > SUMMARY_CACHE_MAX) {
+    const oldest = summaryCache.keys().next().value;
+    summaryCache.delete(oldest);
+  }
+}
 let activeTooltip = null;
 
 let activeTooltipOwner = null;
@@ -3045,12 +3072,12 @@ async function toggleSummary(el, title) {
       const variant = wikiVariant(lang);
       if (variant) {
         const url = `https://${wikiHost(lang)}/w/api.php?action=query&prop=extracts&exintro=1&explaintext=1&redirects=1&format=json&origin=*&variant=${variant}&titles=${encodeURIComponent(articleTitle)}`;
-        const res = await fetch(url);
+        const res = await fetchWithTimeout(url);
         const data = await res.json();
         const page = Object.values(data.query?.pages || {})[0];
         full = page?.extract || '';
       } else {
-        const res = await fetch(`https://${wikiHost(lang)}/api/rest_v1/page/summary/${encodeURIComponent(articleTitle)}`);
+        const res = await fetchWithTimeout(`https://${wikiHost(lang)}/api/rest_v1/page/summary/${encodeURIComponent(articleTitle)}`);
         const data = await res.json();
         full = data.extract || '';
       }
@@ -3067,7 +3094,7 @@ async function toggleSummary(el, title) {
       } else {
         summary = full;
       }
-      summaryCache.set(cacheK, summary);
+      summaryCachePut(cacheK, summary);
     }
     if (activeTooltip === tooltip) tooltip.textContent = summary || 'No summary available.';
   } catch (e) {
@@ -3103,14 +3130,15 @@ async function loadArticle(title) {
     let html;
     if (variant) {
       const parseUrl = `https://${wikiHost(lang)}/w/api.php?action=parse&prop=text&redirects=1&format=json&origin=*&variant=${variant}&page=${encodeURIComponent(title)}`;
-      const resp = await fetch(parseUrl);
+      // Article HTML can be sizeable on slow networks — bump timeout to 12 s.
+      const resp = await fetchWithTimeout(parseUrl, {}, 12000);
       if (!resp.ok) throw new Error('Article not found');
       const data = await resp.json();
       html = data.parse?.text?.['*'];
       if (!html) throw new Error('Article not found');
     } else {
       const apiUrl = `https://${wikiHost(lang)}/api/rest_v1/page/html/${encodeURIComponent(title)}`;
-      const resp = await fetch(apiUrl);
+      const resp = await fetchWithTimeout(apiUrl, {}, 12000);
       if (!resp.ok) throw new Error('Article not found');
       html = await resp.text();
     }

@@ -47,6 +47,19 @@ function isValidArticle(s) {
   return true;
 }
 
+// Validate and normalize a client-supplied viewRange. Without this, a crafted
+// client could pass [NaN, Infinity] (always matches) or [100, 10] (never
+// matches → silent full-pool fallback). Returns null if invalid so callers
+// fall back to the intended default.
+const VIEW_RANGE_MAX = 1e9;
+function parseViewRange(raw) {
+  if (!Array.isArray(raw) || raw.length !== 2) return null;
+  const a = Number(raw[0]), b = Number(raw[1]);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+  if (a < 0 || b < 0 || a > b || b > VIEW_RANGE_MAX) return null;
+  return [a, b];
+}
+
 function generateRoomCode() {
   return crypto.randomBytes(3).toString('hex').toUpperCase().slice(0, 5);
 }
@@ -1295,11 +1308,7 @@ async function handleAction(playerId, msg) {
       if (!room || room.host !== playerId) return { ok: false, error: 'Only host can change difficulty' };
       if (room.started) return { ok: false };
       // msg.viewRange = [minViews, maxViews] (monthly, last 30 days)
-      if (Array.isArray(msg.viewRange) && msg.viewRange.length === 2) {
-        room.viewRange = [Number(msg.viewRange[0]), Number(msg.viewRange[1])];
-      } else {
-        room.viewRange = null;
-      }
+      room.viewRange = parseViewRange(msg.viewRange);
       broadcastToRoom(player.roomCode, { type: 'difficulty_changed', viewRange: room.viewRange });
       return { ok: true };
     }
@@ -1330,9 +1339,27 @@ async function handleAction(playerId, msg) {
       const player = players.get(playerId);
       if (!player) return { ok: false };
       const room = rooms.get(player.roomCode);
-      if (!room || !room.started) return { ok: false };
+      if (!room || !room.started) {
+        // Log rejection so we can measure how often the UI thinks a nav
+        // worked but the server discarded it (reconnect ghosts, late joiners).
+        logEvent('navigate_rejected', {
+          playerId,
+          roomCode: player.roomCode,
+          article: msg.article,
+          reason: !room ? 'no_room' : 'not_started',
+        });
+        return { ok: false };
+      }
       const rp = room.players.get(playerId);
-      if (!rp || rp.finished) return { ok: false };
+      if (!rp || rp.finished) {
+        logEvent('navigate_rejected', {
+          playerId,
+          roomCode: player.roomCode,
+          article: msg.article,
+          reason: !rp ? 'not_participant' : 'finished',
+        });
+        return { ok: false };
+      }
 
       const article = msg.article;
       if (!isValidArticle(article)) return { ok: false, error: 'Invalid article' };
@@ -1486,9 +1513,7 @@ async function handleAction(playerId, msg) {
       const room = player ? rooms.get(player.roomCode) : null;
       // Use viewRange from message (SP setup) or from room (MP lobby)
       let viewRange = room?.viewRange || null;
-      if (!viewRange && Array.isArray(msg.viewRange) && msg.viewRange.length === 2) {
-        viewRange = [Number(msg.viewRange[0]), Number(msg.viewRange[1])];
-      }
+      if (!viewRange) viewRange = parseViewRange(msg.viewRange);
       // Prefer the room's language; fall back to the lang on this one-off
       // request (SP setup sends it via msg.lang before a room exists).
       const lang = normalizeLang(room?.lang || msg.lang);
@@ -1549,9 +1574,8 @@ async function handleAction(playerId, msg) {
       room.singlePlayer = true;
       // Apply mode and difficulty from client
       room.mode = msg.mode === 'tri' ? 'tri' : 'classic';
-      if (Array.isArray(msg.viewRange) && msg.viewRange.length === 2) {
-        room.viewRange = [Number(msg.viewRange[0]), Number(msg.viewRange[1])];
-      }
+      const parsedRange = parseViewRange(msg.viewRange);
+      if (parsedRange) room.viewRange = parsedRange;
       // Apply manual articles if provided (validated)
       if (msg.mode === 'classic' || !msg.mode) {
         const o = msg.origin, d = msg.destination;
@@ -1605,45 +1629,17 @@ async function handleAction(playerId, msg) {
 
       // Add vote
       room.giveUpVotes.add(playerId);
-      const voteCount = room.giveUpVotes.size;
-      const totalPlayers = room.players.size;
 
       // Broadcast vote status to all players
       broadcastToRoom(player.roomCode, {
         type: 'give_up_update',
-        voted: voteCount,
-        total: totalPlayers,
+        voted: room.giveUpVotes.size,
+        total: room.players.size,
       });
 
       // Check if all players voted to give up
-      if (voteCount >= totalPlayers) {
-        const results = [...room.players.entries()].map(([id, p]) => ({
-          id, name: p.name, path: p.path,
-          finished: p.finished, time: p.finishTime,
-          isWinner: false,
-          visited: p.visited,
-          distances: p.distances || [],
-        }));
-        broadcastToRoom(player.roomCode, {
-          type: 'game_over',
-          gaveUp: true,
-          results,
-          mode: room.mode,
-          targets: room.mode === 'tri' ? room.triple.targets : null,
-        });
-        logEvent('game_over', {
-          roomCode: player.roomCode,
-          mode: room.mode,
-          lang: room.lang || DEFAULT_LANG,
-          gaveUp: true,
-          winnerId: null,
-          durationMs: room.startTime ? Date.now() - room.startTime : null,
-          results: results.map(r => ({
-            playerId: r.id, name: r.name,
-            steps: r.path.length - 1,
-          })),
-        });
-        room.started = false;
+      if (room.giveUpVotes.size >= room.players.size) {
+        finalizeGiveUp(room, player.roomCode);
       }
       return { ok: true };
     }
@@ -1679,6 +1675,39 @@ async function handleAction(playerId, msg) {
   }
 }
 
+// End a started game as "gave up". Shared between the explicit give_up_vote
+// path and the disconnect path (where a leaving player can tip remaining
+// voters over the threshold).
+function finalizeGiveUp(room, roomCode) {
+  const results = [...room.players.entries()].map(([id, p]) => ({
+    id, name: p.name, path: p.path,
+    finished: p.finished, time: p.finishTime,
+    isWinner: false,
+    visited: p.visited,
+    distances: p.distances || [],
+  }));
+  broadcastToRoom(roomCode, {
+    type: 'game_over',
+    gaveUp: true,
+    results,
+    mode: room.mode,
+    targets: room.mode === 'tri' ? room.triple.targets : null,
+  });
+  logEvent('game_over', {
+    roomCode,
+    mode: room.mode,
+    lang: room.lang || DEFAULT_LANG,
+    gaveUp: true,
+    winnerId: null,
+    durationMs: room.startTime ? Date.now() - room.startTime : null,
+    results: results.map(r => ({
+      playerId: r.id, name: r.name,
+      steps: r.path.length - 1,
+    })),
+  });
+  room.started = false;
+}
+
 function handleDisconnect(playerId) {
   const player = players.get(playerId);
   if (!player) return;
@@ -1691,6 +1720,10 @@ function handleDisconnect(playerId) {
   const room = rooms.get(roomCode);
   if (!room) return;
   room.players.delete(playerId);
+  // Remove their give-up vote too — otherwise a stale vote against a now-
+  // shrunken player count could falsely meet the threshold (e.g. A votes,
+  // A disconnects, B votes → 2/2 ends game even though C never voted).
+  room.giveUpVotes?.delete(playerId);
 
   if (room.players.size === 0) {
     rooms.delete(roomCode);
@@ -1705,6 +1738,19 @@ function handleDisconnect(playerId) {
       players: [...room.players.entries()].map(([id, p]) => ({ id, name: p.name, color: p.color })),
       host: room.host,
     });
+    // If a game is in progress, re-broadcast the (now-smaller) vote ratio.
+    // If all remaining players had already voted, the leaver was the
+    // holdout — finalize the give-up now instead of waiting.
+    if (room.started && room.giveUpVotes) {
+      broadcastToRoom(roomCode, {
+        type: 'give_up_update',
+        voted: room.giveUpVotes.size,
+        total: room.players.size,
+      });
+      if (room.giveUpVotes.size >= room.players.size && room.players.size > 0) {
+        finalizeGiveUp(room, roomCode);
+      }
+    }
   }
 }
 
