@@ -1081,6 +1081,41 @@ async function startGameForRoom(room, roomCode) {
       } catch (e) { /* best-effort — fall back to existing aliases */ }
     }
     room.pair.destinationAliases = [...destAliases];
+    // Guardrail: reject manually-set destinations with too few backlinks.
+    // Pool destinations are curated so we skip; live-generated fallbacks
+    // would already be popular enough. The threshold of 15 is empirical:
+    // 拉布布 (7 backlinks) produced a 15-min unwinnable game; 太平天国
+    // (1585 backlinks) was fine. Below 15 the game has too few entry
+    // paths for realistic play.
+    const manualDest = !!(room.manualArticles && room.manualArticles.destination);
+    if (manualDest) {
+      const MIN_BACKLINKS = 15;
+      try {
+        const backlinks = await getBacklinks(room.pair.destination, MIN_BACKLINKS, lang);
+        if (backlinks.size < MIN_BACKLINKS) {
+          const dest = room.pair.destination;
+          logEvent('start_rejected_sparse', {
+            roomCode, lang, destination: dest, backlinks: backlinks.size, threshold: MIN_BACKLINKS,
+          });
+          // Reset room so the host can try again
+          room.started = false;
+          room.manualArticles = null;
+          room.pair = null;
+          sendSSE(room.host, {
+            type: 'start_rejected',
+            reason: 'destination_too_isolated',
+            destination: dest,
+            backlinks: backlinks.size,
+            message: `"${dest.replace(/_/g, ' ')}" is too isolated — only ${backlinks.size} articles link to it. Pick a more popular destination.`,
+          });
+          return;
+        }
+      } catch (e) {
+        // Wikipedia API hiccup — fail open (let the game proceed) rather
+        // than blocking the host on a transient network error.
+        console.error('Backlink guardrail check failed, allowing game:', e.message);
+      }
+    }
     for (const [, p] of room.players) {
       Object.assign(p, { path: [room.pair.origin], finished: false, finishTime: null, visited: [], distances: [] });
     }
