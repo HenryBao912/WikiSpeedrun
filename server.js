@@ -640,12 +640,16 @@ async function toVariantTitle(title, lang = DEFAULT_LANG) {
 
 // Resolve Wikipedia redirects to canonical title
 async function resolveRedirect(title, lang = DEFAULT_LANG) {
+  const key = cacheKey(lang, title);
+  const cached = cacheGet(redirectCache, key);
+  if (cached !== undefined) return cached;
   try {
     const data = await wikiAPI({ action: 'query', titles: title.replace(/ /g, '_'), redirects: '1' }, lang);
     const pages = data.query?.pages || {};
     const page = Object.values(pages)[0];
-    if (page && !page.missing) return page.title.replace(/ /g, '_');
-    return title;
+    const resolved = (page && !page.missing) ? page.title.replace(/ /g, '_') : title;
+    cacheSet(redirectCache, key, resolved);
+    return resolved;
   } catch (e) {
     return title;
   }
@@ -660,6 +664,11 @@ const CACHE_MAX = 5000;
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 h
 const linkCache = new Map(); // title -> { value: Set, expires: number }
 const backlinkCache = new Map(); // title -> { value: Set, expires: number }
+// Marathon's per-click hit detection calls resolveRedirect on every nav, even
+// for articles that aren't the target. Without a cache that's a Wikipedia
+// roundtrip on every link click — visibly laggy on localhost. Cache the
+// resolved canonical title so revisits and common misses are instant.
+const redirectCache = new Map(); // lang|title -> { value: string, expires: number }
 
 function cacheGet(cache, key) {
   const entry = cache.get(key);
@@ -1002,14 +1011,343 @@ function broadcastToRoom(roomCode, msg) {
   }
 }
 
+// ─── Marathon scoring ───
+// Pure scoring functions used by marathon mode. Kept separate from mutable
+// room state so they can be unit-tested and reasoned about in isolation.
+//
+// The tier constants below encode the difficulty scale players see:
+//   2-hop = easiest (min enforced — 1-hop targets are filtered at generation
+//           time so everyone can't just race to the same obvious link)
+//   3-hop = medium
+//   4+hop = hardest tier (capped — 5+ hop targets take too long to clear
+//           inside the time budget)
+const MARATHON_TIER_POINTS = { 2: 25, 3: 45, 4: 80 };
+const MARATHON_CLICK_COST = 1;
+const MARATHON_SKIP_COST = 5;
+// Completion bonuses reward breadth of play — attempt lots of targets, not
+// just cherry-pick the hardest. Tiers chosen so a speedrunner playing mostly
+// 2-hop targets stays within ~10% of a mixed-strategy player.
+const MARATHON_COMPLETION_BONUSES = [
+  { threshold: 15, bonus: 100 },
+  { threshold: 10, bonus: 60 },
+  { threshold: 5,  bonus: 30 },
+];
+// Round durations (ms) the client may request.
+const MARATHON_DURATIONS_MS = { '3m': 180000, '5m': 300000, '8m': 480000, '12m': 720000 };
+
+function marathonBasePoints(hops) {
+  // Clamp hops into the tier table: anything 4+ maps to the 4-tier reward.
+  const tier = hops <= 2 ? 2 : hops === 3 ? 3 : 4;
+  return MARATHON_TIER_POINTS[tier];
+}
+
+function marathonCompletionBonus(completedCount) {
+  for (const { threshold, bonus } of MARATHON_COMPLETION_BONUSES) {
+    if (completedCount >= threshold) return bonus;
+  }
+  return 0;
+}
+
+// Compute a player's final marathon score. `events` is an ordered log of
+// per-target outcomes: { kind: 'hit'|'skip', hops?, clicks?, skipCost? }.
+// Returning a breakdown (not just a number) so the end-of-round UI can show
+// "raw points − clicks − skips + bonus" without re-deriving the pieces.
+function computeMarathonScore(events) {
+  let raw = 0, clicks = 0, skips = 0, completed = 0;
+  for (const ev of events) {
+    if (ev.kind === 'hit') {
+      raw += marathonBasePoints(ev.hops);
+      clicks += ev.clicks || 0;
+      completed += 1;
+    } else if (ev.kind === 'skip') {
+      skips += MARATHON_SKIP_COST;
+    }
+  }
+  const bonus = marathonCompletionBonus(completed);
+  const total = raw - clicks * MARATHON_CLICK_COST - skips + bonus;
+  return { raw, clicks, skips, completed, bonus, total };
+}
+
+// ─── Marathon target generator ───
+// A marathon round presents one target at a time. Each target must be at
+// least 2 hops from the player's *current* article (enforced at pick time,
+// not generation time — the current article changes as the player navigates).
+//
+// Room-level marathon state (attached to room.marathon):
+//   startArticle  shared start for all players
+//   duration      ms until round ends
+//   endsAt        Date.now() + duration, for client countdown
+//   candidates    Map<normalizedTitle, { title, data }> pre-warmed pool
+//   timerId       setTimeout handle for the end-of-round broadcast
+//
+// Per-player marathon state (on rp.marathonState):
+//   currentTarget  { title, hops, score, shownAtStep } | null — what they're
+//                  currently hunting. Null means "waiting for next target".
+//   events         ordered list of hit/skip events for end-of-round scoring
+//   usedTitles     Set<normalized> titles this player has already been shown
+//                  (so no repeats even in a 12-minute round)
+
+async function startMarathonForRoom(room, roomCode) {
+  const lang = room.lang || DEFAULT_LANG;
+  const durKey = room.marathonDurationKey || '5m';
+  const duration = MARATHON_DURATIONS_MS[durKey] || MARATHON_DURATIONS_MS['5m'];
+
+  const pool = puzzlePools[lang] || { pairs: [], hubs: new Set() };
+  const hubsArr = [...(pool.hubs || new Set())];
+  // Start from a hub — guarantees reasonable outbound connectivity so no
+  // player is stuck in a dead-end at t=0.
+  const startArticle = hubsArr.length
+    ? hubsArr[Math.floor(Math.random() * hubsArr.length)]
+    : (lang === 'zh' ? '维基百科' : 'Wikipedia');
+  const startNorm = normalizeArticle(startArticle);
+
+  // Candidate pool: unique destinations from pair pool, excluding the start.
+  // Pool destinations are already curated (reasonable backlink counts),
+  // which is why we draw from the pool rather than live generation here.
+  const seen = new Set([startNorm]);
+  const candidateTitles = [];
+  for (const pair of pool.pairs) {
+    const n = normalizeArticle(pair.destination);
+    if (!seen.has(n)) { seen.add(n); candidateTitles.push(pair.destination); }
+  }
+  // 20 candidates is plenty even for 12-minute rounds at ~25s/target.
+  candidateTitles.sort(() => Math.random() - 0.5);
+  const candidates = candidateTitles.slice(0, 20);
+
+  const marathon = {
+    startArticle,
+    duration,
+    durationKey: durKey,
+    endsAt: Date.now() + duration,
+    candidates: new Map(),
+    timerId: null,
+  };
+  for (const c of candidates) {
+    marathon.candidates.set(normalizeArticle(c), { title: c, data: null });
+  }
+  room.marathon = marathon;
+
+  for (const [, p] of room.players) {
+    Object.assign(p, {
+      path: [startArticle],
+      finished: false,
+      visited: [],
+      distances: [],
+      marathonState: {
+        currentTarget: null,
+        events: [],
+        usedTitles: new Set(),
+      },
+    });
+  }
+
+  // Wait just long enough for ONE candidate to land before game_start so the
+  // first target is usually ready on arrival. Promise.all on 5 was blocking
+  // game_start whenever Wikipedia rate-limited (429s + retries pushed the
+  // wait to 15-30s — perceived as "Start does nothing"). The remaining
+  // candidates keep warming in the background; client falls back to polling.
+  const warmFirst = candidates.slice(0, 5);
+  const warmRest = candidates.slice(5);
+  const warmOne = (title) => cacheDestination(title, lang).then(data => {
+    const entry = marathon.candidates.get(normalizeArticle(title));
+    if (entry) entry.data = data;
+  }).catch(e => {
+    console.error('Marathon initial warm fail for', title, e.message);
+    throw e;
+  });
+  // Race the first 5 — first one to succeed unblocks game_start. Cap the
+  // total wait at 4 s so a wave of 429s can't stall the round indefinitely.
+  await Promise.race([
+    Promise.any(warmFirst.map(warmOne)).catch(() => undefined),
+    new Promise(resolve => setTimeout(resolve, 4000)),
+  ]);
+
+  broadcastToRoom(roomCode, {
+    type: 'game_start',
+    mode: 'marathon',
+    origin: startArticle,
+    duration,
+    endsAt: marathon.endsAt,
+    lang,
+  });
+  logEvent('game_started', {
+    roomCode, mode: 'marathon', lang,
+    singlePlayer: !!room.singlePlayer,
+    playerCount: room.players.size,
+    durationKey: durKey,
+    origin: startArticle,
+  });
+
+  // Kick the end-of-round timer only AFTER the player is actually playing,
+  // so slow warming doesn't eat into the round time.
+  marathon.endsAt = Date.now() + duration;
+  marathon.timerId = setTimeout(() => {
+    endMarathonForRoom(room, roomCode).catch(e =>
+      console.error('Marathon end error:', e.message));
+  }, duration);
+
+  // Seed every player's initial state with a player_progress broadcast so
+  // peers can render the pill bar from the moment the game opens, before
+  // anyone has navigated. Steps=1 because path[0] is the start article.
+  for (const [pid, p] of room.players) {
+    broadcastToRoom(roomCode, {
+      type: 'player_progress',
+      playerId: pid,
+      name: p.name,
+      color: p.color,
+      steps: 1,
+      currentArticle: startArticle,
+      visited: 0,
+      mode: 'marathon',
+      target: null,  // no target assigned yet — players request via mk_request_next
+    });
+  }
+
+  // Warm remaining candidates in the background.
+  warmMarathonCandidates(room, warmRest, lang);
+}
+
+async function warmMarathonCandidates(room, candidates, lang) {
+  const BATCH = 3;
+  for (let i = 0; i < candidates.length; i += BATCH) {
+    // Abort if the room closed or switched modes mid-warm.
+    if (!room.marathon || !room.started || room.mode !== 'marathon') return;
+    const batch = candidates.slice(i, i + BATCH);
+    await Promise.all(batch.map(async (title) => {
+      try {
+        const data = await cacheDestination(title, lang);
+        const entry = room.marathon?.candidates.get(normalizeArticle(title));
+        if (entry) entry.data = data;
+      } catch (e) {
+        console.error('Marathon cache fail for', title, e.message);
+      }
+    }));
+  }
+}
+
+// Pick the next target for a player. Walks the room's candidate list in
+// (shuffled) insertion order and returns the first one that's ≥2 hops from
+// the player's current article AND has its distance cache warmed already.
+// Returns null when no candidate is ready — caller should retry shortly.
+async function pickMarathonTarget(room, rp, currentArticle) {
+  const lang = room.lang || DEFAULT_LANG;
+  if (!room.marathon) return null;
+  const usedTitles = rp.marathonState.usedTitles;
+  const currentNorm = normalizeArticle(currentArticle);
+
+  for (const [key, entry] of room.marathon.candidates) {
+    if (usedTitles.has(key)) continue;
+    if (!entry.data) continue;
+    if (key === currentNorm) continue;
+
+    const hops = await computeDistance(currentArticle, entry.title, entry.data, lang);
+    if (hops < 2) continue; // 1-hop filtered per design: forces strategy
+
+    return {
+      title: entry.title,
+      hops: Math.min(hops, 4), // scoring tier clamps at 4+
+      rawHops: hops,
+      score: marathonBasePoints(hops),
+    };
+  }
+  return null;
+}
+
+// Called from the navigate handler in marathon mode. Checks whether the
+// navigated article matches the player's current target (with redirect +
+// variant fallbacks, matching classic/tri logic). On a hit: records the
+// event, clears currentTarget, pushes an SSE so the client can celebrate +
+// request the next target. No return value — best-effort.
+async function handleMarathonNavigate(room, rp, playerId, article, lang) {
+  const mState = rp.marathonState;
+  if (!mState || !mState.currentTarget) return;
+  const target = mState.currentTarget;
+  const targetNorm = normalizeArticle(target.title);
+  const currentNorm = normalizeArticle(article);
+
+  let matched = currentNorm === targetNorm;
+  if (!matched) {
+    try {
+      const resolved = await resolveRedirect(article, lang);
+      if (normalizeArticle(resolved) === targetNorm) matched = true;
+    } catch {}
+  }
+  if (!matched && WIKI_VARIANTS[lang]) {
+    try {
+      const variantForm = await toVariantTitle(article, lang);
+      if (variantForm && normalizeArticle(variantForm) === targetNorm) matched = true;
+    } catch {}
+  }
+  if (!matched) return;
+
+  // Clicks used on this target = steps since the target was shown. path
+  // already includes the article that just matched, so subtract one.
+  const clicks = Math.max(1, rp.path.length - 1 - target.shownAtStep);
+  mState.events.push({
+    kind: 'hit',
+    title: target.title,
+    hops: target.hops,
+    clicks,
+    score: target.score,
+  });
+  mState.currentTarget = null;
+
+  const live = computeMarathonScore(mState.events);
+  sendSSE(playerId, {
+    type: 'marathon_target_hit',
+    title: target.title,
+    score: target.score,
+    clicks,
+    hops: target.hops,
+    liveScore: live,
+  });
+}
+
+async function endMarathonForRoom(room, roomCode) {
+  if (!room.marathon) return;
+  room.marathon.timerId = null;
+  room.started = false;
+
+  const results = [];
+  for (const [id, p] of room.players) {
+    const score = computeMarathonScore(p.marathonState?.events || []);
+    results.push({
+      id, name: p.name, color: p.color,
+      ...score,
+      events: p.marathonState?.events || [],
+      path: p.path || [],
+    });
+  }
+  // Rank: highest total wins; tiebreak by fewest clicks (efficiency).
+  results.sort((a, b) => (b.total - a.total) || (a.clicks - b.clicks));
+  // Flag the winner so the client's banner logic (You Won / You Suck)
+  // can match existing classic/tri behavior without re-deriving rank.
+  if (results.length) results[0].isWinner = true;
+
+  broadcastToRoom(roomCode, {
+    type: 'game_over',
+    mode: 'marathon',
+    results,
+    durationKey: room.marathon.durationKey,
+  });
+  logEvent('game_over', {
+    roomCode, mode: 'marathon',
+    durationKey: room.marathon.durationKey,
+    gaveUp: false,
+    topScore: results[0]?.total || 0,
+    playerCount: results.length,
+  });
+}
+
 // ─── Game Logic ───
 function initRoom(code, hostId, hostName, lang = DEFAULT_LANG) {
   return {
     host: hostId,
     players: new Map([[hostId, newPlayerState(hostName, 0)]]),
-    mode: 'classic', // 'classic' or 'tri'
+    mode: 'classic', // 'classic' | 'tri' | 'marathon'
     pair: null,       // classic mode
     triple: null,     // tri mode
+    marathon: null,   // marathon mode: { startArticle, duration, candidates, endsAt }
     started: false,
     startTime: null,
     winner: null,
@@ -1046,6 +1384,14 @@ async function startGameForRoom(room, roomCode) {
   room.giveUpVotes.clear(); // Reset votes for new game
   const viewRange = room.viewRange || null;
   const lang = room.lang || DEFAULT_LANG;
+
+  // Marathon has a fundamentally different lifecycle (timer-driven, endless
+  // target stream) so it gets its own entry point. Everything downstream
+  // stays branched on room.mode so classic/tri state paths don't run.
+  if (room.mode === 'marathon') {
+    await startMarathonForRoom(room, roomCode);
+    return;
+  }
 
   if (room.mode === 'classic') {
     // Use manual articles if set, otherwise generate random
@@ -1344,9 +1690,13 @@ async function handleAction(playerId, msg) {
       const room = rooms.get(player.roomCode);
       if (!room || room.host !== playerId) return { ok: false, error: 'Only host can change mode' };
       if (room.started) return { ok: false };
-      const mode = msg.mode === 'tri' ? 'tri' : 'classic';
+      const mode = msg.mode === 'tri' ? 'tri' : msg.mode === 'marathon' ? 'marathon' : 'classic';
       room.mode = mode;
-      broadcastToRoom(player.roomCode, { type: 'mode_changed', mode });
+      // Marathon carries an extra `duration` option from the client.
+      if (mode === 'marathon' && MARATHON_DURATIONS_MS[msg.duration]) {
+        room.marathonDurationKey = msg.duration;
+      }
+      broadcastToRoom(player.roomCode, { type: 'mode_changed', mode, duration: room.marathonDurationKey });
       return { ok: true };
     }
 
@@ -1418,8 +1768,10 @@ async function handleAction(playerId, msg) {
         article, step: rp.path.length - 1, mode: room.mode,
       });
 
-      // For tri mode, include visited count in progress
-      broadcastToRoom(player.roomCode, {
+      // For tri mode, include visited count in progress. For marathon, also
+      // include the current target so peers can decide whether to render this
+      // player's pill (only shown when their target matches yours).
+      const progressMsg = {
         type: 'player_progress',
         playerId,
         name: rp.name,
@@ -1428,7 +1780,24 @@ async function handleAction(playerId, msg) {
         currentArticle: article,
         visited: rp.visited.length,
         mode: room.mode,
-      });
+      };
+      if (room.mode === 'marathon') {
+        progressMsg.target = rp.marathonState?.currentTarget?.title || null;
+      }
+      broadcastToRoom(player.roomCode, progressMsg);
+
+      // Marathon has its own completion flow (record hit, clear target,
+      // client requests next). Classic/tri win logic doesn't apply.
+      if (room.mode === 'marathon') {
+        const mLang = room.lang || DEFAULT_LANG;
+        // Warm the new article's outgoing links in the background. After a
+        // hit, pickMarathonTarget needs them to compute distance — without
+        // this prefetch the player waits on a Wikipedia roundtrip BETWEEN
+        // every target reveal, which is the biggest source of marathon lag.
+        getPageLinks(article, mLang).catch(() => {});
+        await handleMarathonNavigate(room, rp, playerId, article, mLang);
+        return { ok: true };
+      }
 
       // Snapshot visited count BEFORE checkWin — checkWin mutates rp.visited
       // as a side effect. We use the delta to distinguish a newly reached
@@ -1554,6 +1923,119 @@ async function handleAction(playerId, msg) {
       return { ok: true };
     }
 
+    case 'mk_request_next': {
+      // Client asks for a target. Sent once right after game_start (for the
+      // first target) and after every hit or skip. Server either delivers a
+      // target or tells the client to retry (candidate caches still warming).
+      const player = players.get(playerId);
+      if (!player) return { ok: false };
+      const room = rooms.get(player.roomCode);
+      if (!room || !room.started || room.mode !== 'marathon') return { ok: false };
+      const rp = room.players.get(playerId);
+      if (!rp || !rp.marathonState) return { ok: false };
+      if (rp.marathonState.currentTarget) {
+        // Already have one — idempotent: re-send so a reconnecting client
+        // catches up without a spurious new target.
+        sendSSE(playerId, {
+          type: 'marathon_next_target',
+          target: rp.marathonState.currentTarget,
+          liveScore: computeMarathonScore(rp.marathonState.events),
+        });
+        return { ok: true };
+      }
+      const currentArticle = rp.path[rp.path.length - 1] || room.marathon.startArticle;
+      const pick = await pickMarathonTarget(room, rp, currentArticle);
+      if (!pick) {
+        sendSSE(playerId, { type: 'marathon_next_target', target: null, reason: 'warming' });
+        return { ok: true };
+      }
+      const target = {
+        title: pick.title,
+        hops: pick.hops,
+        score: pick.score,
+        shownAtStep: rp.path.length - 1,
+      };
+      rp.marathonState.currentTarget = target;
+      rp.marathonState.usedTitles.add(normalizeArticle(pick.title));
+      sendSSE(playerId, {
+        type: 'marathon_next_target',
+        target,
+        liveScore: computeMarathonScore(rp.marathonState.events),
+      });
+      // Broadcast a player_progress so peers learn this player's new target.
+      // Marathon's pill bar uses this to filter who's visible (only show
+      // players with the same target as you, plus yourself).
+      broadcastToRoom(player.roomCode, {
+        type: 'player_progress',
+        playerId,
+        name: rp.name,
+        color: rp.color,
+        steps: rp.path.length,
+        currentArticle: rp.path[rp.path.length - 1] || room.marathon.startArticle,
+        visited: rp.visited.length,
+        mode: 'marathon',
+        target: target.title,
+      });
+      return { ok: true };
+    }
+
+    case 'mk_skip': {
+      // Player chose to skip the current target. Records a skip event and
+      // pushes a new target via the same pick pipeline.
+      const player = players.get(playerId);
+      if (!player) return { ok: false };
+      const room = rooms.get(player.roomCode);
+      if (!room || !room.started || room.mode !== 'marathon') return { ok: false };
+      const rp = room.players.get(playerId);
+      if (!rp || !rp.marathonState || !rp.marathonState.currentTarget) return { ok: false };
+
+      const skipped = rp.marathonState.currentTarget;
+      // Record clicks taken on this target before skipping — the result
+      // screen uses it to place the skip pill at the right path position.
+      const skipClicks = Math.max(0, rp.path.length - 1 - skipped.shownAtStep);
+      rp.marathonState.events.push({ kind: 'skip', title: skipped.title, clicks: skipClicks });
+      rp.marathonState.currentTarget = null;
+
+      const currentArticle = rp.path[rp.path.length - 1] || room.marathon.startArticle;
+      const pick = await pickMarathonTarget(room, rp, currentArticle);
+      if (!pick) {
+        sendSSE(playerId, {
+          type: 'marathon_next_target',
+          target: null,
+          reason: 'warming',
+          liveScore: computeMarathonScore(rp.marathonState.events),
+        });
+        return { ok: true };
+      }
+      const target = {
+        title: pick.title,
+        hops: pick.hops,
+        score: pick.score,
+        shownAtStep: rp.path.length - 1,
+      };
+      rp.marathonState.currentTarget = target;
+      rp.marathonState.usedTitles.add(normalizeArticle(pick.title));
+      sendSSE(playerId, {
+        type: 'marathon_next_target',
+        target,
+        liveScore: computeMarathonScore(rp.marathonState.events),
+      });
+      // Same broadcast as mk_request_next: peers need to see the new target
+      // to keep the same-target-only filter on the player pill bar correct.
+      broadcastToRoom(player.roomCode, {
+        type: 'player_progress',
+        playerId,
+        name: rp.name,
+        color: rp.color,
+        steps: rp.path.length,
+        currentArticle: rp.path[rp.path.length - 1] || room.marathon.startArticle,
+        visited: rp.visited.length,
+        mode: 'marathon',
+        target: target.title,
+      });
+      return { ok: true };
+    }
+
     case 'play_again': {
       const player = players.get(playerId);
       if (!player) return { ok: false };
@@ -1638,10 +2120,15 @@ async function handleAction(playerId, msg) {
       const room = initRoom(code, playerId, name, lang);
       room.singlePlayer = true;
       // Apply mode and difficulty from client
-      room.mode = msg.mode === 'tri' ? 'tri' : 'classic';
+      room.mode = msg.mode === 'tri' ? 'tri' : msg.mode === 'marathon' ? 'marathon' : 'classic';
       const parsedRange = parseViewRange(msg.viewRange);
       if (parsedRange) room.viewRange = parsedRange;
-      // Apply manual articles if provided (validated)
+      // Marathon mode: accept duration override from client.
+      if (room.mode === 'marathon' && MARATHON_DURATIONS_MS[msg.duration]) {
+        room.marathonDurationKey = msg.duration;
+      }
+      // Apply manual articles if provided (validated). Marathon generates
+      // all words server-side so it doesn't accept manual input.
       if (msg.mode === 'classic' || !msg.mode) {
         const o = msg.origin, d = msg.destination;
         const validO = o && isValidArticle(o);
@@ -1791,6 +2278,12 @@ function handleDisconnect(playerId) {
   room.giveUpVotes?.delete(playerId);
 
   if (room.players.size === 0) {
+    // Drop any live marathon timer before GC so it doesn't fire against a
+    // deleted room (noop in practice but keeps the process clean under load).
+    if (room.marathon?.timerId) {
+      clearTimeout(room.marathon.timerId);
+      room.marathon.timerId = null;
+    }
     rooms.delete(roomCode);
     console.log(`Room ${roomCode} deleted (empty)`);
     logEvent('room_deleted', { roomCode });
@@ -1988,4 +2481,9 @@ module.exports = {
   normalizeArticle,
   WIKI_HOSTS,
   DEFAULT_LANG,
+  // Marathon scoring (pure — safe to unit test)
+  marathonBasePoints,
+  marathonCompletionBonus,
+  computeMarathonScore,
+  MARATHON_DURATIONS_MS,
 };

@@ -108,6 +108,31 @@
     padding: 10px 24px;
     font-size: 0.9rem;
   }
+  /* Loading state for any .btn — hides the label and centers a spinner.
+     Used by every Start button (SP/MP × classic/tri/marathon) so the user
+     gets immediate feedback on click while the server warms caches. The
+     button keeps its size (color: transparent on the text node) so the
+     layout doesn't reflow when toggled — `visibility: hidden > *` doesn't
+     work here because labels are bare text nodes, not child elements. */
+  .btn-loading { position: relative; cursor: progress; pointer-events: none; color: transparent; }
+  .btn-loading > * { visibility: hidden; }
+  .btn-loading::after {
+    content: '';
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 18px; height: 18px;
+    margin: -9px 0 0 -9px;
+    border: 2.5px solid rgba(255, 255, 255, 0.3);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  /* For non-primary buttons the white spinner can be hard to see; tint it */
+  .btn-secondary.btn-loading::after,
+  .btn.btn-loading.on-light::after {
+    border-color: rgba(108, 92, 231, 0.25);
+    border-top-color: var(--accent);
+  }
 
   /* ─── Back button ─── */
   .back-btn {
@@ -178,6 +203,12 @@
   @media (max-width: 600px) {
     .home-footer { font-size: 0.72rem; bottom: 14px; }
     .home-footer .dot { margin: 0 6px; }
+  }
+  /* Landscape phones (low height + wide) — the home content competes with
+     the footer for vertical space, so shrink the footer further. */
+  @media (max-height: 500px) and (orientation: landscape) {
+    .home-footer { font-size: 0.62rem; bottom: 6px; opacity: 0.5; }
+    .home-footer .dot { margin: 0 4px; }
   }
   .bg-words {
     position: absolute;
@@ -258,7 +289,7 @@
     flex-shrink: 0;
   }
   .logo {
-    font-size: 3.2rem;
+    font-size: 3.7rem;
     font-weight: 900;
     letter-spacing: -1px;
   }
@@ -379,12 +410,25 @@
     align-items: center;
     justify-content: center;
     z-index: 10;
+    /* Subtle attention pulse — nudges new players toward the explainer
+       without being noisy. Pauses on hover so the button feels stable
+       while the user reaches for it. */
+    animation: infoBtnPulse 2.4s ease-in-out infinite;
   }
   .info-btn:hover {
     color: var(--text);
     background: var(--surface2);
     border-color: var(--accent);
     transform: translateY(-1px);
+    animation: none;
+  }
+  @keyframes infoBtnPulse {
+    0%, 100% { box-shadow: 0 0 12px rgba(0, 184, 148, 0.35); transform: scale(1); }
+    50%      { box-shadow: 0 0 18px rgba(0, 184, 148, 0.55); transform: scale(1.06); }
+  }
+  /* Honor reduced-motion preference — skip the pulse for users who opt out. */
+  @media (prefers-reduced-motion: reduce) {
+    .info-btn { animation: none; }
   }
 
   /* How-to-play modal */
@@ -674,6 +718,288 @@
   .mode-btn .mode-label { display: block; font-size: 1rem; font-weight: 700; color: var(--text); margin-bottom: 2px; }
   .mode-btn .mode-desc { font-size: 0.75rem; color: var(--text2); }
 
+  /* Marathon uses the same purple accent as classic/tri to keep the mode
+     family visually consistent. Distinct by shape (time picker) not color. */
+  .marathon-mode-btn.active { border-color: var(--accent); background: var(--surface2); }
+  .marathon-mode-btn:hover { border-color: var(--accent); }
+
+  /* Marathon setup box: wraps the time picker + lang dropdown so the
+     marathon setup feels like a single cohesive panel (mirrors the
+     round-words-section visual rhythm used by classic/tri). */
+  /* Lobby's #lobby uses align-items:center which collapses form-groups to
+     their content width. Force the marathon group to take the same width
+     as the rest of the column so the box doesn't shrink-wrap awkwardly. */
+  .marathon-duration-group { margin-top: 2px; width: 100%; max-width: 420px; align-self: center; }
+  .marathon-setup-box {
+    position: relative;
+    width: 100%;
+    max-width: 420px;
+    padding: 20px;
+    background: var(--surface2);
+    border-radius: var(--radius);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    margin: 0 auto;
+  }
+  /* Box title (TIME) — mirrors .round-words-title so marathon and classic
+     setup panels look like siblings, not unrelated boxes. */
+  .marathon-box-title {
+    font-size: 0.85rem;
+    color: var(--text2);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  /* Time picker: value on left, vertical arrows on right.
+     Stepper-style — tap arrow to cycle through 3m / 5m / 8m / 12m. */
+  .time-picker {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    margin: 0 auto;
+  }
+  .time-stepper-arrows {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .time-stepper-btn {
+    width: 30px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--surface2);
+    background: var(--surface);
+    border-radius: 6px;
+    color: var(--text2);
+    font-size: 0.65rem;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+    padding: 0;
+    user-select: none;
+  }
+  /* Up = grow time = green (matches the dest-rw "easier" pole and ez label).
+     Down = shrink time = purple accent (matches the origin/accent pole).
+     Borrowing the existing palette keeps the color story consistent. */
+  .time-stepper-btn.time-up { color: var(--green); border-color: rgba(0, 184, 148, 0.35); }
+  .time-stepper-btn.time-up:hover { border-color: var(--green); background: rgba(0, 184, 148, 0.1); }
+  .time-stepper-btn.time-down { color: var(--accent2); border-color: rgba(162, 155, 254, 0.35); }
+  .time-stepper-btn.time-down:hover { border-color: var(--accent); background: rgba(108, 92, 231, 0.12); }
+  .time-stepper-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+  .time-stepper-btn.time-up:disabled:hover { border-color: rgba(0, 184, 148, 0.35); background: var(--surface); }
+  .time-stepper-btn.time-down:disabled:hover { border-color: rgba(162, 155, 254, 0.35); background: var(--surface); }
+  .time-stepper-value {
+    min-width: 90px;
+    padding: 14px 18px;
+    text-align: center;
+    border: 1px solid var(--accent);
+    background: var(--surface);
+    border-radius: 10px;
+    color: var(--text);
+    font-size: 1.4rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    user-select: none;
+  }
+  /* Marathon Start button lives inside the same box as the time picker so
+     the panel reads as one piece (was previously an isolated button below). */
+  .marathon-start-btn {
+    width: 100%;
+    margin-top: 4px;
+  }
+  /* Disabled state used in MP marathon while waiting on a 2nd player —
+     keeps the button visible for affordance, just clearly inert. */
+  .marathon-start-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
+  }
+  .marathon-start-btn:disabled:hover { transform: none; }
+
+  /* Marathon in-game nav: target name + difficulty meta + skip button.
+     Mirrors the tri-nav rhythm so players familiar with tri feel at home. */
+  .marathon-nav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .marathon-nav-label {
+    font-size: 0.78rem;
+    color: var(--text2);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .marathon-target-tag {
+    max-width: 240px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .marathon-target-meta {
+    font-size: 0.78rem;
+    color: var(--text2);
+    font-weight: 600;
+  }
+  /* Hop count uses the same tier colors as the leaderboard's distance pills
+     (dist-close / dist-mid / dist-far). Points stay neutral purple. */
+  .marathon-target-meta .hops {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .marathon-target-meta .pts { color: var(--accent); }
+  .marathon-skip-btn {
+    background: transparent;
+    border: 1px solid var(--surface2);
+    color: var(--text2);
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .marathon-skip-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .marathon-skip-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* Reuse tri-mode's green screen-border checkpoint flash for target hits.
+     Defined once in the checkpoint-flash rule above; marathon just piggybacks
+     on that class so the feedback looks identical across modes. */
+  @keyframes marathonScoreBump {
+    0%   { transform: scale(1); color: var(--text); }
+    40%  { transform: scale(1.3); color: var(--green); }
+    100% { transform: scale(1); color: var(--text); }
+  }
+  .marathon-score-bumped { animation: marathonScoreBump 0.5s ease-out; display: inline-block; }
+
+  /* Marathon result timeline — step-by-step navigation reveal that matches
+     the rhythm of classic/tri (path-node + path-arrow staggered fade-in).
+     Start node is purple (.start) and target hits are green (.hit) so the
+     color story is identical to .path-node.start / .path-node.end. */
+  .mk-timeline {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 4px;
+    margin: 10px 0 8px 0;
+    font-size: 0.82rem;
+  }
+  .mk-step {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--surface2);
+    color: var(--text2);
+    white-space: nowrap;
+    opacity: 0;
+    transform: scale(0.85);
+    transition: opacity 0.25s ease-out, transform 0.25s ease-out;
+  }
+  .mk-step.revealed { opacity: 1; transform: scale(1); }
+  .mk-step.start { background: var(--accent); color: white; font-weight: 700; }
+  .mk-step.hit { background: var(--green); color: white; font-weight: 700; }
+  .mk-step-badge {
+    font-size: 0.7rem;
+    font-weight: 800;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.22);
+    font-variant-numeric: tabular-nums;
+  }
+  .mk-step-cost {
+    font-size: 0.7rem;
+    color: var(--text2);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    opacity: 0;
+    transform: translateY(-3px);
+    transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+  }
+  .mk-step-cost.revealed { opacity: 1; transform: translateY(0); }
+  .mk-arrow {
+    color: var(--text2);
+    opacity: 0;
+    transition: opacity 0.2s ease-out;
+  }
+  .mk-arrow.revealed { opacity: 1; }
+  /* Skipped targets aren't on the path so they get their own row underneath
+     the timeline — strike-through to telegraph "didn't reach". */
+  .mk-skips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+    font-size: 0.78rem;
+  }
+  .mk-skip {
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: rgba(225, 112, 85, 0.12);
+    color: #e17055;
+    text-decoration: line-through;
+    opacity: 0;
+    transform: scale(0.85);
+    transition: opacity 0.25s, transform 0.25s;
+  }
+  .mk-skip.revealed { opacity: 1; transform: scale(1); }
+  .mk-skip .mk-step-badge { background: rgba(225, 112, 85, 0.25); color: #e17055; }
+  /* Inline skip — appears at the path position where the player abandoned
+     the target. Strikethrough + warning hue to read as "didn't reach". */
+  .mk-step.skip {
+    background: rgba(225, 112, 85, 0.12);
+    color: #e17055;
+    text-decoration: line-through;
+  }
+  .mk-step.skip .mk-step-badge { background: rgba(225, 112, 85, 0.25); color: #e17055; }
+  .mk-total-row {
+    display: flex;
+    justify-content: space-between;
+    padding-top: 10px;
+    margin-top: 10px;
+    border-top: 1px solid var(--surface2);
+    font-size: 1rem;
+    font-weight: 800;
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity 0.35s ease-out, transform 0.35s ease-out;
+  }
+  .mk-total-row.revealed { opacity: 1; transform: translateY(0); }
+  .mk-total-val {
+    font-variant-numeric: tabular-nums;
+    color: var(--accent);
+    transition: color 0.2s;
+  }
+  .mk-total-val.bumped { animation: marathonScoreBump 0.45s ease-out; }
+  /* Breakdown tally under the total — Hits / Steps / Skips / Bonus.
+     Each row reveals as its corresponding events animate in the timeline. */
+  .mk-breakdown {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--surface2);
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    font-size: 0.78rem;
+  }
+  .mk-breakdown-row {
+    display: flex;
+    justify-content: space-between;
+    color: var(--text2);
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .mk-breakdown-row.revealed { opacity: 1; }
+  .mk-breakdown-row .mk-bd-val { font-variant-numeric: tabular-nums; font-weight: 700; }
+  .mk-breakdown-row.positive .mk-bd-val { color: var(--green); }
+  .mk-breakdown-row.negative .mk-bd-val { color: #e17055; }
+  .mk-breakdown-row.bonus .mk-bd-val { color: var(--accent); }
+
   /* ─── Difficulty Slider ─── */
   .diff-form-group {
     width: 100%;
@@ -787,6 +1113,29 @@
   }
   .diff-range-wrap input[type="range"]:focus-visible {
     outline: none !important;
+  }
+  /* Mobile: bigger thumb + bigger invisible hit area so fingers reliably
+     grab the dot. The visible thumb is the rendered circle; the hit area
+     comes from the wrapper's height + the thumb's larger size. */
+  @media (max-width: 600px), (pointer: coarse) {
+    .diff-range-wrap { height: 36px; }
+    .diff-range-wrap input[type="range"] { height: 36px; }
+    .diff-range-wrap input[type="range"]::-webkit-slider-thumb {
+      width: 26px;
+      height: 26px;
+      margin-top: -10px;
+      border-width: 3px;
+    }
+    .diff-range-wrap input[type="range"]:focus::-webkit-slider-thumb,
+    .diff-range-wrap input[type="range"]:active::-webkit-slider-thumb {
+      width: 26px;
+      height: 26px;
+    }
+    .diff-range-wrap input[type="range"]::-moz-range-thumb {
+      width: 26px;
+      height: 26px;
+      border-width: 3px;
+    }
   }
   .diff-ends {
     display: flex;
@@ -1728,6 +2077,7 @@
     transition: border-color 0.2s;
   }
   .result-card.winner-card { border-color: var(--gold); }
+  .result-card.loser-card { border-color: var(--green); }
   .result-header {
     display: flex;
     align-items: center;
@@ -1799,7 +2149,7 @@
 
   /* Responsive */
   @media (max-width: 600px) {
-    .logo { font-size: 2.2rem; }
+    .logo { font-size: 2.55rem; }
     .logo-row { gap: 4px; flex-wrap: nowrap; max-width: 100%; overflow: hidden; }
     .logo-link { width: 70px; padding: 4px 6px; font-size: 0.65rem; height: 1.6em; }
     .logo-arrow { font-size: 0.7rem; }
@@ -1962,7 +2312,7 @@
     </div>
     <p class="logo-sub">Navigate Wikipedia | Race to the destination</p>
     <div class="home-buttons home-buttons-primary">
-      <button class="home-btn quick" onclick="quickPlay()"><span>Quick Play</span></button>
+      <button class="home-btn quick" onclick="quickPlay(this)"><span>Quick Play</span></button>
     </div>
     <div class="home-buttons">
       <button class="home-btn sp" onclick="selectMode('singleplayer')"><span>Singleplayer</span></button>
@@ -1994,6 +2344,33 @@
           <span class="mode-label">Tri Speedrun</span>
           <span class="mode-desc">Visit all 3</span>
         </div>
+        <div class="mode-btn marathon-mode-btn" id="spModeMarathon" onclick="setSinglePlayerMode('marathon')">
+          <span class="mode-label">Marathon</span>
+          <span class="mode-desc">Race the clock</span>
+        </div>
+      </div>
+    </div>
+    <div class="form-group marathon-duration-group" id="spMarathonDurationGroup" style="display:none;">
+      <div class="marathon-setup-box">
+        <div class="lang-dropdown" data-lang-dropdown>
+          <div class="lang-dropdown-trigger" onclick="toggleLangDropdown(this.parentNode)">
+            <span class="lang-dropdown-label">Eng</span>
+            <span class="chevron">▾</span>
+          </div>
+          <div class="lang-dropdown-panel">
+            <div class="lang-dropdown-item" data-lang="en" onclick="pickLang('en', event)">English</div>
+            <div class="lang-dropdown-item" data-lang="zh" onclick="pickLang('zh', event)">中文 (简体)</div>
+          </div>
+        </div>
+        <div class="marathon-box-title">TIME</div>
+        <div class="time-picker">
+          <div class="time-stepper-value" id="spTimeStepperValue">5m</div>
+          <div class="time-stepper-arrows">
+            <button type="button" class="time-stepper-btn time-up" onclick="stepMarathonDuration(1)" aria-label="Increase time">▲</button>
+            <button type="button" class="time-stepper-btn time-down" onclick="stepMarathonDuration(-1)" aria-label="Decrease time">▼</button>
+          </div>
+        </div>
+        <button class="btn btn-primary marathon-start-btn" onclick="startSinglePlayer(this)">Start!</button>
       </div>
     </div>
     <div class="form-group diff-form-group">
@@ -2025,9 +2402,9 @@
           <div class="lang-dropdown-item" data-lang="zh" onclick="pickLang('zh', event)">中文 (简体)</div>
         </div>
       </div>
-      <div class="rw-title">WORDS</div>
+      <div class="rw-title" id="spRwTitle">WORDS</div>
       <div id="spRoundWordsInputs"></div>
-      <button class="btn btn-primary" onclick="startSinglePlayer()" style="width:100%;margin-top:8px;">Start!</button>
+      <button class="btn btn-primary" onclick="startSinglePlayer(this)" style="width:100%;margin-top:8px;">Start!</button>
     </div>
   </div>
 </div>
@@ -2043,7 +2420,7 @@
     <div class="mp-actions-row">
       <button class="btn btn-primary" onclick="createMultiplayerRoom()">Create Room</button>
       <div class="divider-vertical"></div>
-      <input type="text" id="mpRoomCode" placeholder="CODE" class="mp-code-input" maxlength="5" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false" oninput="autoJoinRoom(event)" />
+      <input type="text" id="mpRoomCode" placeholder="CODE" class="mp-code-input" maxlength="5" inputmode="latin" lang="en" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" pattern="[A-Z0-9]*" oninput="autoJoinRoom(event)" />
     </div>
     <div class="error-msg" id="mpError"></div>
   </div>
@@ -2072,6 +2449,33 @@
         <span class="mode-label">Tri<br>Mode</span>
         <span class="mode-desc">Visit all 3</span>
       </div>
+      <div class="mode-btn marathon-mode-btn" id="mpModeMarathon" onclick="setMultiplayerMode('marathon')">
+        <span class="mode-label">Marathon</span>
+        <span class="mode-desc">Race the clock</span>
+      </div>
+    </div>
+  </div>
+  <div class="form-group marathon-duration-group" id="mpMarathonDurationGroup" style="display:none;">
+    <div class="marathon-setup-box">
+      <div class="lang-dropdown" data-lang-dropdown>
+        <div class="lang-dropdown-trigger" onclick="toggleLangDropdown(this.parentNode)">
+          <span class="lang-dropdown-label">Eng</span>
+          <span class="chevron">▾</span>
+        </div>
+        <div class="lang-dropdown-panel">
+          <div class="lang-dropdown-item" data-lang="en" onclick="pickLang('en', event)">English</div>
+          <div class="lang-dropdown-item" data-lang="zh" onclick="pickLang('zh', event)">中文 (简体)</div>
+        </div>
+      </div>
+      <div class="marathon-box-title">TIME</div>
+      <div class="time-picker">
+        <div class="time-stepper-value" id="mpTimeStepperValue">5m</div>
+        <div class="time-stepper-arrows">
+          <button type="button" class="time-stepper-btn time-up" onclick="stepMarathonDuration(1)" aria-label="Increase time">▲</button>
+          <button type="button" class="time-stepper-btn time-down" onclick="stepMarathonDuration(-1)" aria-label="Decrease time">▼</button>
+        </div>
+      </div>
+      <button class="btn btn-primary marathon-start-btn" id="mpMarathonStartBtn" onclick="startMultiplayerGame(this)" style="display:none;">Start!</button>
     </div>
   </div>
   <div class="form-group diff-form-group">
@@ -2103,9 +2507,9 @@
         <div class="lang-dropdown-item" data-lang="zh" onclick="pickLang('zh', event)">中文 (简体)</div>
       </div>
     </div>
-    <div class="round-words-title">Words</div>
+    <div class="round-words-title" id="mpRoundWordsTitle">Words</div>
     <div class="round-words-inputs" id="roundWordsInputs"></div>
-    <button class="btn btn-primary btn-small" id="mpStartBtn" onclick="startMultiplayerGame()" style="display:none;">Start!</button>
+    <button class="btn btn-primary btn-small" id="mpStartBtn" onclick="startMultiplayerGame(this)" style="display:none;">Start!</button>
   </div>
 </div>
 
@@ -2119,9 +2523,16 @@
         <span class="dest-tag" id="gameDest"></span>
       </div>
       <div id="triNav" style="display:none;"></div>
+      <div class="marathon-nav" id="marathonNav" style="display:none;">
+        <span class="marathon-nav-label">Target</span>
+        <span class="dest-tag marathon-target-tag" id="marathonTargetTag">—</span>
+        <span class="marathon-target-meta" id="marathonTargetMeta"></span>
+        <button class="marathon-skip-btn" id="marathonSkipBtn" onclick="skipMarathonTarget()">Skip</button>
+      </div>
     </div>
     <div class="game-stats">
-      <span>Steps: <span class="stat-val" id="stepCount">0</span></span>
+      <span class="stats-classic-tri"><span>Steps: <span class="stat-val" id="stepCount">0</span></span></span>
+      <span class="stats-marathon" id="marathonScoreStat" style="display:none;">Score: <span class="stat-val" id="marathonScoreDisplay">0</span></span>
       <span>Time: <span class="stat-val" id="timerDisplay">0:00</span></span>
       <button class="surrender-btn" onclick="sendGiveUpVote()">Surrender</button>
       <div class="give-up-status" id="giveUpStatus"></div>
@@ -2325,6 +2736,45 @@ function setWikiLang(lang) {
   try { localStorage.setItem('wsr_wiki_lang', lang); } catch {}
   updateLangDropdowns();
 }
+// Placeholder text for each input, per language. Kept together so new
+// inputs or languages only require one place to edit. Values must match
+// what's in the HTML templates' default placeholder attribute in English.
+const INPUT_PLACEHOLDERS = {
+  en: {
+    spRwOrigin: 'e.g. Pizza',
+    spRwDest: 'e.g. Moon',
+    spRwTarget1: 'Target',
+    spRwTarget2: 'Start here',
+    spRwTarget3: 'Target',
+    rwOrigin: 'e.g. Pizza',
+    rwDest: 'e.g. Moon',
+    rwTarget1: 'Target',
+    rwTarget2: 'Start here',
+    rwTarget3: 'Target',
+  },
+  zh: {
+    spRwOrigin: 'e.g. 披萨',
+    spRwDest: 'e.g. 月球',
+    spRwTarget1: '目标',
+    spRwTarget2: '起点',
+    spRwTarget3: '目标',
+    rwOrigin: 'e.g. 披萨',
+    rwDest: 'e.g. 月球',
+    rwTarget1: '目标',
+    rwTarget2: '起点',
+    rwTarget3: '目标',
+  },
+};
+
+function applyInputPlaceholders() {
+  const lang = activeWikiLang();
+  const map = INPUT_PLACEHOLDERS[lang] || INPUT_PLACEHOLDERS.en;
+  for (const id in map) {
+    const el = document.getElementById(id);
+    if (el) el.setAttribute('placeholder', map[id]);
+  }
+}
+
 // Sync every dropdown's trigger label + active-option highlight. Called on
 // boot, on pickLang(), and when a room locks a different language.
 function updateLangDropdowns() {
@@ -2336,6 +2786,7 @@ function updateLangDropdowns() {
       item.classList.toggle('active', item.dataset.lang === shownLang);
     });
   });
+  applyInputPlaceholders();
 }
 // Back-compat alias — callers scattered around still use the old name.
 function updateWikiLangToggleUI() { updateLangDropdowns(); }
@@ -2410,6 +2861,10 @@ const DIFF_VIEW_MAX = 1000000;
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
+  // Any Start button that was spinning has done its job once we're past the
+  // setup screen. Clearing here covers every path (success, retry, going home)
+  // without each handler having to remember to reset its own button.
+  document.querySelectorAll('.btn-loading').forEach(b => b.classList.remove('btn-loading'));
 }
 
 // ─── SSE Connection ───
@@ -2566,10 +3021,11 @@ function selectMode(choice) {
 
 // One-click game: classic mode, default difficulty, server-picked random pair.
 // Skips sp-setup entirely to cut the landing→playing path to a single tap.
-async function quickPlay() {
+async function quickPlay(btn) {
   try {
     window.gtag?.('event', 'mode_selected', { selection: 'quick_play' });
   } catch (e) { /* gtag blocked — skip */ }
+  setBtnLoading(btn, true);
   try {
     await connectSSE();
     isSinglePlayer = true;
@@ -2587,10 +3043,108 @@ async function quickPlay() {
     if (result.ok) {
       currentRoomCode = result.code;
       isHost = true;
+    } else {
+      setBtnLoading(btn, false);
     }
   } catch (e) {
+    setBtnLoading(btn, false);
     console.error('Quick play failed:', e);
   }
+}
+
+// ─── Marathon mode — feature flag + shared client state ───
+// MARATHON_ENABLED toggles whether the Marathon mode buttons render at all.
+// Set to false before pushing if you want to hide marathon from production.
+const MARATHON_ENABLED = true;
+let marathonDurationKey = '5m';  // selected in setup, sent to server
+let marathonEndsAt = null;       // Date.now() + duration, server-authoritative
+let marathonScore = null;        // live {raw, clicks, skips, completed, bonus, total}
+let marathonTarget = null;       // { title, hops, score, shownAtStep }
+let marathonTimerInterval = null;
+
+const MARATHON_DURATION_CHOICES = ['3m', '5m', '8m', '12m'];
+// Pure UI update — never sends to the server. stepMarathonDuration handles
+// user-initiated changes (UI + network); the mode_changed SSE handler also
+// calls this. Keeping the network side out of here breaks an infinite loop
+// where every server-driven update echoed itself back as a new set_mode.
+function setMarathonDuration(key) {
+  if (!MARATHON_DURATION_CHOICES.includes(key)) return;
+  if (key === marathonDurationKey) return; // already set — short-circuit
+  marathonDurationKey = key;
+  // Sync every stepper display on the page. Either scope (SP or MP) may be
+  // visible, but keeping both in sync is cheap and avoids stale values when
+  // the user switches between SP/MP with marathon already selected.
+  ['spTimeStepperValue', 'mpTimeStepperValue'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = key;
+  });
+  // Disable arrows at bounds so the affordance matches reality — clicking
+  // a disabled-looking button does nothing visible and feels unresponsive.
+  const idx = MARATHON_DURATION_CHOICES.indexOf(key);
+  document.querySelectorAll('.marathon-duration-group [aria-label="Decrease time"]').forEach(b => { b.disabled = idx === 0; });
+  document.querySelectorAll('.marathon-duration-group [aria-label="Increase time"]').forEach(b => { b.disabled = idx === MARATHON_DURATION_CHOICES.length - 1; });
+}
+
+function stepMarathonDuration(delta) {
+  const idx = MARATHON_DURATION_CHOICES.indexOf(marathonDurationKey);
+  const nextIdx = Math.max(0, Math.min(MARATHON_DURATION_CHOICES.length - 1, idx + delta));
+  const next = MARATHON_DURATION_CHOICES[nextIdx];
+  if (next === marathonDurationKey) return;
+  setMarathonDuration(next);
+  // User-initiated change in MP: tell the server so peers stay in sync.
+  // Server-driven updates (mode_changed) don't go through here, which is
+  // what stops the previous echo loop that made values jitter.
+  if (!isSinglePlayer && currentRoomCode && isHost && mpCurrentMode === 'marathon') {
+    send({ type: 'set_mode', mode: 'marathon', duration: next }).catch(() => {});
+  }
+}
+
+// Called when mode switches; ensures marathon setup UI is shown/hidden
+// across SP and MP setup surfaces in one place.
+function updateMarathonSetupVisibility(mode, scope) {
+  const isMarathon = mode === 'marathon';
+  // Marathon owns its own setup box (lang dropdown + time picker + Start),
+  // so the words/diff sections collapse out of the way entirely.
+  if (scope === 'sp') {
+    const diff = document.querySelector('#sp-setup .diff-form-group');
+    if (diff) diff.style.display = isMarathon ? 'none' : '';
+    const sec = document.getElementById('spRoundWordsSection');
+    if (sec) sec.style.display = isMarathon ? 'none' : 'flex';
+    const durGroup = document.getElementById('spMarathonDurationGroup');
+    if (durGroup) durGroup.style.display = isMarathon ? '' : 'none';
+  } else {
+    const diff = document.getElementById('mpDiffSection');
+    if (diff) diff.parentElement.style.display = isMarathon ? 'none' : '';
+    const sec = document.getElementById('roundWordsSection');
+    if (sec) sec.style.display = isMarathon ? 'none' : '';
+    const durGroup = document.getElementById('mpMarathonDurationGroup');
+    if (durGroup) durGroup.style.display = isMarathon ? '' : 'none';
+    // Sync the marathon Start button on mode switch — updatePlayerList only
+    // fires when player_list arrives (mode toggle alone doesn't trigger it),
+    // so without this the button stays hidden after switching to marathon.
+    const mkStart = document.getElementById('mpMarathonStartBtn');
+    if (mkStart) {
+      if (isMarathon && isHost) {
+        const ready = (document.querySelectorAll('#playerList li').length || 0) >= 2;
+        mkStart.style.display = '';
+        mkStart.disabled = !ready;
+        mkStart.textContent = ready ? 'Start!' : 'Waiting for players…';
+      } else {
+        mkStart.style.display = 'none';
+        mkStart.disabled = false;
+        mkStart.textContent = 'Start!';
+      }
+    }
+  }
+}
+
+if (!MARATHON_ENABLED) {
+  // Hide marathon buttons early — before any mode-switch code runs.
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.marathon-mode-btn, .marathon-duration-group').forEach(el => {
+      el.style.display = 'none';
+    });
+  });
 }
 
 // ─── Single Player ───
@@ -2598,6 +3152,8 @@ function setSinglePlayerMode(mode) {
   currentGameMode = mode;
   document.getElementById('spModeClassic').classList.toggle('active', mode === 'classic');
   document.getElementById('spModeTri').classList.toggle('active', mode === 'tri');
+  document.getElementById('spModeMarathon').classList.toggle('active', mode === 'marathon');
+  updateMarathonSetupVisibility(mode, 'sp');
   renderSpRoundWords();
 }
 
@@ -2665,6 +3221,7 @@ function renderSpRoundWords() {
       </div>
     `;
   }
+  applyInputPlaceholders();
 }
 
 function updateSinglePlayerDiffSlider() {
@@ -2695,59 +3252,69 @@ function updateSinglePlayerDiffSlider() {
   }
 }
 
-async function startSinglePlayer() {
+async function startSinglePlayer(btn) {
+  // Build the payload first so we can bail on validation errors without
+  // ever entering the loading state — those bail-outs shake an input and
+  // expect the Start button to remain clickable.
+  isSinglePlayer = true;
+  isQuickPlaySession = false;
+  const payload = {
+    type: 'start_single',
+    name: 'Single Player',
+    mode: currentGameMode,
+    viewRange: spDifficulty,
+    lang: wikiLangChoice,
+  };
+  if (currentGameMode === 'marathon') {
+    payload.duration = marathonDurationKey;
+  } else if (currentGameMode === 'classic') {
+    const originEl = document.getElementById('spRwOrigin');
+    const destEl = document.getElementById('spRwDest');
+    const origin = originEl?.value.trim();
+    const dest = destEl?.value.trim();
+    if (!origin || !dest) {
+      if (!origin) shakeInput(originEl);
+      if (!dest) shakeInput(destEl);
+      return;
+    }
+    if (origin.toLowerCase() === dest.toLowerCase()) {
+      shakeInput(originEl);
+      shakeInput(destEl);
+      return;
+    }
+    payload.origin = origin;
+    payload.destination = dest;
+  } else {
+    const els = [1, 2, 3].map(n => document.getElementById(`spRwTarget${n}`));
+    const targets = els.map(el => el?.value.trim());
+    if (targets.some(t => !t)) {
+      els.forEach((el, i) => { if (!targets[i]) shakeInput(el); });
+      return;
+    }
+    const lowers = targets.map(t => t.toLowerCase());
+    const dupes = new Set();
+    lowers.forEach((t, i) => { lowers.forEach((t2, j) => { if (i !== j && t === t2) { dupes.add(i); dupes.add(j); } }); });
+    if (dupes.size > 0) {
+      els.forEach((el, i) => { if (dupes.has(i)) shakeInput(el); });
+      return;
+    }
+    payload.targets = [targets[1], targets[0], targets[2]];
+  }
+  // Validation passed — show the spinner. Marathon's first target can take
+  // a few seconds while the server warms candidates; classic/tri are usually
+  // instant but this still gives consistent feedback that the click landed.
+  setBtnLoading(btn, true);
   try {
     await connectSSE();
-    isSinglePlayer = true;
-    isQuickPlaySession = false;
-    const payload = {
-      type: 'start_single',
-      name: 'Single Player',
-      mode: currentGameMode,
-      viewRange: spDifficulty,
-      lang: wikiLangChoice,
-    };
-    // Gather and validate manual words
-    if (currentGameMode === 'classic') {
-      const originEl = document.getElementById('spRwOrigin');
-      const destEl = document.getElementById('spRwDest');
-      const origin = originEl?.value.trim();
-      const dest = destEl?.value.trim();
-      if (!origin || !dest) {
-        if (!origin) shakeInput(originEl);
-        if (!dest) shakeInput(destEl);
-        return;
-      }
-      if (origin.toLowerCase() === dest.toLowerCase()) {
-        shakeInput(originEl);
-        shakeInput(destEl);
-        return;
-      }
-      payload.origin = origin;
-      payload.destination = dest;
-    } else {
-      const els = [1, 2, 3].map(n => document.getElementById(`spRwTarget${n}`));
-      const targets = els.map(el => el?.value.trim());
-      if (targets.some(t => !t)) {
-        els.forEach((el, i) => { if (!targets[i]) shakeInput(el); });
-        return;
-      }
-      const lowers = targets.map(t => t.toLowerCase());
-      const dupes = new Set();
-      lowers.forEach((t, i) => { lowers.forEach((t2, j) => { if (i !== j && t === t2) { dupes.add(i); dupes.add(j); } }); });
-      if (dupes.size > 0) {
-        els.forEach((el, i) => { if (dupes.has(i)) shakeInput(el); });
-        return;
-      }
-      // Reorder: Target2 (start) first, then Target1 and Target3 (destinations)
-      payload.targets = [targets[1], targets[0], targets[2]];
-    }
     const result = await send(payload);
     if (result.ok) {
       currentRoomCode = result.code;
       isHost = true;
+    } else {
+      setBtnLoading(btn, false);
     }
   } catch(e) {
+    setBtnLoading(btn, false);
     showError('mpError', 'Could not connect to server.');
   }
 }
@@ -2758,7 +3325,11 @@ function setMultiplayerMode(mode) {
   mpCurrentMode = mode;
   document.getElementById('mpModeClassic').classList.toggle('active', mode === 'classic');
   document.getElementById('mpModeTri').classList.toggle('active', mode === 'tri');
-  send({ type: 'set_mode', mode });
+  document.getElementById('mpModeMarathon').classList.toggle('active', mode === 'marathon');
+  updateMarathonSetupVisibility(mode, 'mp');
+  const payload = { type: 'set_mode', mode };
+  if (mode === 'marathon') payload.duration = marathonDurationKey;
+  send(payload);
 }
 
 function updateMultiplayerDiffSlider() {
@@ -2796,6 +3367,12 @@ function updateMultiplayerDiffSlider() {
 function renderRoundWords() {
   const container = document.getElementById('roundWordsInputs');
   const section = document.getElementById('roundWordsSection');
+  // Marathon: section chrome (lang dropdown + Start) stays visible via
+  // updateMarathonSetupVisibility; only skip populating the word inputs.
+  if (mpCurrentMode === 'marathon') {
+    container.innerHTML = '';
+    return;
+  }
   section.style.display = 'flex';
 
   const disabled = !isHost ? 'disabled' : '';
@@ -2823,6 +3400,7 @@ function renderRoundWords() {
       document.getElementById('rwOrigin')?.addEventListener('input', (e) => { if (e.isComposing) return; fetchAutocomplete(e.target.value, 'acRwOrigin', 'rwOrigin'); });
       document.getElementById('rwDest')?.addEventListener('input', (e) => { if (e.isComposing) return; fetchAutocomplete(e.target.value, 'acRwDest', 'rwDest'); });
     }
+    applyInputPlaceholders();
   } else {
     container.innerHTML = `
       <div class="rw-row">
@@ -2854,6 +3432,7 @@ function renderRoundWords() {
         document.getElementById(`rwTarget${n}`)?.addEventListener('input', (e) => { if (e.isComposing) return; fetchAutocomplete(e.target.value, `acRwTarget${n}`, `rwTarget${n}`); });
       });
     }
+    applyInputPlaceholders();
   }
 }
 
@@ -3061,8 +3640,15 @@ function copyCode() {
   setTimeout(() => hint.textContent = 'click to copy', 1500);
 }
 
-function startMultiplayerGame() {
+function startMultiplayerGame(btn) {
   isQuickPlaySession = false;
+  // Marathon is server-generated — nothing to validate from the lobby.
+  if (mpCurrentMode === 'marathon') {
+    setBtnLoading(btn, true);
+    send({ type: 'start_game', duration: marathonDurationKey })
+      .catch(() => setBtnLoading(btn, false));
+    return;
+  }
   // Gather words from the input fields
   if (mpCurrentMode === 'classic') {
     const originEl = document.getElementById('rwOrigin');
@@ -3079,7 +3665,9 @@ function startMultiplayerGame() {
       shakeInput(destEl);
       return;
     }
-    send({ type: 'start_game', origin, destination: dest });
+    setBtnLoading(btn, true);
+    send({ type: 'start_game', origin, destination: dest })
+      .catch(() => setBtnLoading(btn, false));
   } else {
     const els = [1, 2, 3].map(n => document.getElementById(`rwTarget${n}`));
     const targets = els.map(el => el?.value.trim());
@@ -3094,9 +3682,18 @@ function startMultiplayerGame() {
       els.forEach((el, i) => { if (dupes.has(i)) shakeInput(el); });
       return;
     }
-    // Reorder: Target2 (start) first, then Target1 and Target3 (destinations)
-    send({ type: 'start_game', targets: [targets[1], targets[0], targets[2]] });
+    setBtnLoading(btn, true);
+    send({ type: 'start_game', targets: [targets[1], targets[0], targets[2]] })
+      .catch(() => setBtnLoading(btn, false));
   }
+}
+
+// Toggle a Start button's spinner state. Tolerates a missing `btn` (e.g.
+// programmatic starts like Quick Play) — without this guard, those paths
+// would NPE inside try/catch and the user would never see the error.
+function setBtnLoading(btn, isLoading) {
+  if (!btn) return;
+  btn.classList.toggle('btn-loading', !!isLoading);
 }
 
 // ─── Game ───
@@ -3221,6 +3818,15 @@ function handleServerMessage(msg) {
       currentGameMode = msg.mode;
       document.getElementById('mpModeClassic').classList.toggle('active', msg.mode === 'classic');
       document.getElementById('mpModeTri').classList.toggle('active', msg.mode === 'tri');
+      document.getElementById('mpModeMarathon').classList.toggle('active', msg.mode === 'marathon');
+      // Hide word inputs + show time picker when switching to marathon, and
+      // vice versa. Without this, non-host players see stale UI for the
+      // previous mode until they rejoin.
+      updateMarathonSetupVisibility(msg.mode, 'mp');
+      // Host may have picked a duration; mirror it on our stepper.
+      if (msg.mode === 'marathon' && msg.duration) {
+        setMarathonDuration(msg.duration);
+      }
       renderRoundWords();
       break;
 
@@ -3268,6 +3874,25 @@ function handleServerMessage(msg) {
       }
       break;
 
+    case 'marathon_next_target':
+      renderMarathonTarget(msg.target);
+      if (msg.liveScore) updateMarathonScoreDisplay(msg.liveScore, false);
+      break;
+
+    case 'marathon_target_hit': {
+      // Celebrate the hit: reuse tri's green screen-border flash so the
+      // feedback matches checkpoint reached across modes.
+      const flash = document.createElement('div');
+      flash.className = 'checkpoint-flash';
+      document.body.appendChild(flash);
+      setTimeout(() => flash.remove(), 550);
+      if (msg.liveScore) updateMarathonScoreDisplay(msg.liveScore, true);
+      marathonTarget = null;
+      // Server expects the client to request the next one after each hit.
+      requestNextMarathonTarget();
+      break;
+    }
+
     case 'game_start':
       // Lock the game language so the toggle can't retarget mid-play.
       if (msg.lang) { currentGameLang = msg.lang; updateWikiLangToggleUI(); }
@@ -3287,6 +3912,7 @@ function handleServerMessage(msg) {
       playerProgress.set(msg.playerId, {
         name: msg.name, steps: msg.steps, currentArticle: msg.currentArticle,
         visited: msg.visited || 0, mode: msg.mode || 'classic',
+        target: msg.target || null,
       });
       if (msg.color) playerColors.set(msg.playerId, msg.color);
       renderProgress(msg.playerId);
@@ -3329,7 +3955,11 @@ function handleServerMessage(msg) {
       break;
 
     case 'game_over':
-      showResults(msg);
+      if (msg.mode === 'marathon') {
+        showMarathonResults(msg);
+      } else {
+        showResults(msg);
+      }
       break;
 
     case 'returned_to_lobby':
@@ -3338,6 +3968,10 @@ function handleServerMessage(msg) {
         // Also clear cached color assignments so stale ones from the previous
         // round don't linger on the player list / leaderboard.
         playerColors.clear();
+        // Re-sync marathon UI visibility — the lobby may have been in marathon
+        // before the game; refresh so the duration picker is in the right
+        // state after the round ends.
+        updateMarathonSetupVisibility(mpCurrentMode, 'mp');
         renderRoundWords();
         showScreen('lobby');
       }
@@ -3366,6 +4000,11 @@ function renderPlayerList(players, hostId) {
   for (const p of players) {
     if (p.color) playerColors.set(p.id, p.color);
   }
+  // Sync the local isHost flag against the authoritative host id from the
+  // server. Without this, when the original host disconnects and the server
+  // promotes the next player, that player's client wouldn't unlock the host
+  // controls (Start button, mode selector, language toggle).
+  if (hostId && myPlayerId) isHost = (hostId === myPlayerId);
   const ul = document.getElementById('playerList');
   // Build with DOM APIs so name/color stay in attribute space, not HTML.
   ul.replaceChildren(...players.map(p => {
@@ -3377,34 +4016,82 @@ function renderPlayerList(players, hostId) {
     return li;
   }));
   document.getElementById('waitingText').style.display = players.length < 2 ? '' : 'none';
-  document.getElementById('mpStartBtn').style.display = isHost && players.length >= 2 ? '' : 'none';
+  const canStart = isHost && players.length >= 2;
+  document.getElementById('mpStartBtn').style.display = canStart ? '' : 'none';
+  // Marathon's Start button lives inside the setup box. Keep it visible for
+  // the host (so the affordance is discoverable from the first moment), but
+  // disable it until a second player joins. Non-hosts never see it.
+  const mkStart = document.getElementById('mpMarathonStartBtn');
+  if (mkStart) {
+    if (mpCurrentMode === 'marathon' && isHost) {
+      mkStart.style.display = '';
+      mkStart.disabled = !canStart;
+      mkStart.textContent = canStart ? 'Start!' : 'Waiting for players…';
+    } else {
+      mkStart.style.display = 'none';
+      mkStart.disabled = false;
+      mkStart.textContent = 'Start!';
+    }
+  }
 }
 
 function startGameUI(msg) {
   currentGameMode = msg.mode;
   gameStartTime = Date.now();
-  myPath = [msg.origin || msg.targets[0]];
-  currentArticle = msg.origin || msg.targets[0];
+  myPath = [msg.origin || msg.targets?.[0]];
+  currentArticle = msg.origin || msg.targets?.[0];
   playerProgress.clear();
   document.getElementById('stepCount').textContent = '0';
+
+  // Toggle nav strips + stats by mode. Each strip renders its own content;
+  // the stats bar swaps between steps (classic/tri) and score (marathon).
+  const classicNav = document.getElementById('classicNav');
+  const triNav = document.getElementById('triNav');
+  const marathonNav = document.getElementById('marathonNav');
+  const statsClassicTri = document.querySelector('.stats-classic-tri');
+  const statsMarathon = document.getElementById('marathonScoreStat');
 
   if (msg.mode === 'classic') {
     gameOrigin = msg.origin;
     gameDestination = msg.destination;
     triTargets = [];
     myVisited = [];
-    document.getElementById('classicNav').style.display = '';
-    document.getElementById('triNav').style.display = 'none';
+    classicNav.style.display = '';
+    triNav.style.display = 'none';
+    marathonNav.style.display = 'none';
+    statsClassicTri.style.display = '';
+    statsMarathon.style.display = 'none';
     document.getElementById('gameOrigin').textContent = gameOrigin.replace(/_/g, ' ');
     const destEl = document.getElementById('gameDest');
     destEl.textContent = gameDestination.replace(/_/g, ' ');
     destEl.onclick = (e) => { e.stopPropagation(); dismissInfoHint(); toggleSummary(destEl, gameDestination); };
-  } else {
+  } else if (msg.mode === 'tri') {
     triTargets = msg.targets;
     myVisited = [msg.origin];
-    document.getElementById('classicNav').style.display = 'none';
-    document.getElementById('triNav').style.display = '';
+    classicNav.style.display = 'none';
+    triNav.style.display = '';
+    marathonNav.style.display = 'none';
+    statsClassicTri.style.display = '';
+    statsMarathon.style.display = 'none';
     renderTriTargets();
+  } else if (msg.mode === 'marathon') {
+    marathonEndsAt = msg.endsAt;
+    marathonScore = { raw: 0, clicks: 0, skips: 0, completed: 0, bonus: 0, total: 0 };
+    marathonTarget = null;
+    triTargets = [];
+    myVisited = [];
+    classicNav.style.display = 'none';
+    triNav.style.display = 'none';
+    marathonNav.style.display = '';
+    statsClassicTri.style.display = 'none';
+    statsMarathon.style.display = '';
+    document.getElementById('marathonTargetTag').textContent = 'loading…';
+    document.getElementById('marathonTargetMeta').innerHTML = '';
+    document.getElementById('marathonScoreDisplay').textContent = '0';
+    document.getElementById('marathonSkipBtn').disabled = true;
+    // Kick off the first target request. Server may reply with null if the
+    // candidate cache is still warming — we'll retry via a short poll.
+    requestNextMarathonTarget();
   }
 
   document.getElementById('giveUpStatus').textContent = '';
@@ -3413,6 +4100,8 @@ function startGameUI(msg) {
   surrenderBtn.style.opacity = '';
   surrenderBtn.style.cursor = '';
   surrenderBtn.textContent = 'Surrender';
+  // Marathon runs on a fixed clock, not surrender, so hide the button.
+  surrenderBtn.style.display = msg.mode === 'marathon' ? 'none' : '';
   latestDistData = null;
   prevPositions.clear();
   document.getElementById('lbRiders').innerHTML = '';
@@ -3421,8 +4110,68 @@ function startGameUI(msg) {
   playersBar.style.display = 'flex';
   playersBar.classList.toggle('tri-mode', currentGameMode === 'tri');
   startTimer();
-  maybeShowDestHint();
+  // Marathon's target loads async after game_start, so defer the hint until
+  // renderMarathonTarget fires. Other modes have their destination by now.
+  if (msg.mode !== 'marathon') maybeShowDestHint();
   loadArticle(currentArticle);
+}
+
+// Marathon: request a new target (first one after game_start, then after
+// each hit or skip). Server may respond with { target: null, reason: 'warming' }
+// in which case we retry shortly.
+let _mkRetryTimer = null;
+async function requestNextMarathonTarget() {
+  clearTimeout(_mkRetryTimer);
+  send({ type: 'mk_request_next' }).catch(() => {});
+}
+
+function skipMarathonTarget() {
+  if (!marathonTarget) return;
+  // Optimistic disable to prevent double-taps while the server picks next.
+  document.getElementById('marathonSkipBtn').disabled = true;
+  send({ type: 'mk_skip' }).catch(() => {});
+}
+
+// Update the in-game target pill + score counter. Called when server sends
+// marathon_next_target or marathon_target_hit (liveScore is included in both).
+function renderMarathonTarget(target) {
+  marathonTarget = target;
+  const tag = document.getElementById('marathonTargetTag');
+  const meta = document.getElementById('marathonTargetMeta');
+  const skipBtn = document.getElementById('marathonSkipBtn');
+  if (!target) {
+    tag.textContent = 'warming up…';
+    meta.innerHTML = '';
+    skipBtn.disabled = true;
+    // Poll once for the next target after a short delay. Server caches catch
+    // up within a few seconds.
+    // 500 ms keeps the wait short enough to feel snappy while still letting
+    // the server's candidate-warm batch (~3 articles in parallel) finish a
+    // pass between polls.
+    _mkRetryTimer = setTimeout(requestNextMarathonTarget, 500);
+    return;
+  }
+  tag.textContent = target.title.replace(/_/g, ' ');
+  tag.onclick = (e) => { e.stopPropagation(); dismissInfoHint(); toggleSummary(tag, target.title); };
+  // Use the same dist-close/mid/far classes that color the leaderboard
+  // distance pills so 2-hop reads the same as "2 hops away" everywhere.
+  const hopCls = distColorClass(target.hops);
+  meta.innerHTML = `<span class="hops ${hopCls}">${target.hops}-hop</span> · <span class="pts">+${target.score}</span>`;
+  skipBtn.disabled = false;
+  // Hint is gated by localStorage and a stale-bar removal, so re-running it
+  // each target is a no-op after the player has dismissed it once.
+  maybeShowDestHint();
+}
+
+function updateMarathonScoreDisplay(liveScore, bumped) {
+  marathonScore = liveScore;
+  const el = document.getElementById('marathonScoreDisplay');
+  el.textContent = String(liveScore.total);
+  if (bumped) {
+    el.classList.remove('marathon-score-bumped');
+    void el.offsetWidth; // restart animation
+    el.classList.add('marathon-score-bumped');
+  }
 }
 
 function renderTriTargets() {
@@ -3468,8 +4217,9 @@ function maybeShowDestHint() {
   try { seen = !!localStorage.getItem(INFO_HINT_KEY); } catch (e) {}
   if (seen) return;
 
-  // Glow the chip(s).
-  document.querySelectorAll('#gameDest, .target-tag:not(.start)').forEach(el => {
+  // Glow the chip(s). Marathon's target tag uses .marathon-target-tag and
+  // changes per round, so include it in the glow set.
+  document.querySelectorAll('#gameDest, .target-tag:not(.start), .marathon-target-tag').forEach(el => {
     el.classList.add('hint-glow');
   });
 
@@ -3480,9 +4230,21 @@ function maybeShowDestHint() {
   bar.className = 'dest-hint-bar';
   const text = document.createElement('span');
   // Pull the live destination name in so the hint reads concretely. Tri mode
-  // has 2 targets, so we keep it generic there.
+  // has 2 targets, so we keep it generic there. Marathon's target rotates,
+  // so we read it from the current target chip rather than gameDestination.
   if (currentGameMode === 'tri') {
     text.textContent = 'Click a target to preview it.';
+  } else if (currentGameMode === 'marathon') {
+    const tgtName = (marathonTarget?.title || '').replace(/_/g, ' ');
+    if (tgtName) {
+      text.appendChild(document.createTextNode('Click '));
+      const strong = document.createElement('strong');
+      strong.textContent = tgtName;
+      text.appendChild(strong);
+      text.appendChild(document.createTextNode(' to preview it.'));
+    } else {
+      text.textContent = 'Click the target to preview it.';
+    }
   } else {
     const destName = (gameDestination || '').replace(/_/g, ' ');
     text.appendChild(document.createTextNode('Click '));
@@ -3511,13 +4273,29 @@ function dismissInfoHint() {
 
 function startTimer() {
   clearInterval(timerInterval);
-  timerInterval = setInterval(() => {
-    const elapsed = Date.now() - gameStartTime;
-    const s = Math.floor(elapsed / 1000);
-    const m = Math.floor(s / 60);
-    const sec = (s % 60).toString().padStart(2, '0');
-    document.getElementById('timerDisplay').textContent = `${m}:${sec}`;
-  }, 100);
+  // 500 ms is fine — the displayed value only changes once per second, and the
+  // old 100 ms interval was burning ~9 useless reflows/sec under marathon's
+  // already-busy event loop (per-click SSE, score animations, target re-renders).
+  let lastText = '';
+  const td = document.getElementById('timerDisplay');
+  const tick = () => {
+    let text;
+    if (currentGameMode === 'marathon' && marathonEndsAt) {
+      const remaining = Math.max(0, marathonEndsAt - Date.now());
+      const s = Math.ceil(remaining / 1000);
+      const m = Math.floor(s / 60);
+      text = `${m}:${(s % 60).toString().padStart(2, '0')}`;
+    } else {
+      const s = Math.floor((Date.now() - gameStartTime) / 1000);
+      const m = Math.floor(s / 60);
+      text = `${m}:${(s % 60).toString().padStart(2, '0')}`;
+    }
+    // Skip the DOM write if the visible text didn't change — most ticks fall
+    // here, and avoiding a textContent assignment skips a layout pass.
+    if (text !== lastText) { td.textContent = text; lastText = text; }
+  };
+  tick();
+  timerInterval = setInterval(tick, 500);
 }
 
 // ─── Summary Tooltip ───
@@ -3849,14 +4627,32 @@ function renderPlayersBar(distData) {
   const entries = [];
   const allPids = new Set([...playerProgress.keys(), ...(distData ? Object.keys(distData) : [])]);
 
+  // Marathon: each player chases their own target. Showing every other
+  // player's pill is noise — only my own pill plus peers who happen to be
+  // hunting the SAME target are useful comparisons. My own pill is ALWAYS
+  // visible (even between hits when I have no target yet) so the leaderboard
+  // never looks empty mid-game.
+  const myTarget = (currentGameMode === 'marathon')
+    ? (marathonTarget?.title || null)
+    : null;
   for (const pid of allPids) {
     const prog = playerProgress.get(pid);
+    if (currentGameMode === 'marathon' && pid !== myPlayerId) {
+      const theirTarget = prog?.target || null;
+      // Drop peers whose target differs from mine. If either side has no
+      // target yet (between hits), wait for state to settle rather than
+      // briefly showing a pill that'll vanish on the next message.
+      if (!myTarget || !theirTarget || theirTarget !== myTarget) continue;
+    }
+    // pid === myPlayerId always falls through here, so my pill is rendered
+    // regardless of whether I currently have a target assigned.
     const dist = distData ? distData[pid] : null;
     const name = pid === myPlayerId ? 'You' : (prog?.name || dist?.name || '?');
     const steps = dist?.steps ?? (prog ? prog.steps - 1 : 0);
     const d = dist?.distance ?? null;
     const prev = dist?.prev ?? null;
     const color = playerColors.get(pid) || '#7c6fad';
+    const currentArticle = prog?.currentArticle || null;
     let triInfo = '';
     if (prog?.mode === 'tri') {
       const visited = (dist?.visited || prog?.visited || 1) - 1; // subtract start target
@@ -3869,7 +4665,7 @@ function renderPlayersBar(distData) {
       triInfo = `<span class="tri-dots">${dots}</span>`;
     }
     const triDists = dist?.triDistances || null;
-    entries.push({ pid, name, steps, d, prev, color, triInfo, triDists });
+    entries.push({ pid, name, steps, d, prev, color, triInfo, triDists, currentArticle });
   }
 
   entries.forEach(e => {
@@ -3889,6 +4685,14 @@ function renderPlayersBar(distData) {
       } else {
         e.leftPct = 50;
       }
+    } else if (currentGameMode === 'marathon') {
+      // Marathon: each player chases their own target, so there's no shared
+      // distance axis. Place "me" at center, and give every other unique
+      // article its own slot spread to either side. Same article → same
+      // slot, so co-located players naturally cluster ("we're all reading
+      // Pizza right now"); different articles stay far apart so the collapse
+      // threshold doesn't false-merge them.
+      e.leftPct = 50; // sane default; recomputed in the post-pass below
     } else if (e.d !== null && e.d !== undefined) {
       const clamped = Math.min(e.d, MAX_DIST);
       e.leftPct = 93 - (clamped / MAX_DIST) * 86;
@@ -3896,6 +4700,36 @@ function renderPlayersBar(distData) {
       e.leftPct = 7;
     }
   });
+
+  // Marathon-only: assign positions per unique article so co-located players
+  // share the same leftPct exactly (real cluster) and players elsewhere stay
+  // > 8% apart (no false collapse). "Me" anchors center; others spread out.
+  if (currentGameMode === 'marathon') {
+    const myArt = entries.find(e => e.pid === myPlayerId)?.currentArticle || null;
+    const others = [];
+    for (const e of entries) {
+      if (!e.currentArticle || e.currentArticle === myArt) continue;
+      if (!others.includes(e.currentArticle)) others.push(e.currentArticle);
+    }
+    others.sort();
+    const slotMap = new Map();
+    if (myArt) slotMap.set(myArt, 50);
+    others.forEach((art, i) => {
+      // Alternate sides of "me" so the first foreign article sits next to
+      // "me" rather than at the far edge — keeps the spread balanced.
+      // Step 18 keeps neighbouring slots wider than the collapse threshold
+      // (8) so adjacent pills don't merge or visually overlap.
+      const sign = (i % 2 === 0) ? -1 : 1;
+      const tier = Math.floor(i / 2) + 1;
+      const offset = Math.min(43, tier * 18);
+      slotMap.set(art, 50 + sign * offset);
+    });
+    for (const e of entries) {
+      if (e.currentArticle && slotMap.has(e.currentArticle)) {
+        e.leftPct = slotMap.get(e.currentArticle);
+      }
+    }
+  }
 
   const groups = [];
   const assigned = new Set();
@@ -4073,8 +4907,279 @@ function renderPlayersBar(distData) {
   });
 }
 
+// Marathon results screen. Mirrors classic/tri visually:
+//   - Shared winner-banner with "You Won" / "You Suck" copy
+//   - Standard result-card rows (one per player)
+// Marathon-specific additions layered inside each card:
+//   - Full navigation path (same pattern as classic)
+//   - Per-event animated tally that reveals in ACTION ORDER
+// Reveal order is reverse-rank (last place first, winner last) for drama.
+function showMarathonResults(msg) {
+  clearInterval(timerInterval);
+  resultsAnimationTimeouts.forEach(t => clearTimeout(t));
+  resultsAnimationTimeouts = [];
+
+  const results = msg.results || [];
+  const winner = results[0];
+
+  // Banner: same language as classic/tri's You Won / You Suck.
+  const myResult = results.find(r => r.id === myPlayerId);
+  const iAmWinner = !!myResult?.isWinner;
+  let winTitle, winSub;
+  if (isSinglePlayer) {
+    winTitle = 'You Won!';
+    winSub = `${myResult?.total || 0} pts · ${myResult?.completed || 0} targets`;
+  } else if (iAmWinner) {
+    winTitle = 'You Won!';
+    winSub = `${winner.total} pts · ${winner.completed} targets`;
+  } else if (winner) {
+    winTitle = 'You suck!';
+    winSub = `${winner.name} wins with ${winner.total} pts`;
+  } else {
+    winTitle = 'Game over';
+    winSub = '';
+  }
+  const banner = document.querySelector('.winner-banner');
+  const nameEl = document.getElementById('winnerName');
+  const subEl = document.getElementById('winnerSub');
+  const icon = document.getElementById('resultIcon');
+  document.getElementById('shareCard').style.display = 'none';
+  document.getElementById('shareToggleBtn').style.display = 'none';
+  nameEl.textContent = winTitle;
+  nameEl.classList.remove('surrendered', 'loser');
+  if (!isSinglePlayer && !iAmWinner) nameEl.classList.add('loser');
+  subEl.textContent = winSub;
+  icon.textContent = isSinglePlayer || iAmWinner ? '🏆' : '😂';
+  // Banner is held back until every card finishes animating — keeps the
+  // "You Won / You Suck" reveal as the climax instead of spoiling it up-front.
+  banner.classList.remove('visible');
+
+  // Grid uses the SAME .results-grid / .result-card classes as classic/tri,
+  // with marathon-specific children layered inside.
+  const grid = document.getElementById('resultsGrid');
+  grid.className = 'results-grid';
+  grid.innerHTML = '';
+
+  // Cards placed in display rank order (winner first). Reveal animation
+  // will traverse them bottom-up (last place → winner).
+  const normTitle = s => (s || '').replace(/_/g, ' ').toLowerCase().trim();
+  const cards = results.map((r, i) => {
+    const card = document.createElement('div');
+    const isMe = r.id === myPlayerId;
+    // Mirror classic/tri border logic: my own card lights up gold if I won
+    // or my player color if I lost; everyone else's card stays neutral. This
+    // way the card-color story is identical across all three modes.
+    card.className = 'result-card ' + (r.isWinner && isMe ? 'winner-card' : '');
+    if (isMe && !r.isWinner && !isSinglePlayer) {
+      card.style.borderColor = playerColors.get(myPlayerId) || r.color || '#7c6fad';
+    }
+
+    // Walk events in chronological order, advancing through the path as we
+    // go. Hits consume `clicks` path entries; skips happen at the player's
+    // current article (in-flight to the abandoned target). Anything left
+    // after all events is a tail of clicks toward the next-but-unreached
+    // target. Result: skips render INLINE in the path, where they happened.
+    const path = r.path || [];
+    const events = r.events || [];
+    const timelineParts = [];
+    let cumulativeClicks = 0;     // running click count, shown as "−N" labels
+    let pathCursor = 0;           // next path entry to emit
+
+    const emitNode = (article, opts = {}) => {
+      const name = article.replace(/_/g, ' ');
+      const isStart = opts.isStart === true;
+      const hit = opts.hit;
+      const cls = isStart ? 'start' : (hit ? 'hit' : '');
+      const badge = hit ? `<span class="mk-step-badge" data-gain="${hit.score}">+${hit.score}</span>` : '';
+      timelineParts.push(`<span class="mk-step ${cls}">${esc(name)}${badge}</span>`);
+    };
+    const emitClickGap = () => {
+      cumulativeClicks++;
+      // Step labels are positive cumulative counts (1, 2, 3…) — the minus
+      // signs only live in the tally underneath. Each gap still subtracts
+      // 1 from the running total via data-cost.
+      timelineParts.push(`<span class="mk-step-cost" data-cost="-1">${cumulativeClicks}</span>`);
+      timelineParts.push('<span class="mk-arrow">→</span>');
+    };
+    const emitSkip = (ev) => {
+      // Skips don't appear in `path` (player never reached them). Show them
+      // as a strike-through pill at the chronological spot they happened.
+      timelineParts.push(`<span class="mk-step skip" data-cost="-5">${esc(ev.title.replace(/_/g, ' '))}<span class="mk-step-badge">−5</span></span>`);
+    };
+
+    // Always emit the start node first.
+    if (path.length > 0) {
+      emitNode(path[0], { isStart: true });
+      pathCursor = 1;
+    }
+
+    // Walk events, advancing the cursor as we consume hits.
+    for (const ev of events) {
+      if (ev.kind === 'hit') {
+        const clicksTaken = Math.max(1, ev.clicks || 1);
+        // Render `clicksTaken` steps; the LAST one IS the hit target.
+        for (let k = 0; k < clicksTaken; k++) {
+          emitClickGap();
+          const article = path[pathCursor];
+          if (article == null) break;
+          const isFinalClick = (k === clicksTaken - 1);
+          emitNode(article, { hit: isFinalClick ? ev : null });
+          pathCursor++;
+        }
+      } else if (ev.kind === 'skip') {
+        // The skip is emitted between the previous step and the next click.
+        // Server doesn't tell us how many clicks happened on this target so
+        // we render the skip pill where the player decided to give up — i.e.
+        // right after the most recent path step we've emitted.
+        const skipClicks = Math.max(0, ev.clicks || 0);
+        for (let k = 0; k < skipClicks; k++) {
+          emitClickGap();
+          const article = path[pathCursor];
+          if (article == null) break;
+          emitNode(article, {});
+          pathCursor++;
+        }
+        emitSkip(ev);
+      }
+    }
+    // Drain any remaining path entries (e.g. clicks taken after the last
+    // event / before time ran out). Plain nodes, no special styling.
+    while (pathCursor < path.length) {
+      emitClickGap();
+      emitNode(path[pathCursor], {});
+      pathCursor++;
+    }
+
+    // Aggregate breakdown — must mirror the server's computeMarathonScore
+    // exactly (server.js: `total = raw - clicks - 5*skipCount + bonus`).
+    // Clicks are charged ONLY for hit events (clicks taken during a skip
+    // attempt are free, by design), so summing path length would overcharge.
+    let hitsSum = 0, stepsSum = 0, skipsSum = 0;
+    for (const ev of events) {
+      if (ev.kind === 'hit') {
+        hitsSum += ev.score || 0;
+        stepsSum -= (ev.clicks || 0);
+      } else if (ev.kind === 'skip') {
+        skipsSum -= 5;
+      }
+    }
+    const bonusSum = r.bonus || 0;
+
+    const breakdownRows = [
+      { key: 'hits',  label: 'Hits',  val: hitsSum,  cls: hitsSum > 0 ? 'positive' : '' },
+      { key: 'steps', label: 'Steps', val: stepsSum, cls: stepsSum < 0 ? 'negative' : '' },
+      { key: 'skips', label: 'Skips', val: skipsSum, cls: skipsSum < 0 ? 'negative' : '' },
+      { key: 'bonus', label: 'Bonus', val: bonusSum, cls: bonusSum > 0 ? 'bonus' : '' },
+    ];
+    const breakdownHtml = `
+      <div class="mk-breakdown">
+        ${breakdownRows.map(b => `
+          <div class="mk-breakdown-row ${b.cls}" data-key="${b.key}">
+            <span>${b.label}</span>
+            <span class="mk-bd-val">${b.val >= 0 ? '+' : '−'}${Math.abs(b.val)}</span>
+          </div>
+        `).join('')}
+      </div>
+    `;
+
+    // Header matches classic/tri exactly: 👑 Name · WINNER badge for the
+    // winner, 💀 Name · BETTER LUCK NEXT TIME badge for the rest. The loser
+    // badge is gated to the player's OWN card so the winner doesn't see
+    // "Better luck next time" on every other card in their view.
+    const icon = r.isWinner ? '👑' : '💀';
+    let badgeHtml = '';
+    if (r.isWinner) {
+      badgeHtml = `<div class="r-badge badge-winner">Winner</div>`;
+    } else if (isMe) {
+      badgeHtml = `<div class="r-badge badge-lost">Better luck next time</div>`;
+    }
+    card.innerHTML = `
+      <div class="result-header">
+        <div class="r-name"><span class="r-icon">${icon}</span> ${esc(r.name)}</div>
+        ${badgeHtml}
+      </div>
+      <div class="mk-timeline">${timelineParts.join('') || '<span class="mk-step">No navigation</span>'}</div>
+      ${breakdownHtml}
+      <div class="mk-total-row"><span>Total</span><span class="mk-total-val">0</span></div>
+    `;
+    grid.appendChild(card);
+    return { el: card, data: r };
+  });
+
+  showScreen('results');
+  document.getElementById('playAgainBtn').style.display = isHost || isSinglePlayer ? '' : 'none';
+
+  // Reveal in REVERSE rank order: last place first, winner last. Within each
+  // card, walk the timeline step by step — click cost, arrow, next node —
+  // animating the running total every time a delta applies. The breakdown
+  // rows stagger in alongside their matching event types. Banner ("You Won
+  // / You Suck") fires last, after every card finishes its tally.
+  const STEP_MS = 220;
+  const CARD_GAP_MS = 400;
+
+  const reverseOrder = [...cards].reverse();
+  let cursor = 300;
+  for (const { el, data } of reverseOrder) {
+    resultsAnimationTimeouts.push(setTimeout(() => el.classList.add('visible'), cursor));
+    cursor += 280;
+
+    // Reveal timeline items sequentially. The running total is computed but
+    // NOT shown — the total row stays hidden until after the breakdown rows
+    // finish, so the score reveal feels like a payoff rather than a ticker.
+    const timelineItems = el.querySelectorAll('.mk-timeline > *');
+    timelineItems.forEach(item => {
+      resultsAnimationTimeouts.push(setTimeout(() => item.classList.add('revealed'), cursor));
+      cursor += STEP_MS;
+    });
+    // Reveal breakdown rows next, one by one (Hits / Steps / Skips / Bonus).
+    const bdRows = el.querySelectorAll('.mk-breakdown-row');
+    bdRows.forEach(row => {
+      resultsAnimationTimeouts.push(setTimeout(() => row.classList.add('revealed'), cursor));
+      cursor += 220;
+    });
+    // After every tally row has appeared, fade in the total row and animate
+    // the count-up from 0 to the final score — single, satisfying reveal.
+    const totalEl = el.querySelector('.mk-total-val');
+    const totalRow = el.querySelector('.mk-total-row');
+    resultsAnimationTimeouts.push(setTimeout(() => {
+      totalRow?.classList.add('revealed');
+      animateCountUp(totalEl, 0, data.total || 0, 600);
+      totalEl?.classList.add('bumped');
+    }, cursor));
+    cursor += 700;
+    // Settle the final total — guards against rounding drift in animateCountUp.
+    resultsAnimationTimeouts.push(setTimeout(() => {
+      totalEl.textContent = String(data.total);
+    }, cursor));
+    cursor += CARD_GAP_MS;
+  }
+
+  // Banner is the climax — show it AFTER every card has finished tallying.
+  resultsAnimationTimeouts.push(setTimeout(() => banner.classList.add('visible'), cursor));
+}
+
+// Small utility for count-up / count-down animation in the total counter.
+function animateCountUp(el, from, to, durationMs) {
+  const start = performance.now();
+  function step(now) {
+    const t = Math.min(1, (now - start) / durationMs);
+    const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic
+    const val = Math.round(from + (to - from) * eased);
+    el.textContent = String(val);
+    if (t < 1) requestAnimationFrame(step);
+    else el.textContent = String(to);
+  }
+  requestAnimationFrame(step);
+}
+
 function showResults(msg) {
   clearInterval(timerInterval);
+  // Reset grid classes in case the last round was marathon (which swaps the
+  // grid to mk-results-grid for a different layout).
+  const grid = document.getElementById('resultsGrid');
+  if (grid) grid.className = 'results-grid';
+  const banner = document.querySelector('.winner-banner');
+  if (banner) { banner.style.opacity = ''; banner.style.transition = ''; }
   // GA event: game_finish. Captures the outcome from the player's point of
   // view (won / lost / gave up, how long, how many steps, which mode).
   try {
@@ -4115,7 +5220,6 @@ function showResults(msg) {
   // Populate the share-your-run card before rendering the full results grid.
   populateShareCard(msg);
 
-  const grid = document.getElementById('resultsGrid');
   grid.innerHTML = '';
 
   // Sort: winner first, then by steps
@@ -4160,14 +5264,21 @@ function showResults(msg) {
              `<span class="path-node ${nodeCls}">${esc(p.replace(/_/g, ' '))}${distBadge}</span>`;
     }).join('');
 
+    // Loser badge is gated to the player's own card so the winner doesn't
+    // see "Better luck next time" plastered on every other card in their
+    // view. Winner badge always shows (it's a positive callout).
     const icon = r.isWinner ? '👑' : '💀';
-    const badgeCls = r.isWinner ? 'badge-winner' : 'badge-lost';
-    const badgeText = r.isWinner ? 'Winner' : 'Better luck next time';
+    let badgeHtml = '';
+    if (r.isWinner) {
+      badgeHtml = `<div class="r-badge badge-winner">Winner</div>`;
+    } else if (isMe) {
+      badgeHtml = `<div class="r-badge badge-lost">Better luck next time</div>`;
+    }
 
     card.innerHTML = `
       <div class="result-header">
         <div class="r-name"><span class="r-icon">${icon}</span> ${esc(r.name)}</div>
-        <div class="r-badge ${badgeCls}">${badgeText}</div>
+        ${badgeHtml}
       </div>
       <div class="result-stats">
         <span>Steps: <span class="stat-val">${r.path.length - 1}</span></span>
@@ -4188,7 +5299,6 @@ function showResults(msg) {
 
   // Animate results
   let delay = 100;
-  const banner = document.querySelector('.winner-banner');
   resultsAnimationTimeouts.push(setTimeout(() => banner.classList.add('visible'), delay));
   delay += 800;
 
@@ -4233,12 +5343,36 @@ function compactPath(path, maxNodes = 6) {
   return [names[0], names[1], '…', names[names.length - 2], names[names.length - 1]];
 }
 
+// Localized share strings — when the game ran on the Chinese wiki, all
+// the share text + image labels should be Simplified Chinese for consistency.
+const SHARE_STRINGS = {
+  en: {
+    steps: 'steps', start: 'Start:', yourTurn: 'your turn →',
+    triSuffix: ' (Tri)', triTargets: '3 targets',
+    cardTitle: 'Your run', copy: 'Copy share', save: 'Save image',
+    showCard: 'Share your run', hideCard: 'Hide share',
+    copied: 'Copied!', saved: 'Saved!', copyFail: 'Copy failed',
+  },
+  zh: {
+    steps: '步', start: '起点:', yourTurn: '轮到你了 →',
+    triSuffix: '(三叉)', triTargets: '3 个目标',
+    cardTitle: '你的成绩', copy: '复制分享', save: '保存图片',
+    showCard: '分享成绩', hideCard: '隐藏分享',
+    copied: '已复制!', saved: '已保存!', copyFail: '复制失败',
+  },
+};
+function shareStr() {
+  const lang = (typeof activeWikiLang === 'function' ? activeWikiLang() : 'en');
+  return SHARE_STRINGS[lang] || SHARE_STRINGS.en;
+}
+
 function buildShareText(r, msg) {
+  const S = shareStr();
   const steps = Math.max(0, r.path.length - 1);
   const timeStr = r.time ? formatTime(r.time) : null;
   const statLine = timeStr
-    ? `⚡ ${steps} steps  ·  ⏱ ${timeStr}`
-    : `⚡ ${steps} steps`;
+    ? `⚡ ${steps} ${S.steps}  ·  ⏱ ${timeStr}`
+    : `⚡ ${steps} ${S.steps}`;
 
   let pathLine;
   if (msg.mode === 'tri') {
@@ -4246,14 +5380,14 @@ function buildShareText(r, msg) {
     const visited = (r.visited || []).map(titleize);
     const start = titleize(msg.targets?.[0] || r.path[0]);
     const marks = targets.map(t => (visited.includes(t) ? `✓ ${t}` : `· ${t}`)).join('  ');
-    pathLine = `Start: ${start}\n${marks}`;
+    pathLine = `${S.start} ${start}\n${marks}`;
   } else {
     const nodes = compactPath(r.path, 6);
     pathLine = nodes.join(' → ');
   }
 
-  const modeTag = msg.mode === 'tri' ? ' (Tri)' : '';
-  return `🧩 WikiSpeedrun${modeTag}\n${statLine}\n\n${pathLine}\n\nyour turn → wikispeedrun.io`;
+  const modeTag = msg.mode === 'tri' ? S.triSuffix : '';
+  return `🧩 WikiSpeedrun${modeTag}\n${statLine}\n\n${pathLine}\n\n${S.yourTurn} wikispeedrun.io`;
 }
 
 // Render the share image on a 1200x630 canvas. Dark theme, matches game palette.
@@ -4277,24 +5411,33 @@ async function buildShareImage(r, msg) {
   ctx.fillStyle = glow;
   ctx.fillRect(0, 0, W, H);
 
-  // Logo: "WikiSpeedrun" wordmark in the app's accent colors.
+  // Logo: "WikiSpeedrun" wordmark — same color story as the in-app .logo
+  // (Wiki=accent purple, Speed=purple→green linear gradient, run=green).
   ctx.font = '700 52px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
   ctx.textBaseline = 'top';
   ctx.fillStyle = '#6c5ce7';
   ctx.fillText('Wiki', 64, 56);
   const wikiW = ctx.measureText('Wiki').width;
-  ctx.fillStyle = '#a29bfe';
-  ctx.fillText('Speed', 64 + wikiW, 56);
+  // Speed gets a horizontal gradient matching the CSS linear-gradient(90deg,
+  // accent, green). Render with a clipping mask so the gradient paints only
+  // inside the glyphs, not the bounding box.
   const speedW = ctx.measureText('Speed').width;
+  const speedX = 64 + wikiW;
+  const speedGradient = ctx.createLinearGradient(speedX, 0, speedX + speedW, 0);
+  speedGradient.addColorStop(0, '#6c5ce7');
+  speedGradient.addColorStop(1, '#00b894');
+  ctx.fillStyle = speedGradient;
+  ctx.fillText('Speed', speedX, 56);
   ctx.fillStyle = '#00b894';
-  ctx.fillText('run', 64 + wikiW + speedW, 56);
+  ctx.fillText('run', speedX + speedW, 56);
 
   // Big headline: origin → destination (or tri summary).
+  const S = shareStr();
   ctx.fillStyle = '#f0f0f5';
   ctx.font = '700 72px "Linux Libertine", Georgia, serif';
   let headline;
   if (msg.mode === 'tri') {
-    headline = `${titleize(msg.targets?.[0] || r.path[0])} → 3 targets`;
+    headline = `${titleize(msg.targets?.[0] || r.path[0])} → ${S.triTargets}`;
   } else {
     const origin = titleize(r.path[0]);
     const dest = titleize(r.path[r.path.length - 1]);
@@ -4312,7 +5455,7 @@ async function buildShareImage(r, msg) {
   ctx.font = '600 36px system-ui, sans-serif';
   const steps = Math.max(0, r.path.length - 1);
   const timeStr = r.time ? formatTime(r.time) : '—';
-  ctx.fillText(`⚡ ${steps} steps   ·   ⏱ ${timeStr}`, 64, 280);
+  ctx.fillText(`⚡ ${steps} ${S.steps}   ·   ⏱ ${timeStr}`, 64, 280);
 
   // Path nodes (compact, wrapped).
   ctx.fillStyle = '#9090a8';
@@ -4345,9 +5488,9 @@ async function buildShareImage(r, msg) {
   // Footer: call-to-action.
   ctx.fillStyle = '#6c5ce7';
   ctx.font = '600 30px system-ui, sans-serif';
-  ctx.fillText('your turn →', 64, H - 80);
+  ctx.fillText(S.yourTurn, 64, H - 80);
   ctx.fillStyle = '#f0f0f5';
-  const ytW = ctx.measureText('your turn →').width;
+  const ytW = ctx.measureText(S.yourTurn).width;
   ctx.fillText(' wikispeedrun.io', 64 + ytW, H - 80);
 
   return new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
@@ -4366,11 +5509,16 @@ function populateShareCard(msg) {
   const card = document.getElementById('shareCard');
   const toggleBtn = document.getElementById('shareToggleBtn');
   if (!card) return;
+  const S = shareStr();
+  // Apply localized labels to the static-text elements (title, button copy)
+  // before any branching so even early returns leave them in the right lang.
+  const titleEl = card.querySelector('.share-card-title');
+  if (titleEl) titleEl.textContent = S.cardTitle;
   // Default: both hidden. Reset from previous game.
   card.style.display = 'none';
   if (toggleBtn) {
     toggleBtn.style.display = 'none';
-    toggleBtn.textContent = 'Share your run';
+    toggleBtn.textContent = S.showCard;
   }
   // Only winners share. Losers and surrenders don't get the card — avoids
   // "look at me I gave up" brags and keeps the share signal positive.
@@ -4385,13 +5533,18 @@ function populateShareCard(msg) {
     toggleBtn.onclick = () => {
       const nowHidden = card.style.display === 'none';
       card.style.display = nowHidden ? '' : 'none';
-      toggleBtn.textContent = nowHidden ? 'Hide share' : 'Share your run';
+      toggleBtn.textContent = nowHidden ? S.hideCard : S.showCard;
     };
   }
 
   const steps = Math.max(0, r.path.length - 1);
   document.getElementById('scSteps').textContent = steps;
   document.getElementById('scTime').textContent = r.time ? formatTime(r.time) : '—';
+  // Localize the "steps" suffix in the static label too.
+  const scStepsLabel = card.querySelector('.share-card-stats span:first-child');
+  if (scStepsLabel) {
+    scStepsLabel.innerHTML = `<span class="sc-emoji">⚡</span><span id="scSteps">${steps}</span> ${esc(S.steps)}`;
+  }
 
   // Path preview inside the card (distinct from the big results grid below).
   const pathEl = document.getElementById('scPath');
@@ -4436,32 +5589,34 @@ function populateShareCard(msg) {
   // Wire buttons (fresh each game — re-binding is cheap).
   const copyBtn = document.getElementById('copyShareBtn');
   const saveBtn = document.getElementById('saveImageBtn');
+  copyBtn.textContent = S.copy;
+  saveBtn.textContent = S.save;
   copyBtn.onclick = async () => {
     const txt = buildShareText(r, msg);
     try {
       await navigator.clipboard.writeText(txt);
-      showShareToast('Copied!');
+      showShareToast(S.copied);
     } catch (e) {
       // Clipboard API fails in insecure contexts or some mobile browsers.
       // Fall back to a hidden textarea + execCommand.
       const ta = document.createElement('textarea');
       ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
       document.body.appendChild(ta); ta.select();
-      try { document.execCommand('copy'); showShareToast('Copied!'); }
-      catch { showShareToast('Copy failed'); }
+      try { document.execCommand('copy'); showShareToast(S.copied); }
+      catch { showShareToast(S.copyFail); }
       document.body.removeChild(ta);
     }
   };
   saveBtn.onclick = async () => {
     const blob = await buildShareImage(r, msg);
-    if (!blob) { showShareToast('Save failed'); return; }
+    if (!blob) { showShareToast(S.copyFail); return; }
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `wikispeedrun-${steps}steps.png`;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    showShareToast('Saved!');
+    showShareToast(S.saved);
   };
 }
 
