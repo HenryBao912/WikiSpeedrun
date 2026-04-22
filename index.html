@@ -2325,6 +2325,45 @@ function setWikiLang(lang) {
   try { localStorage.setItem('wsr_wiki_lang', lang); } catch {}
   updateLangDropdowns();
 }
+// Placeholder text for each input, per language. Kept together so new
+// inputs or languages only require one place to edit. Values must match
+// what's in the HTML templates' default placeholder attribute in English.
+const INPUT_PLACEHOLDERS = {
+  en: {
+    spRwOrigin: 'e.g. Pizza',
+    spRwDest: 'e.g. Moon',
+    spRwTarget1: 'Target',
+    spRwTarget2: 'Start here',
+    spRwTarget3: 'Target',
+    rwOrigin: 'e.g. Pizza',
+    rwDest: 'e.g. Moon',
+    rwTarget1: 'Target',
+    rwTarget2: 'Start here',
+    rwTarget3: 'Target',
+  },
+  zh: {
+    spRwOrigin: 'e.g. 披萨',
+    spRwDest: 'e.g. 月球',
+    spRwTarget1: '目标',
+    spRwTarget2: '起点',
+    spRwTarget3: '目标',
+    rwOrigin: 'e.g. 披萨',
+    rwDest: 'e.g. 月球',
+    rwTarget1: '目标',
+    rwTarget2: '起点',
+    rwTarget3: '目标',
+  },
+};
+
+function applyInputPlaceholders() {
+  const lang = activeWikiLang();
+  const map = INPUT_PLACEHOLDERS[lang] || INPUT_PLACEHOLDERS.en;
+  for (const id in map) {
+    const el = document.getElementById(id);
+    if (el) el.setAttribute('placeholder', map[id]);
+  }
+}
+
 // Sync every dropdown's trigger label + active-option highlight. Called on
 // boot, on pickLang(), and when a room locks a different language.
 function updateLangDropdowns() {
@@ -2336,6 +2375,7 @@ function updateLangDropdowns() {
       item.classList.toggle('active', item.dataset.lang === shownLang);
     });
   });
+  applyInputPlaceholders();
 }
 // Back-compat alias — callers scattered around still use the old name.
 function updateWikiLangToggleUI() { updateLangDropdowns(); }
@@ -2665,6 +2705,7 @@ function renderSpRoundWords() {
       </div>
     `;
   }
+  applyInputPlaceholders();
 }
 
 function updateSinglePlayerDiffSlider() {
@@ -2823,6 +2864,7 @@ function renderRoundWords() {
       document.getElementById('rwOrigin')?.addEventListener('input', (e) => { if (e.isComposing) return; fetchAutocomplete(e.target.value, 'acRwOrigin', 'rwOrigin'); });
       document.getElementById('rwDest')?.addEventListener('input', (e) => { if (e.isComposing) return; fetchAutocomplete(e.target.value, 'acRwDest', 'rwDest'); });
     }
+    applyInputPlaceholders();
   } else {
     container.innerHTML = `
       <div class="rw-row">
@@ -2854,6 +2896,7 @@ function renderRoundWords() {
         document.getElementById(`rwTarget${n}`)?.addEventListener('input', (e) => { if (e.isComposing) return; fetchAutocomplete(e.target.value, `acRwTarget${n}`, `rwTarget${n}`); });
       });
     }
+    applyInputPlaceholders();
   }
 }
 
