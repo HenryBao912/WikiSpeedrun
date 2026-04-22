@@ -2532,7 +2532,6 @@
     </div>
     <div class="game-stats">
       <span class="stats-classic-tri"><span>Steps: <span class="stat-val" id="stepCount">0</span></span></span>
-      <span class="stats-marathon" id="marathonScoreStat" style="display:none;">Score: <span class="stat-val" id="marathonScoreDisplay">0</span></span>
       <span>Time: <span class="stat-val" id="timerDisplay">0:00</span></span>
       <button class="surrender-btn" onclick="sendGiveUpVote()">Surrender</button>
       <div class="give-up-status" id="giveUpStatus"></div>
@@ -4044,12 +4043,13 @@ function startGameUI(msg) {
   document.getElementById('stepCount').textContent = '0';
 
   // Toggle nav strips + stats by mode. Each strip renders its own content;
-  // the stats bar swaps between steps (classic/tri) and score (marathon).
+  // the stats bar shows Steps for classic/tri, nothing for marathon (score
+  // + target hop count live in the nav strip, so duplicating them would be
+  // noise).
   const classicNav = document.getElementById('classicNav');
   const triNav = document.getElementById('triNav');
   const marathonNav = document.getElementById('marathonNav');
   const statsClassicTri = document.querySelector('.stats-classic-tri');
-  const statsMarathon = document.getElementById('marathonScoreStat');
 
   if (msg.mode === 'classic') {
     gameOrigin = msg.origin;
@@ -4060,7 +4060,6 @@ function startGameUI(msg) {
     triNav.style.display = 'none';
     marathonNav.style.display = 'none';
     statsClassicTri.style.display = '';
-    statsMarathon.style.display = 'none';
     document.getElementById('gameOrigin').textContent = gameOrigin.replace(/_/g, ' ');
     const destEl = document.getElementById('gameDest');
     destEl.textContent = gameDestination.replace(/_/g, ' ');
@@ -4072,7 +4071,6 @@ function startGameUI(msg) {
     triNav.style.display = '';
     marathonNav.style.display = 'none';
     statsClassicTri.style.display = '';
-    statsMarathon.style.display = 'none';
     renderTriTargets();
   } else if (msg.mode === 'marathon') {
     marathonEndsAt = msg.endsAt;
@@ -4084,10 +4082,8 @@ function startGameUI(msg) {
     triNav.style.display = 'none';
     marathonNav.style.display = '';
     statsClassicTri.style.display = 'none';
-    statsMarathon.style.display = '';
     document.getElementById('marathonTargetTag').textContent = 'loading…';
     document.getElementById('marathonTargetMeta').innerHTML = '';
-    document.getElementById('marathonScoreDisplay').textContent = '0';
     document.getElementById('marathonSkipBtn').disabled = true;
     // Kick off the first target request. Server may reply with null if the
     // candidate cache is still warming — we'll retry via a short poll.
@@ -4163,15 +4159,11 @@ function renderMarathonTarget(target) {
   maybeShowDestHint();
 }
 
-function updateMarathonScoreDisplay(liveScore, bumped) {
+function updateMarathonScoreDisplay(liveScore /*, bumped */) {
+  // The in-game score badge was removed — we still track marathonScore
+  // internally so the end-of-round screen has the up-to-date value, but
+  // there's no DOM element to update anymore.
   marathonScore = liveScore;
-  const el = document.getElementById('marathonScoreDisplay');
-  el.textContent = String(liveScore.total);
-  if (bumped) {
-    el.classList.remove('marathon-score-bumped');
-    void el.offsetWidth; // restart animation
-    el.classList.add('marathon-score-bumped');
-  }
 }
 
 function renderTriTargets() {
@@ -4927,7 +4919,9 @@ function showMarathonResults(msg) {
   const iAmWinner = !!myResult?.isWinner;
   let winTitle, winSub;
   if (isSinglePlayer) {
-    winTitle = 'You Won!';
+    // Solo runs have no opponent to "win" against — suppress the victory
+    // copy and just show stats so the screen doesn't read as self-congrats.
+    winTitle = '';
     winSub = `${myResult?.total || 0} pts · ${myResult?.completed || 0} targets`;
   } else if (iAmWinner) {
     winTitle = 'You Won!';
@@ -5085,17 +5079,20 @@ function showMarathonResults(msg) {
     // Header matches classic/tri exactly: 👑 Name · WINNER badge for the
     // winner, 💀 Name · BETTER LUCK NEXT TIME badge for the rest. The loser
     // badge is gated to the player's OWN card so the winner doesn't see
-    // "Better luck next time" on every other card in their view.
-    const icon = r.isWinner ? '👑' : '💀';
+    // "Better luck next time" on every other card in their view. In single
+    // player there's no opponent, so we drop both badges + the 👑/💀 icon.
+    const icon = isSinglePlayer ? '' : (r.isWinner ? '👑' : '💀');
     let badgeHtml = '';
-    if (r.isWinner) {
-      badgeHtml = `<div class="r-badge badge-winner">Winner</div>`;
-    } else if (isMe) {
-      badgeHtml = `<div class="r-badge badge-lost">Better luck next time</div>`;
+    if (!isSinglePlayer) {
+      if (r.isWinner) {
+        badgeHtml = `<div class="r-badge badge-winner">Winner</div>`;
+      } else if (isMe) {
+        badgeHtml = `<div class="r-badge badge-lost">Better luck next time</div>`;
+      }
     }
     card.innerHTML = `
       <div class="result-header">
-        <div class="r-name"><span class="r-icon">${icon}</span> ${esc(r.name)}</div>
+        <div class="r-name">${icon ? `<span class="r-icon">${icon}</span> ` : ''}${esc(r.name)}</div>
         ${badgeHtml}
       </div>
       <div class="mk-timeline">${timelineParts.join('') || '<span class="mk-step">No navigation</span>'}</div>
@@ -5200,8 +5197,13 @@ function showResults(msg) {
     winSub = isSinglePlayer ? 'Better luck next time!' : 'Everyone gave up';
   } else {
     const iAmWinner = msg.results && msg.results.some(r => r.isWinner && r.id === myPlayerId);
-    if (isSinglePlayer || iAmWinner) {
-      winTitle = isSinglePlayer ? 'You Won!' : msg.winner + ' Wins!';
+    if (isSinglePlayer) {
+      // Solo runs: no opponent means no "win" — suppress the celebration
+      // copy so the screen doesn't read as self-congratulation.
+      winTitle = '';
+      winSub = '';
+    } else if (iAmWinner) {
+      winTitle = msg.winner + ' Wins!';
       winSub = 'Congratulations!';
     } else {
       winTitle = 'You suck!';
@@ -5266,18 +5268,21 @@ function showResults(msg) {
 
     // Loser badge is gated to the player's own card so the winner doesn't
     // see "Better luck next time" plastered on every other card in their
-    // view. Winner badge always shows (it's a positive callout).
-    const icon = r.isWinner ? '👑' : '💀';
+    // view. Winner badge always shows in MP. In single player there's no
+    // opponent — skip both badges + the 👑/💀 icon.
+    const icon = isSinglePlayer ? '' : (r.isWinner ? '👑' : '💀');
     let badgeHtml = '';
-    if (r.isWinner) {
-      badgeHtml = `<div class="r-badge badge-winner">Winner</div>`;
-    } else if (isMe) {
-      badgeHtml = `<div class="r-badge badge-lost">Better luck next time</div>`;
+    if (!isSinglePlayer) {
+      if (r.isWinner) {
+        badgeHtml = `<div class="r-badge badge-winner">Winner</div>`;
+      } else if (isMe) {
+        badgeHtml = `<div class="r-badge badge-lost">Better luck next time</div>`;
+      }
     }
 
     card.innerHTML = `
       <div class="result-header">
-        <div class="r-name"><span class="r-icon">${icon}</span> ${esc(r.name)}</div>
+        <div class="r-name">${icon ? `<span class="r-icon">${icon}</span> ` : ''}${esc(r.name)}</div>
         ${badgeHtml}
       </div>
       <div class="result-stats">
