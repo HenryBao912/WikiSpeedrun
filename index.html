@@ -139,6 +139,46 @@
     position: relative;
     overflow: hidden;
   }
+  .home-footer {
+    position: absolute;
+    bottom: 18px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 0.8rem;
+    color: var(--text2);
+    opacity: 0.6;
+    z-index: 1;
+    pointer-events: auto;
+    transition: opacity 0.2s;
+  }
+  .home-footer:hover { opacity: 0.95; }
+  .home-footer .heart {
+    display: inline-block;
+    background: linear-gradient(90deg, var(--accent), var(--green), var(--accent));
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+    animation: heartGradient 4s linear infinite;
+  }
+  @keyframes heartGradient {
+    0%   { background-position: 0% center; }
+    100% { background-position: 200% center; }
+  }
+  .home-footer .dot { margin: 0 8px; opacity: 0.5; }
+  .home-footer a {
+    color: inherit;
+    text-decoration: none;
+    border-bottom: 1px dotted currentColor;
+    padding-bottom: 1px;
+  }
+  .home-footer a:hover { color: var(--accent2); border-bottom-color: var(--accent2); }
+  @media (max-width: 600px) {
+    .home-footer { font-size: 0.72rem; bottom: 14px; }
+    .home-footer .dot { margin: 0 6px; }
+  }
   .bg-words {
     position: absolute;
     inset: 0;
@@ -1900,6 +1940,13 @@
       <button class="home-btn mp" onclick="selectMode('multiplayer')"><span>Multiplayer</span></button>
     </div>
   </div>
+  <footer class="home-footer">
+    Made with <span class="heart">♥</span> by Henry Bao
+    <span class="dot">·</span>
+    <a href="mailto:hello@wikispeedrun.io">contact</a>
+    <span class="dot">·</span>
+    <a href="https://github.com/HenryBao912/WikiSpeedrun" target="_blank" rel="noopener">source</a>
+  </footer>
 </div>
 
 <!-- ─── Single Player Setup Screen ─── -->
