@@ -2351,6 +2351,16 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // og:image for link-preview cards (iMessage, Slack, WhatsApp, Discord,
+  // Twitter, Facebook). Referenced by the <meta property="og:image"> tag
+  // in index.html. Kept as a plain route so the URL stays clean and
+  // crawler-friendly — no /static/ prefix to remember.
+  if (parsed.pathname === '/preview.png') {
+    res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400' });
+    fs.createReadStream(path.join(__dirname, 'preview.png')).pipe(res);
+    return;
+  }
+
   // SEO: tell crawlers everything is fair game and point at the sitemap.
   if (parsed.pathname === '/robots.txt') {
     res.writeHead(200, { 'Content-Type': 'text/plain', 'Cache-Control': 'public, max-age=86400' });
