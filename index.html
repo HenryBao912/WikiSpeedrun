@@ -1000,6 +1000,443 @@
   .mk-breakdown-row.negative .mk-bd-val { color: #e17055; }
   .mk-breakdown-row.bonus .mk-bd-val { color: var(--accent); }
 
+  /* ─── Marathon Solo Results redesign (per design system handoff) ──────
+     SP marathon swaps the trophy banner + gold card for a custom medal,
+     mode chip, purple card, and inline share row. Banner reveals first
+     instead of last; everything else preserves existing reveal timing. */
+  .mk-solo-banner {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    opacity: 0;
+    transition: opacity 0.4s var(--ease-out-expo, cubic-bezier(0.22, 1, 0.36, 1));
+  }
+  .mk-solo-banner.revealed { opacity: 1; }
+  .mk-solo-banner::before {
+    content: '';
+    position: absolute;
+    top: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 340px;
+    height: 200px;
+    background: radial-gradient(ellipse at center, rgba(108,92,231,0.16) 0%, transparent 70%);
+    z-index: -1;
+    pointer-events: none;
+  }
+  .mk-solo-medal {
+    position: relative;
+    width: 76px;
+    height: 76px;
+    overflow: hidden;
+    border-radius: 50%;
+    animation: mkSoloMedalDrop 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .mk-solo-medal svg { width: 100%; height: 100%; display: block; }
+  /* No perpetual shine sweep — user opted out of the sine/shine overlay
+     across all icons. Drop-in animation only. */
+  @keyframes mkSoloMedalDrop {
+    0%   { opacity: 0; transform: translateY(-30px) scale(0.4) rotate(-20deg); }
+    60%  { opacity: 1; transform: translateY(0)    scale(1.08) rotate(6deg); }
+    100% { opacity: 1; transform: translateY(0)    scale(1)    rotate(0deg); }
+  }
+  .mk-solo-modechip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(108, 92, 231, 0.14);
+    border: 1px solid rgba(108, 92, 231, 0.3);
+    color: var(--accent2);
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+  }
+  .mk-solo-modechip::before {
+    content: '';
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--accent2);
+    opacity: 0.7;
+  }
+  .mk-solo-sub {
+    color: var(--text2);
+    font-size: 0.95rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .mk-solo-sub strong {
+    color: var(--text);
+    font-size: 1.05rem;
+    font-weight: 800;
+  }
+  /* Card border swaps gold → purple in solo (gold reserved for MP winner). */
+  .result-card.mk-solo-card {
+    background: var(--surface);
+    border: 1.5px solid rgba(108, 92, 231, 0.55);
+    border-radius: 14px;
+    padding: 20px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.3), 0 0 0 1px rgba(108, 92, 231, 0.2);
+  }
+  /* Override the .result-card global border + the .winner-card gold tint
+     for solo specifically — winner-card class still gets attached because
+     SP players have isWinner=true on the server, but the new design wants
+     purple, not gold, in solo. */
+  .result-card.mk-solo-card,
+  .result-card.winner-card.mk-solo-card { border-color: rgba(108, 92, 231, 0.55); }
+  .mk-solo-card-header {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 12px;
+  }
+  /* Inline share row inside the solo card (replaces the Share toggle). */
+  .mk-solo-share {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    font-size: 0.8rem;
+    margin-top: 14px;
+    opacity: 0;
+    transition: opacity 0.4s;
+  }
+  .mk-solo-share.revealed { opacity: 1; }
+  .mk-solo-share-btn {
+    padding: 6px 14px;
+    border-radius: 999px;
+    background: transparent;
+    border: 1px solid var(--surface2);
+    color: var(--text2);
+    font-weight: 600;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+    font-family: inherit;
+  }
+  .mk-solo-share-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent2);
+    background: rgba(108, 92, 231, 0.06);
+  }
+  .mk-solo-share-toast {
+    position: absolute;
+    bottom: -28px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--surface2);
+    color: var(--text);
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    opacity: 0;
+    transition: opacity 0.2s;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .mk-solo-share-toast.show { opacity: 1; }
+  /* Confetti — brief celebratory burst on banner reveal. Auto-cleared from
+     the DOM after ~3.5s by the spawner. The fullscreen variant is appended
+     to <body> so pieces can fall through the whole viewport instead of
+     getting clipped by the small banner bounding box. */
+  .confetti-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+    z-index: 2;
+  }
+  /* Variant attached to #results — covers the screen but stays in normal
+     stacking order so subsequent siblings (banner / card / action row)
+     paint on top. The fall distance also extends to ~80vh so pieces drift
+     down past the card area before fading out. */
+  .confetti-layer.confetti-layer-results {
+    position: absolute;
+    inset: 0;
+    /* Fall further on the larger surface — 300px is fine for short banner
+       but we want pieces to drift well into the lower half of the screen. */
+  }
+  .confetti-layer.confetti-layer-results .confetti {
+    animation-name: confettiFallLong;
+  }
+  @keyframes confettiFallLong {
+    0%   { opacity: 0; transform: translateY(-20px) rotate(0); }
+    10%  { opacity: 1; }
+    100% { opacity: 0; transform: translateY(80vh) rotate(720deg); }
+  }
+  .confetti {
+    position: absolute;
+    width: 6px;
+    height: 10px;
+    border-radius: 2px;
+    opacity: 0;
+    animation: confettiFall 2.8s ease-in forwards;
+  }
+  @keyframes confettiFall {
+    0%   { opacity: 0; transform: translateY(-20px) rotate(0); }
+    10%  { opacity: 1; }
+    100% { opacity: 0; transform: translateY(300px) rotate(540deg); }
+  }
+  /* Honor reduced-motion: kill the medal drop + confetti, keep opacity
+     transitions only so the reveal still reads as ordered. */
+  @media (prefers-reduced-motion: reduce) {
+    .mk-solo-medal,
+    .mk-mp-medal { animation: none; }
+    .confetti-layer { display: none; }
+    .waiting-dot { animation: none; }
+  }
+
+  /* ─── Marathon Multiplayer Results redesign — pixel-matched to the
+     design system's .a-* selectors in Marathon MP Before-After.html.
+     Reuses solo's SVG medal but skips the shine sweep per the saved
+     "no shine on icons" memory rule. */
+
+  .winner-banner.mk-mp-banner {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    position: relative;
+    /* Strip the legacy .winner-banner padding (32px) and override the
+       legacy `transform: scale(0.8)` (which never gets reset to scale(1)
+       because MP marathon doesn't add the `.visible` class — it uses
+       `.revealed`). Without this override the banner sits visibly smaller
+       AND its bounding box shrinks too, opening up an extra ~15px of
+       perceived gap before the cards. */
+    padding: 0;
+    transform: none;
+    opacity: 0;
+    transition: opacity 0.4s var(--ease-out-expo, cubic-bezier(0.22, 1, 0.36, 1));
+  }
+  .winner-banner.mk-mp-banner.revealed { opacity: 1; }
+  /* Tighten the #results stack gap when MP marathon is on screen — design
+     uses 16px between banner / cards / actions, not the global 24px. */
+  #results:has(.winner-banner.mk-mp-banner) { gap: 16px; padding-top: 28px; }
+  .winner-banner.mk-mp-banner::before {
+    content: '';
+    position: absolute;
+    top: -24px; left: 50%;
+    width: 340px; height: 180px;
+    transform: translateX(-50%);
+    background: radial-gradient(ellipse at center, rgba(108, 92, 231, 0.16), transparent 70%);
+    pointer-events: none;
+    z-index: -1;
+  }
+  .mk-mp-medal {
+    position: relative;
+    width: 88px; height: 88px;
+    animation: mkSoloMedalDrop 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .mk-mp-medal svg { width: 100%; height: 100%; display: block; }
+  /* No shine on the medal — memory rule "no shine/shimmer on icons". */
+
+  .wb-mode-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    padding: 4px 12px;
+    border-radius: 999px;
+    background: rgba(108, 92, 231, 0.14);
+    color: var(--accent2);
+    border: 1px solid rgba(108, 92, 231, 0.3);
+  }
+  .wb-mode-chip::before {
+    content: '';
+    width: 4px; height: 4px;
+    border-radius: 50%;
+    background: var(--accent2);
+    opacity: 0.7;
+  }
+  .wb-name {
+    font-size: 1.6rem;
+    font-weight: 800;
+    letter-spacing: -0.3px;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .wb-name-swatch {
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.08);
+    flex-shrink: 0;
+  }
+  .wb-sub {
+    font-size: 1rem;
+    color: var(--text2);
+    font-variant-numeric: tabular-nums;
+  }
+  .wb-sub strong { color: var(--text); font-weight: 700; }
+
+  /* Player card — overrides .result-card padding/border for MP marathon. */
+  .result-card.mk-mp-card {
+    background: var(--surface);
+    border-radius: 14px;
+    padding: 14px 16px;
+    border: 1.5px solid var(--surface2);
+    position: relative;
+    box-shadow: none;
+  }
+  /* Card border variants: my card purple, winner gold, mine+winner gets
+     gold border + extra gold halo (matches .a-pcard / .mine / .winner). */
+  .result-card.mk-mp-card.is-mine {
+    border-color: rgba(108, 92, 231, 0.55);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(108, 92, 231, 0.2);
+  }
+  .result-card.mk-mp-card.winner-card {
+    border-color: var(--gold);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(253, 203, 110, 0.25);
+  }
+  .result-card.mk-mp-card.is-mine.winner-card {
+    border-color: var(--gold);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(253, 203, 110, 0.3), 0 0 18px rgba(253, 203, 110, 0.2);
+  }
+  .mk-mp-card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+
+  /* Rank badge — rounded square, surface2 base. Position color shows on
+     the digit text (silver/bronze); winner gets a gold gradient. */
+  .rank-badge {
+    width: 26px; height: 26px;
+    border-radius: 8px;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.78rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    background: var(--surface2);
+    color: var(--text2);
+  }
+  .rank-badge.rank-winner {
+    background: linear-gradient(135deg, var(--gold), #d49a3a);
+    color: #2a1d08;
+  }
+  .rank-badge.rank-2 { color: #c4c4d0; } /* silver */
+  .rank-badge.rank-3 { color: #b0845e; } /* bronze */
+  /* rank-1 should normally never apply — a 1st-place card always has
+     `.rank-winner` (gold gradient). Defined here as a safety so the badge
+     still has gold tint if the winner flag ever fails to set server-side. */
+  .rank-badge.rank-1 { color: var(--gold); }
+
+  /* Player color swatch — between rank badge and name on every card.
+     The flex gap on the parent provides spacing; no margin needed. */
+  .player-swatch,
+  .you-chip {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex: 0 0 auto;
+  }
+  .mk-mp-card-name {
+    font-size: 0.95rem;
+    font-weight: 700;
+    flex: 1 1 auto;
+    color: var(--text);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+  .you-label {
+    font-size: 0.6rem;
+    font-weight: 800;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    padding: 1px 6px;
+    border-radius: 4px; /* square chip per design (not pill) */
+    background: rgba(108, 92, 231, 0.2);
+    color: var(--accent2);
+    font-family: inherit;
+  }
+  .mk-mp-card-total {
+    font-size: 1.2rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    color: var(--accent2);
+  }
+  .mk-mp-card-total.bumped { animation: marathonScoreBump 0.45s ease-out; }
+  .result-card.mk-mp-card.winner-card .mk-mp-card-total { color: var(--gold); }
+
+  /* Path tweaks for MP — slightly tighter than the solo card. */
+  .result-card.mk-mp-card .mk-timeline {
+    gap: 5px 3px;
+    font-size: 0.78rem;
+    margin: 0;
+  }
+  .result-card.mk-mp-card .mk-step {
+    padding: 3px 8px;
+    gap: 5px;
+  }
+  .result-card.mk-mp-card .mk-step-badge {
+    font-size: 0.62rem;
+    padding: 0 5px;
+  }
+  .result-card.mk-mp-card .mk-arrow.revealed { opacity: 0.5; }
+  .result-card.mk-mp-card .mk-step-cost { font-size: 0.7rem; }
+
+  /* Breakdown — flat horizontal text row (NOT pills) per the design.
+     Each item is a label + bold colored number, separated by gaps. */
+  .mk-mp-bd {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--surface2);
+    font-size: 0.72rem;
+    color: var(--text2);
+    flex-wrap: wrap;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .mk-mp-bd.revealed { opacity: 1; }
+  .mk-mp-bd span b {
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+    margin-right: 2px;
+  }
+  .mk-mp-bd span.pos b { color: var(--green); }
+  .mk-mp-bd span.neg b { color: var(--red); }
+
+  /* Non-host action area — pulsing dot + "waiting for host" copy. */
+  .waiting-host {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    border-radius: 999px;
+    background: rgba(108, 92, 231, 0.08);
+    border: 1px dashed rgba(108, 92, 231, 0.4);
+    color: var(--text2);
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+  .waiting-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent2);
+    animation: waiting-pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes waiting-pulse {
+    0%, 100% { opacity: 0.3; transform: scale(0.8); }
+    50%      { opacity: 1;   transform: scale(1.1); }
+  }
+
   /* ─── Difficulty Slider ─── */
   .diff-form-group {
     width: 100%;
@@ -2575,7 +3012,11 @@
   <div class="results-grid" id="resultsGrid"></div>
   <div class="result-actions">
     <button class="btn btn-primary btn-small" id="playAgainBtn" onclick="playAgain()" style="display:none;">Play Again</button>
-<button class="btn btn-secondary btn-small" id="backToHomeBtn" onclick="backToHome()">Back to Home</button>
+    <button class="btn btn-secondary btn-small" id="backToHomeBtn" onclick="backToHome()">Back to Home</button>
+    <div id="waitingForHost" class="waiting-host" style="display:none;">
+      <span class="waiting-dot"></span>
+      Waiting for host to start the next round…
+    </div>
   </div>
 </div>
 
@@ -4899,6 +5340,61 @@ function renderPlayersBar(distData) {
   });
 }
 
+// SVG medal used by the solo-marathon results banner. Custom asset (replaces
+// the 🏆 emoji) — gold cup with a purple→green ribbon matching the brand
+// gradient. Inlined so we don't add a network request.
+const MARATHON_SOLO_MEDAL_SVG = `
+  <svg viewBox="0 0 72 72" fill="none" width="100%" height="100%" aria-hidden="true">
+    <defs>
+      <linearGradient id="mkSoloCup" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#fdcb6e"/>
+        <stop offset="1" stop-color="#d49a3a"/>
+      </linearGradient>
+      <linearGradient id="mkSoloRibbon" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="#6c5ce7"/>
+        <stop offset="1" stop-color="#00b894"/>
+      </linearGradient>
+    </defs>
+    <path d="M24 8 L28 44 L36 36 L44 44 L48 8 Z" fill="url(#mkSoloRibbon)" opacity="0.85"/>
+    <path d="M20 20 Q20 44 36 48 Q52 44 52 20 Z" fill="url(#mkSoloCup)" stroke="#b87d1e" stroke-width="1"/>
+    <path d="M20 24 Q10 26 14 36 Q18 38 20 34" fill="none" stroke="url(#mkSoloCup)" stroke-width="3" stroke-linecap="round"/>
+    <path d="M52 24 Q62 26 58 36 Q54 38 52 34" fill="none" stroke="url(#mkSoloCup)" stroke-width="3" stroke-linecap="round"/>
+    <rect x="28" y="48" width="16" height="4" fill="#a87a2c"/>
+    <rect x="24" y="52" width="24" height="6" rx="1" fill="#8a611d"/>
+    <path d="M36 28 L38 33 L43 33 L39 36 L41 41 L36 38 L31 41 L33 36 L29 33 L34 33 Z" fill="rgba(255,255,255,0.5)"/>
+  </svg>
+`;
+const MARATHON_SOLO_CONFETTI_COLORS = ['#6c5ce7', '#00b894', '#fdcb6e', '#a29bfe', '#e17055'];
+
+// Generates a brief 20-piece confetti burst across the results screen.
+// The layer is inserted as the FIRST child of #results so cards/banner
+// (later in DOM order) naturally render on top — pieces fall behind the
+// score box, only visible in the gaps. Auto-cleaned ~3.5s later.
+// `palette` is an optional array of colors; falls back to solo defaults.
+function spawnSoloMarathonConfetti(palette) {
+  const screen = document.getElementById('results');
+  if (!screen) return;
+  const colors = (Array.isArray(palette) && palette.length) ? palette : MARATHON_SOLO_CONFETTI_COLORS;
+  const layer = document.createElement('div');
+  layer.className = 'confetti-layer confetti-layer-results';
+  for (let i = 0; i < 20; i++) {
+    const piece = document.createElement('div');
+    piece.className = 'confetti';
+    piece.style.left = (Math.random() * 100) + '%';
+    piece.style.background = colors[i % colors.length];
+    piece.style.animationDelay = (Math.random() * 0.6).toFixed(2) + 's';
+    piece.style.transform = `rotate(${Math.floor(Math.random() * 360)}deg)`;
+    layer.appendChild(piece);
+  }
+  // Prepend so subsequent siblings (banner, card, action row) paint over it.
+  screen.insertBefore(layer, screen.firstChild);
+  resultsAnimationTimeouts.push(setTimeout(() => layer.remove(), 3500));
+}
+// Outcome-aware palettes per the MP design:
+//   gold-heavy if I won, neutral purple/green otherwise.
+const MP_CONFETTI_PALETTE_WIN  = ['#fdcb6e', '#6c5ce7', '#00b894', '#e17055', '#a29bfe'];
+const MP_CONFETTI_PALETTE_LOSS = ['#6c5ce7', '#00b894', '#a29bfe'];
+
 // Marathon results screen. Mirrors classic/tri visually:
 //   - Shared winner-banner with "You Won" / "You Suck" copy
 //   - Standard result-card rows (one per player)
@@ -4906,7 +5402,12 @@ function renderPlayersBar(distData) {
 //   - Full navigation path (same pattern as classic)
 //   - Per-event animated tally that reveals in ACTION ORDER
 // Reveal order is reverse-rank (last place first, winner last) for drama.
+// Single-player marathon takes a separate path with the redesigned banner +
+// inline share row + confetti per the design system handoff.
 function showMarathonResults(msg) {
+  if (isSinglePlayer) {
+    return showMarathonSoloResults(msg);
+  }
   clearInterval(timerInterval);
   resultsAnimationTimeouts.forEach(t => clearTimeout(t));
   resultsAnimationTimeouts = [];
@@ -4937,13 +5438,75 @@ function showMarathonResults(msg) {
   const nameEl = document.getElementById('winnerName');
   const subEl = document.getElementById('winnerSub');
   const icon = document.getElementById('resultIcon');
+  // Tear down any leftover SP-marathon banner state from a prior round.
+  banner.classList.remove('mk-solo-banner', 'mk-mp-banner', 'visible', 'revealed');
+  banner.querySelectorAll(':scope > .mk-solo-content').forEach(el => el.remove());
+  for (const child of banner.children) child.style.display = '';
   document.getElementById('shareCard').style.display = 'none';
   document.getElementById('shareToggleBtn').style.display = 'none';
-  nameEl.textContent = winTitle;
+  // Hide the legacy emoji icon — MP redesign replaces it with the SVG medal.
+  icon.style.display = 'none';
+
+  // Detect tied winners (server may flag multiple results with isWinner: true).
+  const winners = results.filter(r => r.isWinner);
+  const isTie = winners.length > 1;
+  const runnerUp = results.find(r => !r.isWinner) || null;
+  const margin = (winner && runnerUp) ? Math.max(0, (winner.total || 0) - (runnerUp.total || 0)) : 0;
+
+  // Banner identity: medal + mode chip + winner headline + margin sub.
+  // Chip text matches the design: "Marathon · 5 min · 3 players".
+  const durKey = msg.durationKey || marathonDurationKey || '5m';
+  const durMin = String(durKey).replace(/m$/i, '');
+  const playerCount = results.length;
+  const winnerColor = winner?.color || 'var(--accent2)';
+  let headlineHtml;
+  if (isTie) {
+    const tieNames = winners.map(w => esc(w.name)).join(' & ');
+    headlineHtml = `<span class="wb-name-swatch" style="background:${esc(winnerColor)}"></span>${tieNames} tie at ${winner?.total || 0} pts`;
+  } else if (iAmWinner) {
+    headlineHtml = `<span class="wb-name-swatch" style="background:${esc(winnerColor)}"></span>You win!`;
+  } else if (winner) {
+    headlineHtml = `<span class="wb-name-swatch" style="background:${esc(winnerColor)}"></span>${esc(winner.name)} wins`;
+  } else {
+    headlineHtml = 'Game over';
+  }
+  // Sub-line: matches the design's single React format —
+  //   "<strong>{winner.score} pts</strong> · beat {runnerUp|you} by {margin}"
+  // The "you" substitution applies regardless of viewer POV (loser sees
+  // "beat you by N" if they were the runner-up). Tied case gets its own
+  // copy since the design didn't specify one.
+  let subHtml;
+  const runnerUpLabel = (runnerUp && runnerUp.id === myPlayerId) ? 'you' : esc(runnerUp?.name || '');
+  if (isTie) {
+    subHtml = `<strong>${winner?.total || 0} pts</strong> · ${winners.length}-way tie`;
+  } else if (winner && runnerUp) {
+    subHtml = `<strong>${winner.total} pts</strong> · beat ${runnerUpLabel} by ${margin}`;
+  } else if (winner) {
+    subHtml = `<strong>${winner.total} pts</strong>`;
+  } else {
+    subHtml = '';
+  }
+
+  // Replace the banner with the new MP structure (medal/chip/name/sub).
+  banner.classList.add('mk-mp-banner');
+  banner.querySelectorAll(':scope > .mk-mp-content').forEach(el => el.remove());
+  for (const child of banner.children) {
+    if (!child.classList.contains('mk-mp-content')) child.style.display = 'none';
+  }
+  const mpContent = document.createElement('div');
+  mpContent.className = 'mk-mp-content';
+  mpContent.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:8px;width:100%;';
+  mpContent.innerHTML = `
+    <div class="mk-mp-medal">${MARATHON_SOLO_MEDAL_SVG}</div>
+    <div class="wb-mode-chip">Marathon · ${esc(durMin)} min · ${playerCount} players</div>
+    <div class="wb-name">${headlineHtml}</div>
+    <div class="wb-sub">${subHtml}</div>
+  `;
+  banner.appendChild(mpContent);
+  // Keep nameEl/subEl in the DOM but blank for cleanup compatibility.
+  nameEl.textContent = '';
+  subEl.textContent = '';
   nameEl.classList.remove('surrendered', 'loser');
-  if (!isSinglePlayer && !iAmWinner) nameEl.classList.add('loser');
-  subEl.textContent = winSub;
-  icon.textContent = isSinglePlayer || iAmWinner ? '🏆' : '😂';
   // Banner is held back until every card finishes animating — keeps the
   // "You Won / You Suck" reveal as the climax instead of spoiling it up-front.
   banner.classList.remove('visible');
@@ -5059,100 +5622,358 @@ function showMarathonResults(msg) {
     }
     const bonusSum = r.bonus || 0;
 
-    const breakdownRows = [
-      { key: 'hits',  label: 'Hits',  val: hitsSum,  cls: hitsSum > 0 ? 'positive' : '' },
-      { key: 'steps', label: 'Steps', val: stepsSum, cls: stepsSum < 0 ? 'negative' : '' },
-      { key: 'skips', label: 'Skips', val: skipsSum, cls: skipsSum < 0 ? 'negative' : '' },
-      { key: 'bonus', label: 'Bonus', val: bonusSum, cls: bonusSum > 0 ? 'bonus' : '' },
+    // Flat horizontal breakdown row per the design (NOT pills). Each item
+    // is "Label <b>±N</b>"; pos/neg classes color the bold number. Skips
+    // and bonus only appear when non-zero so a clean run isn't cluttered
+    // with "+0" rows. skipsSum is already negative (−5 per skip).
+    const bdParts = [
+      `<span class="pos">Hits <b>+${hitsSum}</b></span>`,
+      `<span class="neg">Steps <b>${stepsSum < 0 ? '−' : '+'}${Math.abs(stepsSum)}</b></span>`,
     ];
-    const breakdownHtml = `
-      <div class="mk-breakdown">
-        ${breakdownRows.map(b => `
-          <div class="mk-breakdown-row ${b.cls}" data-key="${b.key}">
-            <span>${b.label}</span>
-            <span class="mk-bd-val">${b.val >= 0 ? '+' : '−'}${Math.abs(b.val)}</span>
-          </div>
-        `).join('')}
-      </div>
-    `;
+    if (skipsSum < 0) bdParts.push(`<span class="neg">Skips <b>−${Math.abs(skipsSum)}</b></span>`);
+    if (bonusSum > 0) bdParts.push(`<span class="pos">Bonus <b>+${bonusSum}</b></span>`);
+    const breakdownHtml = `<div class="mk-mp-bd">${bdParts.join('')}</div>`;
 
-    // Header matches classic/tri exactly: 👑 Name · WINNER badge for the
-    // winner, 💀 Name · BETTER LUCK NEXT TIME badge for the rest. The loser
-    // badge is gated to the player's OWN card so the winner doesn't see
-    // "Better luck next time" on every other card in their view. In single
-    // player there's no opponent, so we drop both badges + the 👑/💀 icon.
-    const icon = isSinglePlayer ? '' : (r.isWinner ? '👑' : '💀');
-    let badgeHtml = '';
-    if (!isSinglePlayer) {
-      if (r.isWinner) {
-        badgeHtml = `<div class="r-badge badge-winner">Winner</div>`;
-      } else if (isMe) {
-        badgeHtml = `<div class="r-badge badge-lost">Better luck next time</div>`;
-      }
+    // MP redesign: rank badge (🏆 / 2 / 3 …) + player swatch + name (with
+    // optional "you" tag) + running total. No 👑/💀 emoji or text badges
+    // — the rank badge + card-border color tell the same story visually.
+    card.classList.add('mk-mp-card');
+    if (isMe) card.classList.add('is-mine');
+    let rankHtml;
+    if (r.isWinner) {
+      rankHtml = `<span class="rank-badge rank-winner">🏆</span>`;
+    } else {
+      const rankNum = i + 1;
+      const rankCls = rankNum <= 3 ? `rank-${rankNum}` : '';
+      rankHtml = `<span class="rank-badge ${rankCls}">${rankNum}</span>`;
     }
+    const playerColor = playerColors.get(r.id) || r.color || 'var(--accent2)';
+    const swatchHtml = `<span class="player-swatch" style="background:${esc(playerColor)}"></span>`;
+    const youTagHtml = isMe ? `<span class="you-label">you</span>` : '';
+
     card.innerHTML = `
-      <div class="result-header">
-        <div class="r-name">${icon ? `<span class="r-icon">${icon}</span> ` : ''}${esc(r.name)}</div>
-        ${badgeHtml}
+      <div class="mk-mp-card-header">
+        ${rankHtml}
+        ${swatchHtml}
+        <span class="mk-mp-card-name">${esc(r.name)}${youTagHtml}</span>
+        <span class="mk-mp-card-total" data-target="${r.total || 0}">0</span>
       </div>
       <div class="mk-timeline">${timelineParts.join('') || '<span class="mk-step">No navigation</span>'}</div>
       ${breakdownHtml}
-      <div class="mk-total-row"><span>Total</span><span class="mk-total-val">0</span></div>
     `;
     grid.appendChild(card);
     return { el: card, data: r };
   });
 
   showScreen('results');
-  document.getElementById('playAgainBtn').style.display = isHost || isSinglePlayer ? '' : 'none';
+  // Action area: host gets the standard buttons, non-host gets the
+  // "Waiting for host…" indicator instead of an empty action area.
+  const isNonHost = !isSinglePlayer && !isHost;
+  const playAgainBtn = document.getElementById('playAgainBtn');
+  const backBtn = document.getElementById('backToHomeBtn');
+  const waitingEl = document.getElementById('waitingForHost');
+  if (playAgainBtn) {
+    playAgainBtn.style.display = isNonHost ? 'none' : '';
+    // Sentence-case copy per design (HTML default is title case for the
+    // legacy classic/tri shell — explicitly override here).
+    playAgainBtn.textContent = 'Play again';
+  }
+  if (backBtn) {
+    backBtn.style.display = isNonHost ? 'none' : '';
+    backBtn.textContent = 'Back to home';
+  }
+  if (waitingEl) waitingEl.style.display = isNonHost ? 'inline-flex' : 'none';
 
-  // Reveal in REVERSE rank order: last place first, winner last. Within each
-  // card, walk the timeline step by step — click cost, arrow, next node —
-  // animating the running total every time a delta applies. The breakdown
-  // rows stagger in alongside their matching event types. Banner ("You Won
-  // / You Suck") fires last, after every card finishes its tally.
-  const STEP_MS = 220;
-  const CARD_GAP_MS = 400;
+  // Reveal cascade — matches the design's prototype timing exactly:
+  //   BANNER_AT     100ms  banner reveals + confetti fires (if winner has any
+  //                        completed targets — memory rule)
+  //   CARD_START    750ms  first card (winner) begins
+  //   CARD_STAGGER  300ms  each subsequent card starts 300ms after previous
+  //                        START (parallel reveals overlap, snappy for 3+
+  //                        players)
+  //   PATH_STEP_MS  90ms   path items inside each card cascade fast
+  //   score reveals after path completes per card
+  // Order: WINNER FIRST (rank order), not reverse — banner already named the
+  // winner so revealing them first is the natural confirmation.
+  const BANNER_AT = 100;
+  const CARD_START = 750;
+  const CARD_STAGGER = 300;
+  const PATH_STEP_MS = 90;
 
-  const reverseOrder = [...cards].reverse();
-  let cursor = 300;
-  for (const { el, data } of reverseOrder) {
-    resultsAnimationTimeouts.push(setTimeout(() => el.classList.add('visible'), cursor));
-    cursor += 280;
+  resultsAnimationTimeouts.push(setTimeout(() => {
+    banner.classList.add('revealed');
+    if ((winner?.completed || 0) > 0) {
+      const palette = iAmWinner ? MP_CONFETTI_PALETTE_WIN : MP_CONFETTI_PALETTE_LOSS;
+      spawnSoloMarathonConfetti(palette);
+    }
+  }, BANNER_AT));
 
-    // Reveal timeline items sequentially. The running total is computed but
-    // NOT shown — the total row stays hidden until after the breakdown rows
-    // finish, so the score reveal feels like a payoff rather than a ticker.
+  cards.forEach(({ el, data }, i) => {
+    const cardAt = CARD_START + i * CARD_STAGGER;
+    resultsAnimationTimeouts.push(setTimeout(() => el.classList.add('visible'), cardAt));
+
     const timelineItems = el.querySelectorAll('.mk-timeline > *');
-    timelineItems.forEach(item => {
-      resultsAnimationTimeouts.push(setTimeout(() => item.classList.add('revealed'), cursor));
-      cursor += STEP_MS;
+    timelineItems.forEach((item, j) => {
+      resultsAnimationTimeouts.push(setTimeout(() => item.classList.add('revealed'),
+        cardAt + 150 + j * PATH_STEP_MS));
     });
-    // Reveal breakdown rows next, one by one (Hits / Steps / Skips / Bonus).
-    const bdRows = el.querySelectorAll('.mk-breakdown-row');
-    bdRows.forEach(row => {
-      resultsAnimationTimeouts.push(setTimeout(() => row.classList.add('revealed'), cursor));
-      cursor += 220;
-    });
-    // After every tally row has appeared, fade in the total row and animate
-    // the count-up from 0 to the final score — single, satisfying reveal.
-    const totalEl = el.querySelector('.mk-total-val');
-    const totalRow = el.querySelector('.mk-total-row');
+
+    const bdRow = el.querySelector('.mk-mp-bd');
+    const breakdownAt = cardAt + 150 + timelineItems.length * PATH_STEP_MS;
+    resultsAnimationTimeouts.push(setTimeout(() => bdRow?.classList.add('revealed'), breakdownAt));
+
+    const totalEl = el.querySelector('.mk-mp-card-total');
+    const totalAt = breakdownAt + 100;
     resultsAnimationTimeouts.push(setTimeout(() => {
-      totalRow?.classList.add('revealed');
+      if (!totalEl) return;
       animateCountUp(totalEl, 0, data.total || 0, 600);
-      totalEl?.classList.add('bumped');
-    }, cursor));
-    cursor += 700;
-    // Settle the final total — guards against rounding drift in animateCountUp.
+      totalEl.classList.add('bumped');
+    }, totalAt));
+    // Settle final value to guard against rounding drift.
     resultsAnimationTimeouts.push(setTimeout(() => {
-      totalEl.textContent = String(data.total);
-    }, cursor));
-    cursor += CARD_GAP_MS;
+      if (totalEl) totalEl.textContent = String(data.total);
+    }, totalAt + 700));
+  });
+}
+
+// Solo Marathon results — redesigned per design system handoff.
+// Banner reveals FIRST (medal drop + mode chip + score sub) at t=100, card
+// reveals at t=700, path/breakdown/total cascade thereafter at 180ms steps.
+// Inline share buttons replace the old "Share your run" toggle.
+function showMarathonSoloResults(msg) {
+  clearInterval(timerInterval);
+  resultsAnimationTimeouts.forEach(t => clearTimeout(t));
+  resultsAnimationTimeouts = [];
+
+  const myResult = (msg.results || []).find(r => r.id === myPlayerId) || (msg.results || [])[0] || {};
+  const path = myResult.path || [];
+  const events = myResult.events || [];
+  const total = myResult.total || 0;
+  const targets = myResult.completed || 0;
+
+  // ── Banner: hide the legacy children (#resultIcon / #winnerName /
+  // #winnerSub / #shareToggleBtn) — we keep them in the DOM so MP results
+  // can reuse them next round — and inject a sibling solo-content wrapper.
+  const banner = document.querySelector('.winner-banner');
+  banner.classList.remove('visible', 'mk-mp-banner');
+  banner.classList.add('mk-solo-banner');
+  // Drop any leftover MP banner content as well so a SP run after MP
+  // doesn't show stale state.
+  banner.querySelectorAll(':scope > .mk-solo-content, :scope > .mk-mp-content').forEach(el => el.remove());
+  for (const child of banner.children) {
+    if (!child.classList.contains('mk-solo-content')) child.style.display = 'none';
+  }
+  document.getElementById('shareCard').style.display = 'none';
+  // Hide the MP "waiting for host" indicator (SP doesn't need it).
+  const waitEl1 = document.getElementById('waitingForHost');
+  if (waitEl1) waitEl1.style.display = 'none';
+
+  // Mode chip text from durationKey ('5m' → 'Marathon · 5 min')
+  const durKey = msg.durationKey || marathonDurationKey || '5m';
+  const durMin = String(durKey).replace(/m$/i, '');
+  const soloContent = document.createElement('div');
+  soloContent.className = 'mk-solo-content';
+  soloContent.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:10px;width:100%;';
+  soloContent.innerHTML = `
+    <div class="mk-solo-medal">${MARATHON_SOLO_MEDAL_SVG}</div>
+    <div class="mk-solo-modechip">Marathon · ${esc(durMin)} min</div>
+    <div class="mk-solo-sub"><strong>${total} pts</strong> · ${targets} targets reached</div>
+  `;
+  banner.appendChild(soloContent);
+
+  // ── Card: build with the same path/breakdown/total as MP, plus an inline
+  // share row at the bottom. Border/header come from .mk-solo-card styling.
+  const grid = document.getElementById('resultsGrid');
+  grid.className = 'results-grid';
+  grid.innerHTML = '';
+
+  const card = document.createElement('div');
+  card.className = 'result-card mk-solo-card';
+  // Card stays hidden until t=700ms — inline transitions instead of a class
+  // so we don't need yet another keyframe.
+  card.style.opacity = '0';
+  card.style.transform = 'translateY(12px)';
+  card.style.transition = 'opacity 0.4s cubic-bezier(0.22, 1, 0.36, 1), transform 0.4s cubic-bezier(0.22, 1, 0.36, 1)';
+
+  // Build path timeline + skips inline + breakdown — same logic as MP path.
+  const normTitle = s => (s || '').replace(/_/g, ' ').toLowerCase().trim();
+  const timelineParts = [];
+  let cumulativeClicks = 0;
+  let pathCursor = 0;
+  const emitNode = (article, opts = {}) => {
+    const name = article.replace(/_/g, ' ');
+    const isStart = opts.isStart === true;
+    const hit = opts.hit;
+    const cls = isStart ? 'start' : (hit ? 'hit' : '');
+    const badge = hit ? `<span class="mk-step-badge" data-gain="${hit.score}">+${hit.score}</span>` : '';
+    timelineParts.push(`<span class="mk-step ${cls}">${esc(name)}${badge}</span>`);
+  };
+  const emitClickGap = () => {
+    cumulativeClicks++;
+    timelineParts.push(`<span class="mk-step-cost" data-cost="-1">${cumulativeClicks}</span>`);
+    timelineParts.push('<span class="mk-arrow">→</span>');
+  };
+  const emitSkip = (ev) => {
+    timelineParts.push(`<span class="mk-step skip" data-cost="-5">${esc(ev.title.replace(/_/g, ' '))}<span class="mk-step-badge">−5</span></span>`);
+  };
+  if (path.length > 0) { emitNode(path[0], { isStart: true }); pathCursor = 1; }
+  for (const ev of events) {
+    if (ev.kind === 'hit') {
+      const clicks = Math.max(1, ev.clicks || 1);
+      for (let k = 0; k < clicks; k++) {
+        emitClickGap();
+        const article = path[pathCursor];
+        if (article == null) break;
+        emitNode(article, { hit: k === clicks - 1 ? ev : null });
+        pathCursor++;
+      }
+    } else if (ev.kind === 'skip') {
+      const skipClicks = Math.max(0, ev.clicks || 0);
+      for (let k = 0; k < skipClicks; k++) {
+        emitClickGap();
+        const article = path[pathCursor];
+        if (article == null) break;
+        emitNode(article, {});
+        pathCursor++;
+      }
+      emitSkip(ev);
+    }
+  }
+  while (pathCursor < path.length) {
+    emitClickGap();
+    emitNode(path[pathCursor], {});
+    pathCursor++;
   }
 
-  // Banner is the climax — show it AFTER every card has finished tallying.
-  resultsAnimationTimeouts.push(setTimeout(() => banner.classList.add('visible'), cursor));
+  // Breakdown — must mirror server's computeMarathonScore.
+  let hitsSum = 0, stepsSum = 0, skipsSum = 0;
+  for (const ev of events) {
+    if (ev.kind === 'hit') {
+      hitsSum += ev.score || 0;
+      stepsSum -= (ev.clicks || 0);
+    } else if (ev.kind === 'skip') {
+      skipsSum -= 5;
+    }
+  }
+  const bonusSum = myResult.bonus || 0;
+  // Hits + Steps always show; Skips and Bonus only when non-zero so a clean
+  // run isn't padded with "+0" rows. Skips shows the deduction (e.g. "−5"
+  // for one skip, "−10" for two), Bonus shows the award (e.g. "+30").
+  const breakdownRows = [
+    { key: 'hits',  label: 'Hits',  val: hitsSum,  cls: hitsSum > 0 ? 'positive' : '' },
+    { key: 'steps', label: 'Steps', val: stepsSum, cls: stepsSum < 0 ? 'negative' : '' },
+  ];
+  if (skipsSum < 0) breakdownRows.push({ key: 'skips', label: 'Skips', val: skipsSum, cls: 'negative' });
+  if (bonusSum > 0) breakdownRows.push({ key: 'bonus', label: 'Bonus', val: bonusSum, cls: 'bonus' });
+  const breakdownHtml = `
+    <div class="mk-breakdown">
+      ${breakdownRows.map(b => `
+        <div class="mk-breakdown-row ${b.cls}" data-key="${b.key}">
+          <span>${esc(b.label)}</span>
+          <span class="mk-bd-val">${b.val >= 0 ? '+' : '−'}${Math.abs(b.val)}</span>
+        </div>
+      `).join('')}
+    </div>
+  `;
+
+  const S = (typeof shareStr === 'function') ? shareStr() : { copy: 'Copy share', save: 'Save image', copied: 'Copied!', saved: 'Saved!', copyFail: 'Copy failed' };
+  card.innerHTML = `
+    <div class="mk-solo-card-header">Your run</div>
+    <div class="mk-timeline">${timelineParts.join('') || '<span class="mk-step">No navigation</span>'}</div>
+    ${breakdownHtml}
+    <div class="mk-total-row"><span>Total</span><span class="mk-total-val">0</span></div>
+    <div class="mk-solo-share" style="position:relative;">
+      <button class="mk-solo-share-btn" data-action="copy">⎘ ${esc(S.copy)}</button>
+      <button class="mk-solo-share-btn" data-action="save">↓ ${esc(S.save)}</button>
+      <span class="mk-solo-share-toast" id="mkSoloShareToast"></span>
+    </div>
+  `;
+  grid.appendChild(card);
+
+  // Wire share buttons — reuse existing buildShareText / buildShareImage so
+  // the share content stays consistent with the legacy toggle's output.
+  const shareToast = card.querySelector('#mkSoloShareToast');
+  const showInlineToast = (text) => {
+    if (!shareToast) return;
+    shareToast.textContent = text;
+    shareToast.classList.add('show');
+    clearTimeout(shareToast._hideT);
+    shareToast._hideT = setTimeout(() => shareToast.classList.remove('show'), 1500);
+  };
+  card.querySelector('[data-action="copy"]').onclick = async () => {
+    const txt = buildShareText(myResult, msg);
+    try {
+      await navigator.clipboard.writeText(txt);
+      showInlineToast(S.copied);
+    } catch (e) {
+      const ta = document.createElement('textarea');
+      ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); showInlineToast(S.copied); }
+      catch { showInlineToast(S.copyFail); }
+      document.body.removeChild(ta);
+    }
+  };
+  card.querySelector('[data-action="save"]').onclick = async () => {
+    const blob = await buildShareImage(myResult, msg);
+    if (!blob) { showInlineToast(S.copyFail); return; }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const steps = Math.max(0, path.length - 1);
+    a.download = `wikispeedrun-${steps}steps.png`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showInlineToast(S.saved);
+  };
+
+  showScreen('results');
+  // Sentence-case CTA copy per the design — only in this SP marathon path.
+  const playAgainBtn = document.getElementById('playAgainBtn');
+  if (playAgainBtn) { playAgainBtn.style.display = ''; playAgainBtn.textContent = 'Play again'; }
+  const backBtn = document.getElementById('backToHomeBtn');
+  if (backBtn) { backBtn.style.display = ''; backBtn.textContent = 'Back to home'; }
+
+  // ── Reveal cascade (absolute ms from this call):
+  //   100  banner reveals + medal drop + confetti
+  //   700  card reveals
+  //   1100 path items (180ms apart)
+  //   pathEnd + 250: breakdown rows (180ms apart)
+  //   bdEnd + 150: total + share row + count-up (800ms)
+  const STEP_MS = 180;
+  resultsAnimationTimeouts.push(setTimeout(() => {
+    banner.classList.add('revealed');
+    // Skip the celebration when the player didn't reach a single target —
+    // confetti on a 0-target run reads as mockery, not a callout.
+    if (targets > 0) spawnSoloMarathonConfetti();
+  }, 100));
+  resultsAnimationTimeouts.push(setTimeout(() => {
+    card.style.opacity = '1';
+    card.style.transform = 'translateY(0)';
+  }, 700));
+
+  let cursor = 1100;
+  const timelineItems = card.querySelectorAll('.mk-timeline > *');
+  timelineItems.forEach(item => {
+    resultsAnimationTimeouts.push(setTimeout(() => item.classList.add('revealed'), cursor));
+    cursor += STEP_MS;
+  });
+  cursor += 250;
+  const bdRows = card.querySelectorAll('.mk-breakdown-row');
+  bdRows.forEach(row => {
+    resultsAnimationTimeouts.push(setTimeout(() => row.classList.add('revealed'), cursor));
+    cursor += STEP_MS;
+  });
+  cursor += 150;
+  const totalEl = card.querySelector('.mk-total-val');
+  const totalRow = card.querySelector('.mk-total-row');
+  const shareRow = card.querySelector('.mk-solo-share');
+  resultsAnimationTimeouts.push(setTimeout(() => {
+    totalRow?.classList.add('revealed');
+    shareRow?.classList.add('revealed');
+    animateCountUp(totalEl, 0, total, 800);
+    totalEl?.classList.add('bumped');
+  }, cursor));
 }
 
 // Small utility for count-up / count-down animation in the total counter.
@@ -5211,6 +6032,21 @@ function showResults(msg) {
     }
   }
   const iAmLoser = !msg.gaveUp && !isSinglePlayer && msg.results && !msg.results.some(r => r.isWinner && r.id === myPlayerId);
+  // Tear down any leftover marathon banner state from a prior round (both
+  // SP and MP marathon inject extra DOM/classes onto .winner-banner).
+  const banner0 = document.querySelector('.winner-banner');
+  if (banner0) {
+    banner0.classList.remove('mk-solo-banner', 'mk-mp-banner', 'revealed');
+    banner0.querySelectorAll(':scope > .mk-solo-content, :scope > .mk-mp-content').forEach(el => el.remove());
+    for (const child of banner0.children) child.style.display = '';
+  }
+  // Restore the legacy emoji icon — MP marathon hides it and replaces it
+  // with an SVG medal, but classic/tri still rely on the emoji.
+  const icon0 = document.getElementById('resultIcon');
+  if (icon0) icon0.style.display = '';
+  // Hide the MP-only "waiting for host" indicator if it was leftover.
+  const waitEl0 = document.getElementById('waitingForHost');
+  if (waitEl0) waitEl0.style.display = 'none';
   document.getElementById('resultIcon').textContent = msg.gaveUp ? '🏳️' : (iAmLoser ? '😂' : '🏆');
   const nameEl = document.getElementById('winnerName');
   nameEl.textContent = winTitle;
