@@ -1000,6 +1000,194 @@
   .mk-breakdown-row.negative .mk-bd-val { color: #e17055; }
   .mk-breakdown-row.bonus .mk-bd-val { color: var(--accent); }
 
+  /* ─── Marathon Solo Results redesign (per design system handoff) ──────
+     SP marathon swaps the trophy banner + gold card for a custom medal,
+     mode chip, purple card, and inline share row. Banner reveals first
+     instead of last; everything else preserves existing reveal timing. */
+  .mk-solo-banner {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    opacity: 0;
+    transition: opacity 0.4s var(--ease-out-expo, cubic-bezier(0.22, 1, 0.36, 1));
+  }
+  .mk-solo-banner.revealed { opacity: 1; }
+  .mk-solo-banner::before {
+    content: '';
+    position: absolute;
+    top: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 340px;
+    height: 200px;
+    background: radial-gradient(ellipse at center, rgba(108,92,231,0.16) 0%, transparent 70%);
+    z-index: -1;
+    pointer-events: none;
+  }
+  .mk-solo-medal {
+    position: relative;
+    width: 76px;
+    height: 76px;
+    overflow: hidden;
+    border-radius: 50%;
+    animation: mkSoloMedalDrop 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .mk-solo-medal svg { width: 100%; height: 100%; display: block; }
+  /* No perpetual shine sweep — user opted out of the sine/shine overlay
+     across all icons. Drop-in animation only. */
+  @keyframes mkSoloMedalDrop {
+    0%   { opacity: 0; transform: translateY(-30px) scale(0.4) rotate(-20deg); }
+    60%  { opacity: 1; transform: translateY(0)    scale(1.08) rotate(6deg); }
+    100% { opacity: 1; transform: translateY(0)    scale(1)    rotate(0deg); }
+  }
+  .mk-solo-modechip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(108, 92, 231, 0.14);
+    border: 1px solid rgba(108, 92, 231, 0.3);
+    color: var(--accent2);
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+  }
+  .mk-solo-modechip::before {
+    content: '';
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--accent2);
+    opacity: 0.7;
+  }
+  .mk-solo-sub {
+    color: var(--text2);
+    font-size: 0.95rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .mk-solo-sub strong {
+    color: var(--text);
+    font-size: 1.05rem;
+    font-weight: 800;
+  }
+  /* Card border swaps gold → purple in solo (gold reserved for MP winner). */
+  .result-card.mk-solo-card {
+    background: var(--surface);
+    border: 1.5px solid rgba(108, 92, 231, 0.55);
+    border-radius: 14px;
+    padding: 20px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.3), 0 0 0 1px rgba(108, 92, 231, 0.2);
+  }
+  /* Override the .result-card global border + the .winner-card gold tint
+     for solo specifically — winner-card class still gets attached because
+     SP players have isWinner=true on the server, but the new design wants
+     purple, not gold, in solo. */
+  .result-card.mk-solo-card,
+  .result-card.winner-card.mk-solo-card { border-color: rgba(108, 92, 231, 0.55); }
+  .mk-solo-card-header {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 12px;
+  }
+  /* Inline share row inside the solo card (replaces the Share toggle). */
+  .mk-solo-share {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    font-size: 0.8rem;
+    margin-top: 14px;
+    opacity: 0;
+    transition: opacity 0.4s;
+  }
+  .mk-solo-share.revealed { opacity: 1; }
+  .mk-solo-share-btn {
+    padding: 6px 14px;
+    border-radius: 999px;
+    background: transparent;
+    border: 1px solid var(--surface2);
+    color: var(--text2);
+    font-weight: 600;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+    font-family: inherit;
+  }
+  .mk-solo-share-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent2);
+    background: rgba(108, 92, 231, 0.06);
+  }
+  .mk-solo-share-toast {
+    position: absolute;
+    bottom: -28px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--surface2);
+    color: var(--text);
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    opacity: 0;
+    transition: opacity 0.2s;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .mk-solo-share-toast.show { opacity: 1; }
+  /* Confetti — brief celebratory burst on banner reveal. Auto-cleared from
+     the DOM after ~3.5s by the spawner. The fullscreen variant is appended
+     to <body> so pieces can fall through the whole viewport instead of
+     getting clipped by the small banner bounding box. */
+  .confetti-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+    z-index: 2;
+  }
+  /* Variant attached to #results — covers the screen but stays in normal
+     stacking order so subsequent siblings (banner / card / action row)
+     paint on top. The fall distance also extends to ~80vh so pieces drift
+     down past the card area before fading out. */
+  .confetti-layer.confetti-layer-results {
+    position: absolute;
+    inset: 0;
+    /* Fall further on the larger surface — 300px is fine for short banner
+       but we want pieces to drift well into the lower half of the screen. */
+  }
+  .confetti-layer.confetti-layer-results .confetti {
+    animation-name: confettiFallLong;
+  }
+  @keyframes confettiFallLong {
+    0%   { opacity: 0; transform: translateY(-20px) rotate(0); }
+    10%  { opacity: 1; }
+    100% { opacity: 0; transform: translateY(80vh) rotate(720deg); }
+  }
+  .confetti {
+    position: absolute;
+    width: 6px;
+    height: 10px;
+    border-radius: 2px;
+    opacity: 0;
+    animation: confettiFall 2.8s ease-in forwards;
+  }
+  @keyframes confettiFall {
+    0%   { opacity: 0; transform: translateY(-20px) rotate(0); }
+    10%  { opacity: 1; }
+    100% { opacity: 0; transform: translateY(300px) rotate(540deg); }
+  }
+  /* Honor reduced-motion: kill the medal drop + confetti, keep opacity
+     transitions only so the reveal still reads as ordered. */
+  @media (prefers-reduced-motion: reduce) {
+    .mk-solo-medal { animation: none; }
+    .confetti-layer { display: none; }
+  }
+
   /* ─── Difficulty Slider ─── */
   .diff-form-group {
     width: 100%;
@@ -4899,6 +5087,55 @@ function renderPlayersBar(distData) {
   });
 }
 
+// SVG medal used by the solo-marathon results banner. Custom asset (replaces
+// the 🏆 emoji) — gold cup with a purple→green ribbon matching the brand
+// gradient. Inlined so we don't add a network request.
+const MARATHON_SOLO_MEDAL_SVG = `
+  <svg viewBox="0 0 72 72" fill="none" width="100%" height="100%" aria-hidden="true">
+    <defs>
+      <linearGradient id="mkSoloCup" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#fdcb6e"/>
+        <stop offset="1" stop-color="#d49a3a"/>
+      </linearGradient>
+      <linearGradient id="mkSoloRibbon" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="#6c5ce7"/>
+        <stop offset="1" stop-color="#00b894"/>
+      </linearGradient>
+    </defs>
+    <path d="M24 8 L28 44 L36 36 L44 44 L48 8 Z" fill="url(#mkSoloRibbon)" opacity="0.85"/>
+    <path d="M20 20 Q20 44 36 48 Q52 44 52 20 Z" fill="url(#mkSoloCup)" stroke="#b87d1e" stroke-width="1"/>
+    <path d="M20 24 Q10 26 14 36 Q18 38 20 34" fill="none" stroke="url(#mkSoloCup)" stroke-width="3" stroke-linecap="round"/>
+    <path d="M52 24 Q62 26 58 36 Q54 38 52 34" fill="none" stroke="url(#mkSoloCup)" stroke-width="3" stroke-linecap="round"/>
+    <rect x="28" y="48" width="16" height="4" fill="#a87a2c"/>
+    <rect x="24" y="52" width="24" height="6" rx="1" fill="#8a611d"/>
+    <path d="M36 28 L38 33 L43 33 L39 36 L41 41 L36 38 L31 41 L33 36 L29 33 L34 33 Z" fill="rgba(255,255,255,0.5)"/>
+  </svg>
+`;
+const MARATHON_SOLO_CONFETTI_COLORS = ['#6c5ce7', '#00b894', '#fdcb6e', '#a29bfe', '#e17055'];
+
+// Generates a brief 20-piece confetti burst across the results screen.
+// The layer is inserted as the FIRST child of #results so cards/banner
+// (later in DOM order) naturally render on top — pieces fall behind the
+// score box, only visible in the gaps. Auto-cleaned ~3.5s later.
+function spawnSoloMarathonConfetti() {
+  const screen = document.getElementById('results');
+  if (!screen) return;
+  const layer = document.createElement('div');
+  layer.className = 'confetti-layer confetti-layer-results';
+  for (let i = 0; i < 20; i++) {
+    const piece = document.createElement('div');
+    piece.className = 'confetti';
+    piece.style.left = (Math.random() * 100) + '%';
+    piece.style.background = MARATHON_SOLO_CONFETTI_COLORS[i % MARATHON_SOLO_CONFETTI_COLORS.length];
+    piece.style.animationDelay = (Math.random() * 0.6).toFixed(2) + 's';
+    piece.style.transform = `rotate(${Math.floor(Math.random() * 360)}deg)`;
+    layer.appendChild(piece);
+  }
+  // Prepend so subsequent siblings (banner, card, action row) paint over it.
+  screen.insertBefore(layer, screen.firstChild);
+  resultsAnimationTimeouts.push(setTimeout(() => layer.remove(), 3500));
+}
+
 // Marathon results screen. Mirrors classic/tri visually:
 //   - Shared winner-banner with "You Won" / "You Suck" copy
 //   - Standard result-card rows (one per player)
@@ -4906,7 +5143,12 @@ function renderPlayersBar(distData) {
 //   - Full navigation path (same pattern as classic)
 //   - Per-event animated tally that reveals in ACTION ORDER
 // Reveal order is reverse-rank (last place first, winner last) for drama.
+// Single-player marathon takes a separate path with the redesigned banner +
+// inline share row + confetti per the design system handoff.
 function showMarathonResults(msg) {
+  if (isSinglePlayer) {
+    return showMarathonSoloResults(msg);
+  }
   clearInterval(timerInterval);
   resultsAnimationTimeouts.forEach(t => clearTimeout(t));
   resultsAnimationTimeouts = [];
@@ -4937,6 +5179,10 @@ function showMarathonResults(msg) {
   const nameEl = document.getElementById('winnerName');
   const subEl = document.getElementById('winnerSub');
   const icon = document.getElementById('resultIcon');
+  // Tear down any leftover SP-marathon banner state from a prior round.
+  banner.classList.remove('mk-solo-banner');
+  banner.querySelectorAll(':scope > .mk-solo-content').forEach(el => el.remove());
+  for (const child of banner.children) child.style.display = '';
   document.getElementById('shareCard').style.display = 'none';
   document.getElementById('shareToggleBtn').style.display = 'none';
   nameEl.textContent = winTitle;
@@ -5155,6 +5401,238 @@ function showMarathonResults(msg) {
   resultsAnimationTimeouts.push(setTimeout(() => banner.classList.add('visible'), cursor));
 }
 
+// Solo Marathon results — redesigned per design system handoff.
+// Banner reveals FIRST (medal drop + mode chip + score sub) at t=100, card
+// reveals at t=700, path/breakdown/total cascade thereafter at 180ms steps.
+// Inline share buttons replace the old "Share your run" toggle.
+function showMarathonSoloResults(msg) {
+  clearInterval(timerInterval);
+  resultsAnimationTimeouts.forEach(t => clearTimeout(t));
+  resultsAnimationTimeouts = [];
+
+  const myResult = (msg.results || []).find(r => r.id === myPlayerId) || (msg.results || [])[0] || {};
+  const path = myResult.path || [];
+  const events = myResult.events || [];
+  const total = myResult.total || 0;
+  const targets = myResult.completed || 0;
+
+  // ── Banner: hide the legacy children (#resultIcon / #winnerName /
+  // #winnerSub / #shareToggleBtn) — we keep them in the DOM so MP results
+  // can reuse them next round — and inject a sibling solo-content wrapper.
+  const banner = document.querySelector('.winner-banner');
+  banner.classList.remove('visible');
+  banner.classList.add('mk-solo-banner');
+  banner.querySelectorAll(':scope > .mk-solo-content').forEach(el => el.remove());
+  for (const child of banner.children) {
+    if (!child.classList.contains('mk-solo-content')) child.style.display = 'none';
+  }
+  document.getElementById('shareCard').style.display = 'none';
+
+  // Mode chip text from durationKey ('5m' → 'Marathon · 5 min')
+  const durKey = msg.durationKey || marathonDurationKey || '5m';
+  const durMin = String(durKey).replace(/m$/i, '');
+  const soloContent = document.createElement('div');
+  soloContent.className = 'mk-solo-content';
+  soloContent.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:10px;width:100%;';
+  soloContent.innerHTML = `
+    <div class="mk-solo-medal">${MARATHON_SOLO_MEDAL_SVG}</div>
+    <div class="mk-solo-modechip">Marathon · ${esc(durMin)} min</div>
+    <div class="mk-solo-sub"><strong>${total} pts</strong> · ${targets} targets reached</div>
+  `;
+  banner.appendChild(soloContent);
+
+  // ── Card: build with the same path/breakdown/total as MP, plus an inline
+  // share row at the bottom. Border/header come from .mk-solo-card styling.
+  const grid = document.getElementById('resultsGrid');
+  grid.className = 'results-grid';
+  grid.innerHTML = '';
+
+  const card = document.createElement('div');
+  card.className = 'result-card mk-solo-card';
+  // Card stays hidden until t=700ms — inline transitions instead of a class
+  // so we don't need yet another keyframe.
+  card.style.opacity = '0';
+  card.style.transform = 'translateY(12px)';
+  card.style.transition = 'opacity 0.4s cubic-bezier(0.22, 1, 0.36, 1), transform 0.4s cubic-bezier(0.22, 1, 0.36, 1)';
+
+  // Build path timeline + skips inline + breakdown — same logic as MP path.
+  const normTitle = s => (s || '').replace(/_/g, ' ').toLowerCase().trim();
+  const timelineParts = [];
+  let cumulativeClicks = 0;
+  let pathCursor = 0;
+  const emitNode = (article, opts = {}) => {
+    const name = article.replace(/_/g, ' ');
+    const isStart = opts.isStart === true;
+    const hit = opts.hit;
+    const cls = isStart ? 'start' : (hit ? 'hit' : '');
+    const badge = hit ? `<span class="mk-step-badge" data-gain="${hit.score}">+${hit.score}</span>` : '';
+    timelineParts.push(`<span class="mk-step ${cls}">${esc(name)}${badge}</span>`);
+  };
+  const emitClickGap = () => {
+    cumulativeClicks++;
+    timelineParts.push(`<span class="mk-step-cost" data-cost="-1">${cumulativeClicks}</span>`);
+    timelineParts.push('<span class="mk-arrow">→</span>');
+  };
+  const emitSkip = (ev) => {
+    timelineParts.push(`<span class="mk-step skip" data-cost="-5">${esc(ev.title.replace(/_/g, ' '))}<span class="mk-step-badge">−5</span></span>`);
+  };
+  if (path.length > 0) { emitNode(path[0], { isStart: true }); pathCursor = 1; }
+  for (const ev of events) {
+    if (ev.kind === 'hit') {
+      const clicks = Math.max(1, ev.clicks || 1);
+      for (let k = 0; k < clicks; k++) {
+        emitClickGap();
+        const article = path[pathCursor];
+        if (article == null) break;
+        emitNode(article, { hit: k === clicks - 1 ? ev : null });
+        pathCursor++;
+      }
+    } else if (ev.kind === 'skip') {
+      const skipClicks = Math.max(0, ev.clicks || 0);
+      for (let k = 0; k < skipClicks; k++) {
+        emitClickGap();
+        const article = path[pathCursor];
+        if (article == null) break;
+        emitNode(article, {});
+        pathCursor++;
+      }
+      emitSkip(ev);
+    }
+  }
+  while (pathCursor < path.length) {
+    emitClickGap();
+    emitNode(path[pathCursor], {});
+    pathCursor++;
+  }
+
+  // Breakdown — must mirror server's computeMarathonScore.
+  let hitsSum = 0, stepsSum = 0, skipsSum = 0;
+  for (const ev of events) {
+    if (ev.kind === 'hit') {
+      hitsSum += ev.score || 0;
+      stepsSum -= (ev.clicks || 0);
+    } else if (ev.kind === 'skip') {
+      skipsSum -= 5;
+    }
+  }
+  const bonusSum = myResult.bonus || 0;
+  const breakdownRows = [
+    { key: 'hits',  label: 'Hits',  val: hitsSum,  cls: hitsSum > 0 ? 'positive' : '' },
+    { key: 'steps', label: 'Steps', val: stepsSum, cls: stepsSum < 0 ? 'negative' : '' },
+    { key: 'skips', label: 'Skips', val: skipsSum, cls: skipsSum < 0 ? 'negative' : '' },
+    { key: 'bonus', label: 'Bonus', val: bonusSum, cls: bonusSum > 0 ? 'bonus' : '' },
+  ];
+  const breakdownHtml = `
+    <div class="mk-breakdown">
+      ${breakdownRows.map(b => `
+        <div class="mk-breakdown-row ${b.cls}" data-key="${b.key}">
+          <span>${esc(b.label)}</span>
+          <span class="mk-bd-val">${b.val >= 0 ? '+' : '−'}${Math.abs(b.val)}</span>
+        </div>
+      `).join('')}
+    </div>
+  `;
+
+  const S = (typeof shareStr === 'function') ? shareStr() : { copy: 'Copy share', save: 'Save image', copied: 'Copied!', saved: 'Saved!', copyFail: 'Copy failed' };
+  card.innerHTML = `
+    <div class="mk-solo-card-header">Your run</div>
+    <div class="mk-timeline">${timelineParts.join('') || '<span class="mk-step">No navigation</span>'}</div>
+    ${breakdownHtml}
+    <div class="mk-total-row"><span>Total</span><span class="mk-total-val">0</span></div>
+    <div class="mk-solo-share" style="position:relative;">
+      <button class="mk-solo-share-btn" data-action="copy">⎘ ${esc(S.copy)}</button>
+      <button class="mk-solo-share-btn" data-action="save">↓ ${esc(S.save)}</button>
+      <span class="mk-solo-share-toast" id="mkSoloShareToast"></span>
+    </div>
+  `;
+  grid.appendChild(card);
+
+  // Wire share buttons — reuse existing buildShareText / buildShareImage so
+  // the share content stays consistent with the legacy toggle's output.
+  const shareToast = card.querySelector('#mkSoloShareToast');
+  const showInlineToast = (text) => {
+    if (!shareToast) return;
+    shareToast.textContent = text;
+    shareToast.classList.add('show');
+    clearTimeout(shareToast._hideT);
+    shareToast._hideT = setTimeout(() => shareToast.classList.remove('show'), 1500);
+  };
+  card.querySelector('[data-action="copy"]').onclick = async () => {
+    const txt = buildShareText(myResult, msg);
+    try {
+      await navigator.clipboard.writeText(txt);
+      showInlineToast(S.copied);
+    } catch (e) {
+      const ta = document.createElement('textarea');
+      ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); showInlineToast(S.copied); }
+      catch { showInlineToast(S.copyFail); }
+      document.body.removeChild(ta);
+    }
+  };
+  card.querySelector('[data-action="save"]').onclick = async () => {
+    const blob = await buildShareImage(myResult, msg);
+    if (!blob) { showInlineToast(S.copyFail); return; }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const steps = Math.max(0, path.length - 1);
+    a.download = `wikispeedrun-${steps}steps.png`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showInlineToast(S.saved);
+  };
+
+  showScreen('results');
+  // Sentence-case CTA copy per the design — only in this SP marathon path.
+  const playAgainBtn = document.getElementById('playAgainBtn');
+  if (playAgainBtn) { playAgainBtn.style.display = ''; playAgainBtn.textContent = 'Play again'; }
+  const backBtn = document.getElementById('backToHomeBtn');
+  if (backBtn) { backBtn.style.display = ''; backBtn.textContent = 'Back to home'; }
+
+  // ── Reveal cascade (absolute ms from this call):
+  //   100  banner reveals + medal drop + confetti
+  //   700  card reveals
+  //   1100 path items (180ms apart)
+  //   pathEnd + 250: breakdown rows (180ms apart)
+  //   bdEnd + 150: total + share row + count-up (800ms)
+  const STEP_MS = 180;
+  resultsAnimationTimeouts.push(setTimeout(() => {
+    banner.classList.add('revealed');
+    // Skip the celebration when the player didn't reach a single target —
+    // confetti on a 0-target run reads as mockery, not a callout.
+    if (targets > 0) spawnSoloMarathonConfetti();
+  }, 100));
+  resultsAnimationTimeouts.push(setTimeout(() => {
+    card.style.opacity = '1';
+    card.style.transform = 'translateY(0)';
+  }, 700));
+
+  let cursor = 1100;
+  const timelineItems = card.querySelectorAll('.mk-timeline > *');
+  timelineItems.forEach(item => {
+    resultsAnimationTimeouts.push(setTimeout(() => item.classList.add('revealed'), cursor));
+    cursor += STEP_MS;
+  });
+  cursor += 250;
+  const bdRows = card.querySelectorAll('.mk-breakdown-row');
+  bdRows.forEach(row => {
+    resultsAnimationTimeouts.push(setTimeout(() => row.classList.add('revealed'), cursor));
+    cursor += STEP_MS;
+  });
+  cursor += 150;
+  const totalEl = card.querySelector('.mk-total-val');
+  const totalRow = card.querySelector('.mk-total-row');
+  const shareRow = card.querySelector('.mk-solo-share');
+  resultsAnimationTimeouts.push(setTimeout(() => {
+    totalRow?.classList.add('revealed');
+    shareRow?.classList.add('revealed');
+    animateCountUp(totalEl, 0, total, 800);
+    totalEl?.classList.add('bumped');
+  }, cursor));
+}
+
 // Small utility for count-up / count-down animation in the total counter.
 function animateCountUp(el, from, to, durationMs) {
   const start = performance.now();
@@ -5211,6 +5689,14 @@ function showResults(msg) {
     }
   }
   const iAmLoser = !msg.gaveUp && !isSinglePlayer && msg.results && !msg.results.some(r => r.isWinner && r.id === myPlayerId);
+  // Tear down any leftover SP-marathon banner state from a prior round
+  // (the SP marathon path injects extra DOM into .winner-banner).
+  const banner0 = document.querySelector('.winner-banner');
+  if (banner0) {
+    banner0.classList.remove('mk-solo-banner');
+    banner0.querySelectorAll(':scope > .mk-solo-content').forEach(el => el.remove());
+    for (const child of banner0.children) child.style.display = '';
+  }
   document.getElementById('resultIcon').textContent = msg.gaveUp ? '🏳️' : (iAmLoser ? '😂' : '🏆');
   const nameEl = document.getElementById('winnerName');
   nameEl.textContent = winTitle;
