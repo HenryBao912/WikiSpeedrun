@@ -40,6 +40,10 @@ npm run generate-pool         # full pass
 npm run generate-pool:fast    # fewer articles, for local testing
 ```
 
+## Support
+
+If the game is fun, tips keep it running (hosting + the occasional Wikipedia API cap): [ko-fi.com/wikispeedrunio](https://ko-fi.com/wikispeedrunio).
+
 ## License
 
 [MIT](LICENSE)

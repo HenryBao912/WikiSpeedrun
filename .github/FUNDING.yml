@@ -1,0 +1,5 @@
+# Wires a "Sponsor" button into the GitHub repo header. Any of these keys
+# that are filled in will show up as a funding option in the dropdown.
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/displaying-a-sponsor-button-in-your-repository
+
+ko_fi: wikispeedrunio
