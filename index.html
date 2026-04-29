@@ -1153,13 +1153,21 @@
   /* Variant attached to #results — covers the screen but stays in normal
      stacking order so subsequent siblings (banner / card / action row)
      paint on top. The fall distance also extends to ~80vh so pieces drift
-     down past the card area before fading out. */
+     down past the card area before fading out.
+     z-index:0 + #results .result-card{position:relative;z-index:1} below
+     enforces the "confetti behind card" rule explicitly — without it the
+     behavior was relying on a transform-derived stacking context on the
+     card, which a future refactor could accidentally drop. */
   .confetti-layer.confetti-layer-results {
     position: absolute;
     inset: 0;
+    z-index: 0;
     /* Fall further on the larger surface — 300px is fine for short banner
        but we want pieces to drift well into the lower half of the screen. */
   }
+  /* Hard-rule the behind-card painting (see comment above + saved memory
+     note: confetti layers behind the result card across all modes). */
+  #results .result-card { position: relative; z-index: 1; }
   .confetti-layer.confetti-layer-results .confetti {
     animation-name: confettiFallLong;
   }
@@ -1435,6 +1443,260 @@
   @keyframes waiting-pulse {
     0%, 100% { opacity: 0.3; transform: scale(0.8); }
     50%      { opacity: 1;   transform: scale(1.1); }
+  }
+
+  /* ─── Classic Solo Results redesign (per design system handoff -4.zip) ──
+     Two terminal states: WIN (trophy + confetti + share) and SURRENDER
+     (compass + closest-chip + no confetti, no share). Reuses the Marathon
+     Solo medal SVG + confetti spawner; adds a target-hero strip, mode chip,
+     purple self-card border, and a small distance-pill treatment on path
+     nodes. Logic stays identical to today's flow — only visuals change. */
+
+  .winner-banner.cs-banner {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    position: relative;
+    padding: 0;
+    transform: none;
+    opacity: 0;
+    transition: opacity 0.4s var(--ease-out-expo, cubic-bezier(0.22, 1, 0.36, 1));
+  }
+  .winner-banner.cs-banner.revealed { opacity: 1; }
+  .winner-banner.cs-banner::before {
+    content: '';
+    position: absolute;
+    top: -24px; left: 50%;
+    width: 340px; height: 180px;
+    transform: translateX(-50%);
+    background: radial-gradient(ellipse at center, rgba(108, 92, 231, 0.16), transparent 70%);
+    pointer-events: none;
+    z-index: -1;
+  }
+  /* Tighten #results spacing when classic-solo banner is on screen — same
+     trick we use for MP marathon. Default 24px gap is too airy for the
+     tight banner+card layout. */
+  #results:has(.winner-banner.cs-banner) { gap: 16px; padding-top: 28px; }
+
+  /* Trophy / compass — both 88px, same animation as solo marathon medal. */
+  .cs-medal {
+    position: relative;
+    width: 88px; height: 88px;
+    animation: mkSoloMedalDrop 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .cs-medal svg { width: 100%; height: 100%; display: block; }
+
+  /* Mode chip — purple by default (win), soft orange variant for surrender. */
+  .cs-mode-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 999px;
+    background: rgba(108, 92, 231, 0.14);
+    border: 1px solid rgba(108, 92, 231, 0.3);
+    color: var(--accent2);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+  }
+  .cs-mode-chip::before {
+    content: '';
+    width: 4px; height: 4px;
+    border-radius: 50%;
+    background: var(--accent2);
+    opacity: 0.7;
+  }
+  .cs-mode-chip.surrender {
+    background: rgba(225, 112, 85, 0.14);
+    border-color: rgba(225, 112, 85, 0.36);
+    color: var(--red);
+  }
+  .cs-mode-chip.surrender::before { background: var(--red); }
+
+  .cs-headline {
+    font-size: 1.6rem;
+    font-weight: 800;
+    letter-spacing: -0.3px;
+    color: var(--text);
+    margin: 0;
+  }
+  /* Override the legacy .winner-name gradient when used as cs-headline. */
+  .winner-name.cs-headline { background: none; -webkit-text-fill-color: initial; color: var(--text); animation: none; }
+  .cs-sub {
+    font-size: 1rem;
+    color: var(--text2);
+    font-variant-numeric: tabular-nums;
+    margin: 0;
+  }
+  .cs-sub strong { color: var(--text); font-weight: 700; }
+
+  /* Target hero — FROM origin → TARGET destination strip. */
+  .cs-target-hero {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: rgba(36, 36, 58, 0.5);
+    font-size: 0.78rem;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .cs-hero-from, .cs-hero-to {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-weight: 600;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    font-size: 0.68rem;
+  }
+  .cs-hero-from { background: rgba(108, 92, 231, 0.2); color: var(--accent2); }
+  .cs-hero-to   { background: rgba(0, 184, 148, 0.2);  color: var(--green); }
+  .cs-hero-from strong, .cs-hero-to strong {
+    color: var(--text);
+    font-weight: 700;
+    text-transform: none;
+    font-size: 0.85rem;
+    letter-spacing: 0;
+  }
+  .cs-hero-arrow { color: var(--text2); font-weight: 700; }
+
+  /* Closest-you-got chip — surrender only, gold accent (turns "loss" into
+     a measurable attempt). */
+  .cs-closest {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    background: rgba(253, 203, 110, 0.14);
+    border: 1px solid rgba(253, 203, 110, 0.4);
+    font-size: 0.85rem;
+  }
+  .cs-closest .cs-closest-label { color: var(--text2); }
+  .cs-closest strong { color: var(--gold); font-weight: 800; }
+
+  /* Self-card — purple border (NOT gold), reusing the .winner-card slot
+     but overriding its border. Gold is reserved for MP winners. */
+  .result-card.cs-self-card {
+    background: var(--surface);
+    border: 1.5px solid rgba(108, 92, 231, 0.55);
+    border-radius: 14px;
+    padding: 16px 18px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(108, 92, 231, 0.2);
+  }
+  .result-card.cs-self-card.winner-card {
+    /* Force purple even when .winner-card is also applied (server marks SP as winner). */
+    border-color: rgba(108, 92, 231, 0.55);
+  }
+  .cs-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 12px;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .cs-card-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .cs-card-stats {
+    color: var(--text2);
+    font-size: 0.85rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .cs-card-stats strong {
+    color: var(--text);
+    font-weight: 700;
+  }
+
+  /* Distance pill inside path-node — replaces inline ${arrow}${dist} text
+     with a compact pill. Neutral text (no tier color) — node color (start
+     purple / end green) + arrow color (green up / red down) carry the
+     story. Only applies when the path-node sits inside .cs-self-card so
+     other modes (tri/MP) keep the legacy inline treatment. */
+  .cs-self-card .path-node {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .cs-self-card .path-node .path-dist {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.22);
+    color: var(--text2);
+    font-size: 0.62rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+  }
+  /* Distance number inside the pill takes the tier color — same scheme as
+     the in-game leaderboard (yellow ≤2 / purple 3-4 / light-blue 5+). */
+  .cs-self-card .path-node .path-dist .dist-close { color: #fbbf24; }
+  .cs-self-card .path-node .path-dist .dist-mid   { color: #c084fc; }
+  .cs-self-card .path-node .path-dist .dist-far   { color: #7dd3fc; }
+
+  /* Inline share row inside the win card. */
+  .cs-share {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    font-size: 0.8rem;
+    margin-top: 14px;
+    opacity: 0;
+    transition: opacity 0.4s;
+    position: relative;
+  }
+  .cs-share.revealed { opacity: 1; }
+  .cs-share-btn {
+    padding: 6px 14px;
+    border-radius: 999px;
+    background: transparent;
+    border: 1px solid var(--surface2);
+    color: var(--text2);
+    font-weight: 600;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+    font-family: inherit;
+  }
+  .cs-share-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent2);
+    background: rgba(108, 92, 231, 0.06);
+  }
+  .cs-share-toast {
+    position: absolute;
+    bottom: -28px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--surface2);
+    color: var(--text);
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    opacity: 0;
+    transition: opacity 0.2s;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .cs-share-toast.show { opacity: 1; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .cs-medal { animation: none; }
   }
 
   /* ─── Difficulty Slider ─── */
@@ -2762,6 +3024,8 @@
     <a href="mailto:hello@wikispeedrun.io">contact</a>
     <span class="dot">·</span>
     <a href="https://github.com/HenryBao912/WikiSpeedrun" target="_blank" rel="noopener">source</a>
+    <span class="dot">·</span>
+    <a href="https://ko-fi.com/hrybao" target="_blank" rel="noopener">support</a>
   </footer>
 </div>
 
@@ -5395,6 +5659,30 @@ function spawnSoloMarathonConfetti(palette) {
 const MP_CONFETTI_PALETTE_WIN  = ['#fdcb6e', '#6c5ce7', '#00b894', '#e17055', '#a29bfe'];
 const MP_CONFETTI_PALETTE_LOSS = ['#6c5ce7', '#00b894', '#a29bfe'];
 
+// SVG compass for the SP classic surrender state — tilted needle reads
+// "off course" rather than "you lost". Calmer than the legacy 🏳️ emoji.
+const CLASSIC_COMPASS_SVG = `
+  <svg viewBox="0 0 80 80" fill="none" width="100%" height="100%" aria-hidden="true">
+    <defs>
+      <linearGradient id="csCompassRing" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#a29bfe"/>
+        <stop offset="1" stop-color="#6c5ce7"/>
+      </linearGradient>
+    </defs>
+    <circle cx="40" cy="40" r="30" fill="rgba(108,92,231,0.08)" stroke="url(#csCompassRing)" stroke-width="2"/>
+    <circle cx="40" cy="40" r="22" fill="none" stroke="rgba(162,155,254,0.25)" stroke-width="1"/>
+    <text x="40" y="22" font-size="6" fill="#9090a8" text-anchor="middle" font-family="system-ui, sans-serif" font-weight="700">N</text>
+    <text x="40" y="62" font-size="6" fill="#9090a8" text-anchor="middle" font-family="system-ui, sans-serif" font-weight="700">S</text>
+    <text x="22" y="43" font-size="6" fill="#9090a8" text-anchor="middle" font-family="system-ui, sans-serif" font-weight="700">W</text>
+    <text x="58" y="43" font-size="6" fill="#9090a8" text-anchor="middle" font-family="system-ui, sans-serif" font-weight="700">E</text>
+    <g transform="rotate(20 40 40)">
+      <polygon points="40,18 44,40 40,42 36,40" fill="#e17055"/>
+      <polygon points="40,62 44,40 40,38 36,40" fill="#9090a8"/>
+    </g>
+    <circle cx="40" cy="40" r="3" fill="#f0f0f5"/>
+  </svg>
+`;
+
 // Marathon results screen. Mirrors classic/tri visually:
 //   - Shared winner-banner with "You Won" / "You Suck" copy
 //   - Standard result-card rows (one per player)
@@ -5438,9 +5726,10 @@ function showMarathonResults(msg) {
   const nameEl = document.getElementById('winnerName');
   const subEl = document.getElementById('winnerSub');
   const icon = document.getElementById('resultIcon');
-  // Tear down any leftover SP-marathon banner state from a prior round.
-  banner.classList.remove('mk-solo-banner', 'mk-mp-banner', 'visible', 'revealed');
-  banner.querySelectorAll(':scope > .mk-solo-content').forEach(el => el.remove());
+  // Tear down any leftover banner state from a prior round (SP marathon /
+  // SP classic redesigns inject extra DOM + classes onto .winner-banner).
+  banner.classList.remove('mk-solo-banner', 'mk-mp-banner', 'cs-banner', 'cs-surrender', 'visible', 'revealed');
+  banner.querySelectorAll(':scope > .mk-solo-content, :scope > .cs-content').forEach(el => el.remove());
   for (const child of banner.children) child.style.display = '';
   document.getElementById('shareCard').style.display = 'none';
   document.getElementById('shareToggleBtn').style.display = 'none';
@@ -5755,11 +6044,11 @@ function showMarathonSoloResults(msg) {
   // #winnerSub / #shareToggleBtn) — we keep them in the DOM so MP results
   // can reuse them next round — and inject a sibling solo-content wrapper.
   const banner = document.querySelector('.winner-banner');
-  banner.classList.remove('visible', 'mk-mp-banner');
+  banner.classList.remove('visible', 'mk-mp-banner', 'cs-banner', 'cs-surrender');
   banner.classList.add('mk-solo-banner');
-  // Drop any leftover MP banner content as well so a SP run after MP
-  // doesn't show stale state.
-  banner.querySelectorAll(':scope > .mk-solo-content, :scope > .mk-mp-content').forEach(el => el.remove());
+  // Drop any leftover MP / classic-solo banner content as well so a SP
+  // marathon run after MP or classic doesn't show stale state.
+  banner.querySelectorAll(':scope > .mk-solo-content, :scope > .mk-mp-content, :scope > .cs-content').forEach(el => el.remove());
   for (const child of banner.children) {
     if (!child.classList.contains('mk-solo-content')) child.style.display = 'none';
   }
@@ -5990,8 +6279,259 @@ function animateCountUp(el, from, to, durationMs) {
   requestAnimationFrame(step);
 }
 
+// Classic Solo results — redesigned per design system handoff -4.zip.
+// Two terminal states: WIN (trophy + confetti + share row) and SURRENDER
+// (compass + closest-chip, no confetti, no share). Behavior identical to
+// today's flow — only visuals change. CTAs stay wired to existing
+// playAgain() / backToHome() handlers, just relabeled per state.
+function showClassicSoloResults(msg) {
+  clearInterval(timerInterval);
+  resultsAnimationTimeouts.forEach(t => clearTimeout(t));
+  resultsAnimationTimeouts = [];
+
+  // GA: same shape as the legacy showResults event so analytics aren't
+  // siloed by mode-redesign.
+  try {
+    const myR0 = msg.results?.find(r => r.id === myPlayerId) || msg.results?.[0];
+    window.gtag?.('event', 'game_finish', {
+      mode: 'classic',
+      gave_up: !!msg.gaveUp,
+      won: !msg.gaveUp,
+      multiplayer: false,
+      steps: myR0 ? Math.max(0, (myR0.path?.length || 1) - 1) : null,
+      time_sec: myR0?.time ? Math.round(myR0.time / 1000) : null,
+    });
+  } catch (e) { /* gtag blocked */ }
+
+  const myResult = msg.results?.find(r => r.id === myPlayerId) || msg.results?.[0] || {};
+  const path = myResult.path || [];
+  const distances = myResult.distances || [];
+  const time = myResult.time;
+  const steps = Math.max(0, path.length - 1);
+  const isSurrender = !!msg.gaveUp;
+
+  // Origin / destination — pull from the live game state so we always have
+  // them even if msg drops the fields. (gameOrigin / gameDestination are
+  // module-level globals set in startGameUI for classic mode.)
+  const origin = (path[0] || gameOrigin || '').replace(/_/g, ' ');
+  const destination = (gameDestination || msg.destination || path[path.length - 1] || '').replace(/_/g, ' ');
+
+  // ── Banner: blow away any leftover marathon banner state, then inject
+  // the new cs-content wrapper.
+  const banner = document.querySelector('.winner-banner');
+  banner.classList.remove('visible', 'mk-solo-banner', 'mk-mp-banner', 'revealed');
+  banner.classList.add('cs-banner');
+  if (isSurrender) banner.classList.add('cs-surrender'); else banner.classList.remove('cs-surrender');
+  banner.querySelectorAll(':scope > .mk-solo-content, :scope > .mk-mp-content, :scope > .cs-content').forEach(el => el.remove());
+  for (const child of banner.children) {
+    if (!child.classList.contains('cs-content')) child.style.display = 'none';
+  }
+  document.getElementById('shareCard').style.display = 'none';
+  document.getElementById('shareToggleBtn').style.display = 'none';
+  // Hide MP marathon "waiting for host" if it was leftover.
+  const waitEl = document.getElementById('waitingForHost');
+  if (waitEl) waitEl.style.display = 'none';
+
+  const svg = isSurrender ? CLASSIC_COMPASS_SVG : MARATHON_SOLO_MEDAL_SVG;
+  const chipText = isSurrender ? 'Classic · Solo · Surrendered' : 'Classic · Solo';
+  const chipCls = isSurrender ? 'cs-mode-chip surrender' : 'cs-mode-chip';
+  // Surrender headline ties to the compass icon ("off course") and matches
+  // the actual action the player took — there's no timer in classic mode,
+  // so "Ran out of time" (the design's wording) was inaccurate here.
+  const headline = isSurrender ? 'Wandered off course' : 'You made it!';
+  const subText = isSurrender
+    ? `Gave up after <strong>${steps} step${steps === 1 ? '' : 's'}</strong>${time ? ' · ' + esc(formatTime(time)) : ''}`
+    : `<strong>${steps} step${steps === 1 ? '' : 's'}</strong>${time ? ' · ' + esc(formatTime(time)) : ''}`;
+
+  // Closest-you-got chip — only on surrender, only when we actually have
+  // distance data. distances[i] is the hop count after step i+1.
+  let closestHtml = '';
+  if (isSurrender) {
+    const numericDistances = distances.filter(d => d != null && Number.isFinite(d));
+    if (numericDistances.length > 0) {
+      const minHops = Math.min(...numericDistances);
+      closestHtml = `
+        <div class="cs-closest">
+          <span class="cs-closest-label">Closest you got:</span>
+          <strong>${minHops} hop${minHops === 1 ? '' : 's'}</strong>
+        </div>
+      `;
+    }
+  }
+
+  const csContent = document.createElement('div');
+  csContent.className = 'cs-content';
+  csContent.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:8px;width:100%;';
+  csContent.innerHTML = `
+    <div class="cs-medal">${svg}</div>
+    <div class="${chipCls}">${esc(chipText)}</div>
+    <div class="winner-name cs-headline">${esc(headline)}</div>
+    <div class="winner-sub cs-sub">${subText}</div>
+    <div class="cs-target-hero">
+      <span class="cs-hero-from">From <strong>${esc(origin)}</strong></span>
+      <span class="cs-hero-arrow">→</span>
+      <span class="cs-hero-to">Target <strong>${esc(destination)}</strong></span>
+    </div>
+    ${closestHtml}
+  `;
+  banner.appendChild(csContent);
+
+  // ── Card: purple self-card, "Your path" header, full path with distance
+  // pills inside each node.
+  const grid = document.getElementById('resultsGrid');
+  grid.className = 'results-grid';
+  grid.innerHTML = '';
+
+  const card = document.createElement('div');
+  card.className = 'result-card cs-self-card';
+
+  // Build path HTML — same logic as classic showResults but the distance
+  // badge uses the new compact pill style (handled via .cs-self-card scoped CSS).
+  const triDests = []; // SP classic: no tri targets
+  const pathHtml = path.map((p, i) => {
+    const isStart = i === 0;
+    const isEnd = i === path.length - 1;
+    // For win, the end node gets the "end" (green) pill. For surrender,
+    // the player never reached the destination, so no end styling — the
+    // last article they visited is just a regular node.
+    const nodeCls = isStart ? 'start' : ((!isSurrender && isEnd) ? 'end' : '');
+    let distBadge = '';
+    if (!isStart && !isEnd && distances[i - 1] != null) {
+      const d = distances[i - 1];
+      const prev = i >= 2 ? distances[i - 2] : null;
+      let arrow = '';
+      if (prev != null) {
+        if (d < prev) arrow = '<span class="path-dir closer">▲</span>';
+        else if (d > prev) arrow = '<span class="path-dir further">▼</span>';
+        else arrow = '<span class="path-dir same">=</span>';
+      }
+      // Distance number takes the tier color (close/mid/far) so the player
+      // can scan the pills and immediately see how far each step was —
+      // matches the in-game leaderboard's color story.
+      const distCls = distColorClass(d);
+      distBadge = `<span class="path-dist">${arrow}<span class="${distCls}">${d}</span></span>`;
+    }
+    return (i > 0 ? '<span class="path-arrow">→</span>' : '') +
+           `<span class="path-node ${nodeCls}">${esc(p.replace(/_/g, ' '))}${distBadge}</span>`;
+  }).join('');
+
+  const S = (typeof shareStr === 'function') ? shareStr() : { copy: 'Copy share', save: 'Save image', copied: 'Copied!', saved: 'Saved!', copyFail: 'Copy failed' };
+
+  card.innerHTML = `
+    <div class="cs-card-header">
+      <span class="cs-card-title">Your path</span>
+      <span class="cs-card-stats"><strong>${steps}</strong> step${steps === 1 ? '' : 's'}${time ? ` · <strong>${esc(formatTime(time))}</strong>` : ''}</span>
+    </div>
+    <div class="path-display">${pathHtml || '<span class="path-node">No navigation</span>'}</div>
+    ${isSurrender ? '' : `
+      <div class="cs-share">
+        <button class="cs-share-btn" data-action="copy">⎘ ${esc(S.copy)}</button>
+        <button class="cs-share-btn" data-action="save">↓ ${esc(S.save)}</button>
+        <span class="cs-share-toast" id="csShareToast"></span>
+      </div>
+    `}
+  `;
+  grid.appendChild(card);
+
+  // Wire share buttons (win only) — reuse existing builders.
+  if (!isSurrender) {
+    const toast = card.querySelector('#csShareToast');
+    const showToast = (text) => {
+      if (!toast) return;
+      toast.textContent = text;
+      toast.classList.add('show');
+      clearTimeout(toast._hideT);
+      toast._hideT = setTimeout(() => toast.classList.remove('show'), 1500);
+    };
+    card.querySelector('[data-action="copy"]').onclick = async () => {
+      const txt = buildShareText(myResult, msg);
+      try {
+        await navigator.clipboard.writeText(txt);
+        showToast(S.copied);
+      } catch (e) {
+        const ta = document.createElement('textarea');
+        ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); showToast(S.copied); }
+        catch { showToast(S.copyFail); }
+        document.body.removeChild(ta);
+      }
+    };
+    card.querySelector('[data-action="save"]').onclick = async () => {
+      const blob = await buildShareImage(myResult, msg);
+      if (!blob) { showToast(S.copyFail); return; }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `wikispeedrun-${steps}steps.png`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      showToast(S.saved);
+    };
+  }
+
+  showScreen('results');
+
+  // CTA labels per design — handlers stay the same as today's flow.
+  //   WIN:        Play again       /  Back to home    → playAgain()  / backToHome()
+  //   SURRENDER:  Try again        /  Pick new articles → playAgain() / backToHome()
+  const playAgainBtn = document.getElementById('playAgainBtn');
+  const backBtn = document.getElementById('backToHomeBtn');
+  if (playAgainBtn) {
+    playAgainBtn.style.display = '';
+    playAgainBtn.textContent = isSurrender ? 'Try again' : 'Play again';
+  }
+  if (backBtn) {
+    backBtn.style.display = '';
+    backBtn.textContent = isSurrender ? 'Pick new articles' : 'Back to home';
+  }
+
+  // ── Reveal cascade per the design:
+  //   100  banner reveals; confetti fires (win only — never on surrender,
+  //        per saved memory rule "no celebration on no-progress / loss")
+  //   500  result card reveals
+  //   900  path nodes cascade at 180ms each
+  //   pathEnd + 350: share row fades in (win only)
+  resultsAnimationTimeouts.push(setTimeout(() => {
+    banner.classList.add('revealed');
+    if (!isSurrender) {
+      // Gold-heavy palette for the trophy moment.
+      spawnSoloMarathonConfetti(MP_CONFETTI_PALETTE_WIN);
+    }
+  }, 100));
+
+  card.style.opacity = '0';
+  card.style.transform = 'translateY(8px)';
+  card.style.transition = 'opacity 0.4s ease, transform 0.4s cubic-bezier(0.22, 1, 0.36, 1)';
+  resultsAnimationTimeouts.push(setTimeout(() => {
+    card.style.opacity = '1';
+    card.style.transform = 'translateY(0)';
+  }, 500));
+
+  // Path nodes/arrows fade in from 900ms at 180ms steps. The legacy
+  // .path-node CSS already has the opacity:0 → .revealed transition.
+  let cursor = 900;
+  const pathEls = card.querySelectorAll('.path-node, .path-arrow');
+  pathEls.forEach(el => {
+    resultsAnimationTimeouts.push(setTimeout(() => el.classList.add('revealed'), cursor));
+    cursor += 180;
+  });
+
+  // Share row reveals after the last path pill — win only.
+  if (!isSurrender) {
+    const shareRow = card.querySelector('.cs-share');
+    resultsAnimationTimeouts.push(setTimeout(() => shareRow?.classList.add('revealed'), cursor + 350));
+  }
+}
+
 function showResults(msg) {
   clearInterval(timerInterval);
+  // Classic + solo gets the redesigned banner / target-hero / closest-chip
+  // treatment — branch out before the legacy banner copy + card builder.
+  // Tri SP and all MP paths fall through to the classic shell unchanged.
+  if (isSinglePlayer && (msg.mode === 'classic' || (!msg.mode && currentGameMode === 'classic'))) {
+    return showClassicSoloResults(msg);
+  }
   // Reset grid classes in case the last round was marathon (which swaps the
   // grid to mk-results-grid for a different layout).
   const grid = document.getElementById('resultsGrid');
@@ -6032,12 +6572,13 @@ function showResults(msg) {
     }
   }
   const iAmLoser = !msg.gaveUp && !isSinglePlayer && msg.results && !msg.results.some(r => r.isWinner && r.id === myPlayerId);
-  // Tear down any leftover marathon banner state from a prior round (both
-  // SP and MP marathon inject extra DOM/classes onto .winner-banner).
+  // Tear down any leftover marathon / classic-solo banner state from a
+  // prior round (each redesigned renderer injects extra DOM + classes
+  // onto .winner-banner).
   const banner0 = document.querySelector('.winner-banner');
   if (banner0) {
-    banner0.classList.remove('mk-solo-banner', 'mk-mp-banner', 'revealed');
-    banner0.querySelectorAll(':scope > .mk-solo-content, :scope > .mk-mp-content').forEach(el => el.remove());
+    banner0.classList.remove('mk-solo-banner', 'mk-mp-banner', 'cs-banner', 'cs-surrender', 'revealed');
+    banner0.querySelectorAll(':scope > .mk-solo-content, :scope > .mk-mp-content, :scope > .cs-content').forEach(el => el.remove());
     for (const child of banner0.children) child.style.display = '';
   }
   // Restore the legacy emoji icon — MP marathon hides it and replaces it
