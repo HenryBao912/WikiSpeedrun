@@ -1235,6 +1235,18 @@ async function pickMarathonTarget(room, rp, currentArticle) {
   const usedTitles = rp.marathonState.usedTitles;
   const currentNorm = normalizeArticle(currentArticle);
 
+  // Sample up to SAMPLE_SIZE eligible candidates and prefer the closest one
+  // (lowest hop count). Previously the picker returned the FIRST eligible
+  // candidate in shuffled order — a 4-hop target was just as likely as a
+  // 2-hop one, which made marathon feel arbitrarily punishing. Scanning a
+  // small window and biasing toward 2-hop > 3-hop > 4+ keeps targets
+  // reachable inside the per-target time budget while still producing
+  // variety (the sampling order is already shuffled at room start).
+  // SAMPLE_SIZE=4 strikes the balance: enough to usually find a 2-hop when
+  // one exists, small enough to keep latency negligible (computeDistance
+  // resolves in cache after the warm pass).
+  const SAMPLE_SIZE = 4;
+  const sampled = [];
   for (const [key, entry] of room.marathon.candidates) {
     if (usedTitles.has(key)) continue;
     if (!entry.data) continue;
@@ -1243,14 +1255,22 @@ async function pickMarathonTarget(room, rp, currentArticle) {
     const hops = await computeDistance(currentArticle, entry.title, entry.data, lang);
     if (hops < 2) continue; // 1-hop filtered per design: forces strategy
 
-    return {
-      title: entry.title,
-      hops: Math.min(hops, 4), // scoring tier clamps at 4+
-      rawHops: hops,
-      score: marathonBasePoints(hops),
-    };
+    sampled.push({ key, entry, hops });
+    // Short-circuit on a 2-hop find — can't get any closer than the floor.
+    if (hops === 2) break;
+    if (sampled.length >= SAMPLE_SIZE) break;
   }
-  return null;
+  if (!sampled.length) return null;
+
+  // Stable sort: lowest hops first, ties broken by sample order (already shuffled).
+  sampled.sort((a, b) => a.hops - b.hops);
+  const pick = sampled[0];
+  return {
+    title: pick.entry.title,
+    hops: Math.min(pick.hops, 4), // scoring tier clamps at 4+
+    rawHops: pick.hops,
+    score: marathonBasePoints(pick.hops),
+  };
 }
 
 // Called from the navigate handler in marathon mode. Checks whether the
