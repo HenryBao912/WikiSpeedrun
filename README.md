@@ -4,12 +4,15 @@ Race from one Wikipedia article to another using only the in-article links. Play
 
 **Live**: [wikispeedrun.io](https://wikispeedrun.io)
 
+![WikiSpeedrun demo](docs_hero.gif)
+
 ## Modes
 
 - **Classic**: first to click from article A to article B wins.
 - **Tri**: visit three target articles in any order.
+- **Marathon** *(new in v1.0.0)*: time-boxed chains — 3 / 5 / 8 / 12 minute runs. One target at a time; reach it and a new one appears. Score by efficiency (fewer clicks = more points) with completion bonuses at 5 / 10 / 15 targets.
 
-Both modes support English and Simplified Chinese Wikipedia.
+All modes support English and Simplified Chinese Wikipedia.
 
 ## Run locally
 
@@ -36,6 +39,10 @@ The puzzle pool lives in `data/puzzlePool.{en,zh}.json`. To regenerate:
 npm run generate-pool         # full pass
 npm run generate-pool:fast    # fewer articles, for local testing
 ```
+
+## Support
+
+If the game is fun, tips keep it running (hosting + the occasional Wikipedia API cap): [ko-fi.com/wikispeedrunio](https://ko-fi.com/wikispeedrunio).
 
 ## License
 
