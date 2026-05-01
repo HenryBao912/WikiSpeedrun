@@ -4,10 +4,20 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const url = require('url');
+const zlib = require('zlib');
 
 // ─── Game State ───
 const rooms = new Map();
 const players = new Map(); // playerId -> { res (SSE), roomCode, name }
+
+// Disconnect grace: when an SSE drops we don't tear down the player + room
+// immediately. EventSource auto-reconnects on transient network blips, tab
+// backgrounding, or browser sleep; without a grace window the only player in
+// a singleplayer room is evicted, the room is GC'd, and every subsequent
+// navigate from the (auto-reconnected) client hits no_room. 30s comfortably
+// covers normal reconnects without leaving zombie rooms around for long.
+const DISCONNECT_GRACE_MS = 30_000;
+const pendingDisconnects = new Map(); // playerId -> timeoutId
 
 // Wikipedia hosts per language. Add a language here + ensure the random
 // article / bio-detection heuristics below know about it and it's available
@@ -28,6 +38,32 @@ const WIKI_HOSTS = {
   zh: 'zh.wikipedia.org',
 };
 const DEFAULT_LANG = 'en';
+// Per Wikimedia's User-Agent policy (https://meta.wikimedia.org/wiki/
+// User-Agent_policy): include a contact URL or email so they can reach us
+// before applying stricter rate limits to anonymous traffic. Hoisted here
+// so all wiki-touching helpers (pageviews, top-articles, query API) share
+// the same identifier.
+const WIKI_USER_AGENT = 'WikiSpeedrun/1.0 (https://wikispeedrun.io; mailto:hello@wikispeedrun.io)';
+
+// ─── Pre-compressed static assets ───
+// index.html is ~265KB inlined HTML+CSS+JS. We compute gzip + brotli + ETag
+// once at startup so every request just pulls from a Buffer instead of
+// re-reading + re-compressing. Saves ~5x bytes on the wire and keeps the
+// hot path off disk. Re-run when index.html changes (server restart).
+const INDEX_HTML_PATH = path.join(__dirname, 'index.html');
+let indexHtmlRaw, indexHtmlGz, indexHtmlBr, indexHtmlEtag;
+function loadIndexHtml() {
+  indexHtmlRaw = fs.readFileSync(INDEX_HTML_PATH);
+  indexHtmlGz = zlib.gzipSync(indexHtmlRaw, { level: 9 });
+  // Brotli is the better choice when available — typically 15-25% smaller
+  // than gzip for HTML. Maxing out the compression level is fine since we
+  // only do this once at boot.
+  indexHtmlBr = zlib.brotliCompressSync(indexHtmlRaw, {
+    params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 11 },
+  });
+  indexHtmlEtag = '"' + crypto.createHash('sha1').update(indexHtmlRaw).digest('hex').slice(0, 16) + '"';
+}
+loadIndexHtml();
 function normalizeLang(lang) {
   return (lang && WIKI_HOSTS[lang]) ? lang : DEFAULT_LANG;
 }
@@ -217,7 +253,7 @@ function getPageViews(titles, lang = DEFAULT_LANG) {
     const encodedTitle = encodeURIComponent(title.replace(/ /g, '_'));
     const apiUrl = `https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/${project}/all-access/all-agents/${encodedTitle}/daily/${startDate}/${endDate}`;
     return new Promise((resolve) => {
-      https.get(apiUrl, { headers: { 'User-Agent': 'WikiSpeedrun/1.0 (https://wikispeedrun.io)' } }, (res) => {
+      https.get(apiUrl, { headers: { 'User-Agent': WIKI_USER_AGENT } }, (res) => {
         let data = '';
         res.on('data', chunk => data += chunk);
         res.on('end', () => {
@@ -260,7 +296,7 @@ async function getTopViewedArticles(lang = DEFAULT_LANG) {
 
       try {
         const result = await new Promise((resolve, reject) => {
-          https.get(apiUrl, { headers: { 'User-Agent': 'WikiSpeedrun/1.0 (https://wikispeedrun.io)' } }, (res) => {
+          https.get(apiUrl, { headers: { 'User-Agent': WIKI_USER_AGENT } }, (res) => {
             let data = '';
             res.on('data', chunk => data += chunk);
             res.on('end', () => {
@@ -643,16 +679,20 @@ async function resolveRedirect(title, lang = DEFAULT_LANG) {
   const key = cacheKey(lang, title);
   const cached = cacheGet(redirectCache, key);
   if (cached !== undefined) return cached;
-  try {
-    const data = await wikiAPI({ action: 'query', titles: title.replace(/ /g, '_'), redirects: '1' }, lang);
-    const pages = data.query?.pages || {};
-    const page = Object.values(pages)[0];
-    const resolved = (page && !page.missing) ? page.title.replace(/ /g, '_') : title;
-    cacheSet(redirectCache, key, resolved);
-    return resolved;
-  } catch (e) {
-    return title;
-  }
+  return coalesceWiki(`redirect:${key}`, async () => {
+    const c2 = cacheGet(redirectCache, key);
+    if (c2 !== undefined) return c2;
+    try {
+      const data = await wikiAPI({ action: 'query', titles: title.replace(/ /g, '_'), redirects: '1' }, lang);
+      const pages = data.query?.pages || {};
+      const page = Object.values(pages)[0];
+      const resolved = (page && !page.missing) ? page.title.replace(/ /g, '_') : title;
+      cacheSet(redirectCache, key, resolved);
+      return resolved;
+    } catch (e) {
+      return title;
+    }
+  });
 }
 
 // ─── Wikipedia API for distance calculation ───
@@ -669,6 +709,11 @@ const backlinkCache = new Map(); // title -> { value: Set, expires: number }
 // roundtrip on every link click — visibly laggy on localhost. Cache the
 // resolved canonical title so revisits and common misses are instant.
 const redirectCache = new Map(); // lang|title -> { value: string, expires: number }
+// Redirects-pointing-AT-a-page cache. Previously getRedirectsTo was only
+// called from cacheDestination — but it ran fresh on every game start, so
+// 5 games targeting Earth = 5 identical fetches. With a 24h cache, popular
+// destinations are paid once.
+const aliasCache = new Map(); // lang|title -> { value: Set, expires: number }
 
 function cacheGet(cache, key) {
   const entry = cache.get(key);
@@ -689,11 +734,45 @@ function cacheSet(cache, key, value) {
   cache.set(key, { value, expires: Date.now() + CACHE_TTL_MS });
 }
 
+// In-flight request coalescing. When N concurrent callers ask for the same
+// (lang, title) and the cache is cold, we'd otherwise issue N identical HTTP
+// requests to Wikipedia — exactly the pattern that triggered the 145-error
+// 429 burst we saw in prod logs (popular destinations like Earth/Mexico
+// fanned out simultaneously across game starts + navigates). With coalescing
+// the first caller does the fetch and the rest await the same Promise.
+const inFlightWiki = new Map(); // namespaced-key -> Promise
+function coalesceWiki(key, fn) {
+  const existing = inFlightWiki.get(key);
+  if (existing) return existing;
+  const p = (async () => {
+    try { return await fn(); }
+    finally { inFlightWiki.delete(key); }
+  })();
+  inFlightWiki.set(key, p);
+  return p;
+}
+
 // MediaWiki variant codes. Chinese wiki auto-converts Simplified ↔ Traditional
 // at display time; we always want Simplified output for now.
 const WIKI_VARIANTS = {
   zh: 'zh-cn',
 };
+
+// Cap how long a single 429 retry can wait. Wikipedia's Retry-After can be
+// large (60s+) under heavy load — that would stall navigate handlers way
+// past any reasonable p99 budget. Better to fail fast and let the client
+// surface the issue than wedge the connection.
+const RETRY_AFTER_MAX_MS = 5000;
+
+function parseRetryAfter(headerValue) {
+  if (!headerValue) return null;
+  const seconds = parseInt(headerValue, 10);
+  if (!isNaN(seconds) && seconds >= 0) return Math.min(seconds * 1000, RETRY_AFTER_MAX_MS);
+  // RFC 7231 also allows HTTP-date format
+  const dateMs = Date.parse(headerValue);
+  if (!isNaN(dateMs)) return Math.min(Math.max(0, dateMs - Date.now()), RETRY_AFTER_MAX_MS);
+  return null;
+}
 
 function wikiAPIOnce(params, lang = DEFAULT_LANG) {
   return new Promise((resolve, reject) => {
@@ -702,15 +781,19 @@ function wikiAPIOnce(params, lang = DEFAULT_LANG) {
     const qs = new URLSearchParams(finalParams);
     const host = WIKI_HOSTS[lang] || WIKI_HOSTS[DEFAULT_LANG];
     const reqUrl = `https://${host}/w/api.php?${qs}`;
-    https.get(reqUrl, { headers: { 'User-Agent': 'WikiSpeedrun/1.0 (https://wikispeedrun.io)' } }, (res) => {
+    https.get(reqUrl, { headers: { 'User-Agent': WIKI_USER_AGENT } }, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
         // Rate-limit / upstream error → Wikipedia returns HTML, not JSON. Let
         // the caller retry with backoff rather than bubbling a parse error
-        // that poisons distance caches.
+        // that poisons distance caches. Attach status + Retry-After hint so
+        // the retry loop can honor them.
         if (res.statusCode && res.statusCode >= 400) {
-          return reject(new Error(`wiki http ${res.statusCode}`));
+          const err = new Error(`wiki http ${res.statusCode}`);
+          err.status = res.statusCode;
+          err.retryAfterMs = parseRetryAfter(res.headers['retry-after']);
+          return reject(err);
         }
         try { resolve(JSON.parse(data)); }
         catch (e) { reject(new Error('wiki non-json response')); }
@@ -731,9 +814,11 @@ async function wikiAPI(params, lang = DEFAULT_LANG, attempts = 3) {
     catch (e) {
       lastErr = e;
       if (i < attempts - 1) {
-        // 250ms → 500ms → 1s worst case (~1.75s total). Tight enough that a
-        // 429 on a user-facing endpoint doesn't blow p99.
-        const delay = 250 * Math.pow(2, i) + Math.floor(Math.random() * 150);
+        // Honor Retry-After when Wikipedia explicitly tells us how long to
+        // wait (clamped to RETRY_AFTER_MAX_MS upstream). Otherwise fall back
+        // to exponential backoff: 250ms → 500ms → 1s + jitter.
+        const expBackoff = 250 * Math.pow(2, i) + Math.floor(Math.random() * 150);
+        const delay = e.retryAfterMs != null ? Math.max(e.retryAfterMs, expBackoff) : expBackoff;
         await new Promise(r => setTimeout(r, delay));
       }
     }
@@ -745,52 +830,64 @@ async function getPageLinks(title, lang = DEFAULT_LANG) {
   const key = cacheKey(lang, title);
   const cached = cacheGet(linkCache, key);
   if (cached) return cached;
-  const links = new Set();
-  let plcontinue = null;
-  let completed = false;
-  try {
-    do {
-      const params = { action: 'query', titles: title.replace(/ /g, '_'), prop: 'links', pllimit: '500', plnamespace: '0' };
-      if (plcontinue) params.plcontinue = plcontinue;
-      const data = await wikiAPI(params, lang);
-      const pages = data.query?.pages || {};
-      for (const page of Object.values(pages)) {
-        if (page.links) page.links.forEach(l => links.add(normalizeArticle(l.title)));
-      }
-      plcontinue = data.continue?.plcontinue;
-    } while (plcontinue);
-    completed = true;
-  } catch (e) {
-    console.error('Error fetching links for', title, e.message);
-  }
-  // Only cache a complete set. A partial set (from mid-pagination error) would
-  // silently hide a direct link to destination from distance checks forever.
-  if (completed) cacheSet(linkCache, key, links);
-  return links;
+  return coalesceWiki(`links:${key}`, async () => {
+    // Re-check cache inside the coalesced promise — a previous concurrent
+    // caller may have populated it before we got the slot.
+    const c2 = cacheGet(linkCache, key);
+    if (c2) return c2;
+    const links = new Set();
+    let plcontinue = null;
+    let completed = false;
+    try {
+      do {
+        const params = { action: 'query', titles: title.replace(/ /g, '_'), prop: 'links', pllimit: '500', plnamespace: '0' };
+        if (plcontinue) params.plcontinue = plcontinue;
+        const data = await wikiAPI(params, lang);
+        const pages = data.query?.pages || {};
+        for (const page of Object.values(pages)) {
+          if (page.links) page.links.forEach(l => links.add(normalizeArticle(l.title)));
+        }
+        plcontinue = data.continue?.plcontinue;
+      } while (plcontinue);
+      completed = true;
+    } catch (e) {
+      console.error('Error fetching links for', title, e.message);
+    }
+    // Only cache a complete set. A partial set (from mid-pagination error) would
+    // silently hide a direct link to destination from distance checks forever.
+    if (completed) cacheSet(linkCache, key, links);
+    return links;
+  });
 }
 
 async function getBacklinks(title, limit = 500, lang = DEFAULT_LANG) {
   const key = cacheKey(lang, title);
   const cached = cacheGet(backlinkCache, key);
   if (cached) return cached;
-  const links = new Set();
-  let blcontinue = null;
-  let completed = false;
-  try {
-    do {
-      const params = { action: 'query', list: 'backlinks', bltitle: title.replace(/ /g, '_'), bllimit: String(Math.min(limit - links.size, 500)), blnamespace: '0' };
-      if (blcontinue) params.blcontinue = blcontinue;
-      const data = await wikiAPI(params, lang);
-      if (data.query?.backlinks) data.query.backlinks.forEach(l => links.add(normalizeArticle(l.title)));
-      blcontinue = data.continue?.blcontinue;
-    } while (blcontinue && links.size < limit);
-    completed = true;
-  } catch (e) {
-    console.error('Error fetching backlinks for', title, e.message);
-  }
-  // Only cache on success — see getPageLinks for the same reasoning.
-  if (completed) cacheSet(backlinkCache, key, links);
-  return links;
+  // Note: limit is part of the coalesce key so a small-limit caller doesn't
+  // accidentally piggyback on (and short-circuit) a larger fetch.
+  return coalesceWiki(`backlinks:${key}:${limit}`, async () => {
+    const c2 = cacheGet(backlinkCache, key);
+    if (c2) return c2;
+    const links = new Set();
+    let blcontinue = null;
+    let completed = false;
+    try {
+      do {
+        const params = { action: 'query', list: 'backlinks', bltitle: title.replace(/ /g, '_'), bllimit: String(Math.min(limit - links.size, 500)), blnamespace: '0' };
+        if (blcontinue) params.blcontinue = blcontinue;
+        const data = await wikiAPI(params, lang);
+        if (data.query?.backlinks) data.query.backlinks.forEach(l => links.add(normalizeArticle(l.title)));
+        blcontinue = data.continue?.blcontinue;
+      } while (blcontinue && links.size < limit);
+      completed = true;
+    } catch (e) {
+      console.error('Error fetching backlinks for', title, e.message);
+    }
+    // Only cache on success — see getPageLinks for the same reasoning.
+    if (completed) cacheSet(backlinkCache, key, links);
+    return links;
+  });
 }
 
 // Fetch titles of all redirects that point AT the given page. Wikipedia's
@@ -799,31 +896,43 @@ async function getBacklinks(title, limit = 500, lang = DEFAULT_LANG) {
 // "moon landing". We expand the destination into an alias set at cache time
 // so distance checks still match when a link goes through a redirect.
 async function getRedirectsTo(title, lang = DEFAULT_LANG) {
-  const aliases = new Set();
-  let rdcontinue = null;
-  try {
-    do {
-      const params = {
-        action: 'query',
-        titles: title.replace(/ /g, '_'),
-        prop: 'redirects',
-        rdlimit: '500',
-        rdnamespace: '0',
-      };
-      if (rdcontinue) params.rdcontinue = rdcontinue;
-      const data = await wikiAPI(params, lang);
-      const pages = data.query?.pages || {};
-      for (const page of Object.values(pages)) {
-        if (page.redirects) {
-          for (const r of page.redirects) aliases.add(normalizeArticle(r.title));
+  const key = cacheKey(lang, title);
+  const cached = cacheGet(aliasCache, key);
+  if (cached) return cached;
+  return coalesceWiki(`aliases:${key}`, async () => {
+    const c2 = cacheGet(aliasCache, key);
+    if (c2) return c2;
+    const aliases = new Set();
+    let rdcontinue = null;
+    let completed = false;
+    try {
+      do {
+        const params = {
+          action: 'query',
+          titles: title.replace(/ /g, '_'),
+          prop: 'redirects',
+          rdlimit: '500',
+          rdnamespace: '0',
+        };
+        if (rdcontinue) params.rdcontinue = rdcontinue;
+        const data = await wikiAPI(params, lang);
+        const pages = data.query?.pages || {};
+        for (const page of Object.values(pages)) {
+          if (page.redirects) {
+            for (const r of page.redirects) aliases.add(normalizeArticle(r.title));
+          }
         }
-      }
-      rdcontinue = data.continue?.rdcontinue;
-    } while (rdcontinue);
-  } catch (e) {
-    console.error('Error fetching redirects for', title, e.message);
-  }
-  return aliases;
+        rdcontinue = data.continue?.rdcontinue;
+      } while (rdcontinue);
+      completed = true;
+    } catch (e) {
+      console.error('Error fetching redirects for', title, e.message);
+    }
+    // Only cache complete results — partial alias sets would let distance
+    // checks miss redirects forever.
+    if (completed) cacheSet(aliasCache, key, aliases);
+    return aliases;
+  });
 }
 
 async function computeDistance(currentArticle, destination, destData, lang = DEFAULT_LANG) {
@@ -932,13 +1041,24 @@ function releaseCacheSlot() {
   if (next) next();
 }
 
+// Coalesce the entire cacheDestination pipeline. Without this, two games
+// targeting the same destination launch two full pipelines (each: aliases
+// + hop1 + 30 hop2 sample fetches + distance Map building). The inner wiki
+// fetches dedupe via coalesceWiki, but the hop2 sampling + Set assembly
+// still runs twice. With this map, the second caller awaits the first.
+const cacheDestInFlight = new Map(); // lang|destination -> Promise<destData>
+
 async function cacheDestination(destination, lang = DEFAULT_LANG) {
-  await acquireCacheSlot();
-  try {
-    return await cacheDestinationInner(destination, lang);
-  } finally {
-    releaseCacheSlot();
-  }
+  const key = cacheKey(lang, destination);
+  const existing = cacheDestInFlight.get(key);
+  if (existing) return existing;
+  const p = (async () => {
+    await acquireCacheSlot();
+    try { return await cacheDestinationInner(destination, lang); }
+    finally { releaseCacheSlot(); }
+  })().finally(() => cacheDestInFlight.delete(key));
+  cacheDestInFlight.set(key, p);
+  return p;
 }
 
 async function cacheDestinationInner(destination, lang = DEFAULT_LANG) {
@@ -1756,28 +1876,35 @@ async function handleAction(playerId, msg) {
 
     case 'navigate': {
       const player = players.get(playerId);
-      if (!player) return { ok: false };
+      if (!player) return { ok: false, error: 'session_lost' };
       const room = rooms.get(player.roomCode);
       if (!room || !room.started) {
         // Log rejection so we can measure how often the UI thinks a nav
         // worked but the server discarded it (reconnect ghosts, late joiners).
+        const reason = !room ? 'no_room' : 'not_started';
         logEvent('navigate_rejected', {
           playerId,
           roomCode: player.roomCode,
           article: msg.article,
-          reason: !room ? 'no_room' : 'not_started',
+          reason,
         });
-        return { ok: false };
+        // Tell the client its game state is stale so it can show a message
+        // and reset back to home — otherwise the user keeps clicking links
+        // that are silently dropped (the bug we saw in prod logs).
+        sendSSE(playerId, { type: 'session_lost', reason });
+        return { ok: false, error: 'session_lost' };
       }
       const rp = room.players.get(playerId);
       if (!rp || rp.finished) {
+        const reason = !rp ? 'not_participant' : 'finished';
         logEvent('navigate_rejected', {
           playerId,
           roomCode: player.roomCode,
           article: msg.article,
-          reason: !rp ? 'not_participant' : 'finished',
+          reason,
         });
-        return { ok: false };
+        if (!rp) sendSSE(playerId, { type: 'session_lost', reason });
+        return { ok: false, error: reason };
       }
 
       const article = msg.article;
@@ -2360,8 +2487,33 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (parsed.pathname === '/' || parsed.pathname === '/index.html') {
-    res.writeHead(200, { 'Content-Type': 'text/html', 'Cache-Control': 'no-cache, no-store, must-revalidate' });
-    fs.createReadStream(path.join(__dirname, 'index.html')).pipe(res);
+    // Honor If-None-Match: send 304 instead of re-shipping the body when
+    // the client has the same version cached. Saves ~265KB raw / ~50KB gz
+    // on every revisit within the cache window.
+    if (req.headers['if-none-match'] === indexHtmlEtag) {
+      res.writeHead(304, { 'ETag': indexHtmlEtag, 'Cache-Control': 'public, max-age=60, must-revalidate' });
+      res.end();
+      return;
+    }
+    // Pick best encoding the client advertises. Brotli > gzip > identity.
+    const ae = (req.headers['accept-encoding'] || '').toLowerCase();
+    let body, encoding;
+    if (ae.includes('br')) { body = indexHtmlBr; encoding = 'br'; }
+    else if (ae.includes('gzip')) { body = indexHtmlGz; encoding = 'gzip'; }
+    else { body = indexHtmlRaw; encoding = null; }
+    const headers = {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Content-Length': body.length,
+      'ETag': indexHtmlEtag,
+      // 60s freshness, then mandatory revalidation. Combined with ETag, a
+      // returning visitor pays at most a 304 (no body) on stale-revalidate.
+      // Short enough that pushed updates reach users within a minute.
+      'Cache-Control': 'public, max-age=60, must-revalidate',
+      'Vary': 'Accept-Encoding',
+    };
+    if (encoding) headers['Content-Encoding'] = encoding;
+    res.writeHead(200, headers);
+    res.end(body);
     return;
   }
 
@@ -2432,9 +2584,29 @@ const server = http.createServer(async (req, res) => {
     // so they cannot forge actions even if they guess a playerId.
     const csrfToken = crypto.randomBytes(16).toString('hex');
     const connectedAt = Date.now();
-    players.set(playerId, { res, roomCode: null, name: null, csrfToken, connectedAt });
-    console.log(`SSE connected: ${playerId.slice(0, 8)} (total: ${players.size})`);
-    logEvent('sse_connect', { playerId, totalConnected: players.size });
+
+    // Reconnect path: same playerId arrived within the grace window. Cancel
+    // the pending teardown and rebind the existing player record (preserving
+    // roomCode / room membership) onto the new SSE handle. Otherwise the
+    // client would resume mid-game with a fresh roomCode=null record and
+    // every navigate would 404.
+    const pendingTid = pendingDisconnects.get(playerId);
+    const existing = players.get(playerId);
+    if (pendingTid && existing) {
+      clearTimeout(pendingTid);
+      pendingDisconnects.delete(playerId);
+      // Best-effort close of the old SSE handle (already dead in practice).
+      try { existing.res?.end?.(); } catch (_) {}
+      existing.res = res;
+      existing.csrfToken = csrfToken;
+      existing.connectedAt = connectedAt;
+      console.log(`SSE reconnected: ${playerId.slice(0, 8)} (room: ${existing.roomCode || 'none'})`);
+      logEvent('sse_reconnect', { playerId, roomCode: existing.roomCode || null, totalConnected: players.size });
+    } else {
+      players.set(playerId, { res, roomCode: null, name: null, csrfToken, connectedAt });
+      console.log(`SSE connected: ${playerId.slice(0, 8)} (total: ${players.size})`);
+      logEvent('sse_connect', { playerId, totalConnected: players.size });
+    }
 
     sendSSE(playerId, { type: 'connected', playerId, csrfToken });
 
@@ -2446,11 +2618,21 @@ const server = http.createServer(async (req, res) => {
 
     req.on('close', () => {
       clearInterval(keepalive);
-      const p = players.get(playerId);
-      const sessionMs = p?.connectedAt ? Date.now() - p.connectedAt : null;
-      console.log(`SSE disconnected: ${playerId.slice(0, 8)}`);
-      logEvent('sse_disconnect', { playerId, roomCode: p?.roomCode || null, sessionMs });
-      handleDisconnect(playerId);
+      // If a newer SSE has already replaced our res handle, do nothing — the
+      // close fired because we're the *old* connection getting evicted by a
+      // reconnect (see rebind above).
+      const cur = players.get(playerId);
+      if (cur && cur.res !== res) return;
+      const sessionMs = cur?.connectedAt ? Date.now() - cur.connectedAt : null;
+      console.log(`SSE disconnected: ${playerId.slice(0, 8)} (grace ${DISCONNECT_GRACE_MS}ms)`);
+      logEvent('sse_disconnect', { playerId, roomCode: cur?.roomCode || null, sessionMs });
+      // Defer cleanup so a quick auto-reconnect can reattach. If they don't
+      // come back in time, run the original teardown.
+      const tid = setTimeout(() => {
+        pendingDisconnects.delete(playerId);
+        handleDisconnect(playerId);
+      }, DISCONNECT_GRACE_MS);
+      pendingDisconnects.set(playerId, tid);
     });
     return;
   }

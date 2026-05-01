@@ -3588,9 +3588,9 @@ function connectSSE() {
     const url = myPlayerId ? `/events?playerId=${myPlayerId}` : '/events';
     eventSource = new EventSource(url);
 
-    eventSource.onopen = () => {
-      console.log('[SSE] Connected');
-    };
+    // Intentionally silent on connect — we open + reopen the SSE on every
+    // screen transition + reconnect, and the noise drowns out real signal
+    // in DevTools. Use console.debug if you need to surface it locally.
 
     // Messages can arrive before 'connected' (e.g. if the server blasts state
     // immediately on reconnect). Buffer them until myPlayerId is set —
@@ -4466,6 +4466,25 @@ function showGlobalToast(msg, durationMs = 5000) {
 // ─── Server Message Handler ───
 function handleServerMessage(msg) {
   switch (msg.type) {
+    case 'session_lost': {
+      // Server says our room is gone (e.g. SSE dropped past the grace
+      // window, room GC'd). Without this, the user sits there clicking
+      // links that get silently rejected — the no_room bug we hunted in
+      // logs. Bail to home so they can start a fresh game.
+      showGlobalToast('Your game session expired. Returning to home.', 4000);
+      currentRoomCode = null;
+      isHost = false;
+      mpIsHost = false;
+      isSinglePlayer = false;
+      myPath = [];
+      try { eventSource?.close(); } catch (_) {}
+      eventSource = null;
+      myPlayerId = null;
+      myCsrfToken = null;
+      setTimeout(() => showScreen('home'), 200);
+      break;
+    }
+
     case 'room_created':
       currentRoomCode = msg.code;
       isHost = true;
