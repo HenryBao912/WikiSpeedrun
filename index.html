@@ -1324,13 +1324,15 @@
     margin-bottom: 10px;
   }
 
-  /* Rank badge — rounded square, surface2 base. Position color shows on
-     the digit text (silver/bronze); winner gets a gold gradient. */
+  /* Rank badge — circular surface2 disc. Position color shows on the digit
+     text (silver/bronze); winner gets a gold-tinted background + gold "1".
+     Geometry + gold-tint match `.cmp-rank-pill` and `.tri-rank-pill` so all
+     three MP modes' card rank tiles read identically. */
   .rank-badge {
     width: 26px; height: 26px;
-    border-radius: 8px;
+    border-radius: 50%;
     flex: 0 0 auto;
-    display: flex;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
     font-size: 0.78rem;
@@ -1340,15 +1342,17 @@
     color: var(--text2);
   }
   .rank-badge.rank-winner {
-    background: linear-gradient(135deg, var(--gold), #d49a3a);
-    color: #2a1d08;
+    background: rgba(253, 203, 110, 0.18);
+    color: var(--gold);
   }
   .rank-badge.rank-2 { color: #c4c4d0; } /* silver */
   .rank-badge.rank-3 { color: #b0845e; } /* bronze */
-  /* rank-1 should normally never apply — a 1st-place card always has
-     `.rank-winner` (gold gradient). Defined here as a safety so the badge
-     still has gold tint if the winner flag ever fails to set server-side. */
-  .rank-badge.rank-1 { color: var(--gold); }
+  /* rank-1 = same gold tint as rank-winner so 1st-place always reads gold
+     even if the winner flag ever fails to set server-side. */
+  .rank-badge.rank-1 {
+    background: rgba(253, 203, 110, 0.18);
+    color: var(--gold);
+  }
 
   /* Player color swatch — between rank badge and name on every card.
      The flex gap on the parent provides spacing; no margin needed. */
@@ -1983,6 +1987,378 @@
 
   @media (prefers-reduced-motion: reduce) {
     .cmp-medal { animation: none; }
+  }
+
+  /* ─── Tri-mode results redesign — design system zip 6.
+     Solo + MP share this block. Six states share the visual contract:
+       Solo:  won-2/2 (trophy)  ·  surrender-0/1/2 (compass)
+       MP:    winner-view (trophy)  ·  2nd-view (silver disc)  ·
+              3rd-view (bronze disc)  ·  abandoned (white-flag)
+     Reuses the same banner shell, mode chip pattern, card border rules,
+     distance pills, share row, and reveal cascade as MP Classic — adds two
+     primitives unique to Tri:
+       1. .tri-goal-row    — Start → T1 → T2 pill strip above cards
+       2. .stat-pips       — ●● / ●○ / ○○ inline target-completion indicator
+     Plus a per-card numeric rank tile (.tri-rank-pill — winner gets the
+     trophy badge, others get 1/2/3). Bronze "3rd" disc lives in the banner
+     only — card rank tiles stay numeric per design intent. */
+  .winner-banner.tri-banner {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    position: relative;
+    padding: 0;
+    transform: none;
+    opacity: 0;
+    transition: opacity 0.4s var(--ease-out-expo, cubic-bezier(0.22, 1, 0.36, 1));
+    background: transparent;
+    border: none;
+  }
+  .winner-banner.tri-banner.revealed { opacity: 1; }
+  /* Soft purple glow behind the medal — matches cs-/cmp-/mk-mp- pattern. */
+  .winner-banner.tri-banner::before {
+    content: '';
+    position: absolute;
+    top: -24px; left: 50%;
+    width: 340px; height: 180px;
+    transform: translateX(-50%);
+    background: radial-gradient(ellipse at center, rgba(108, 92, 231, 0.16), transparent 70%);
+    pointer-events: none;
+    z-index: -1;
+  }
+  .winner-banner.tri-banner.tri-lose::before,
+  .winner-banner.tri-banner.tri-abandoned::before,
+  .winner-banner.tri-banner.tri-surrender::before {
+    background: radial-gradient(ellipse at center, rgba(144, 144, 168, 0.10), transparent 70%);
+  }
+  /* Tighten #results spacing — same trick used by other redesigned modes. */
+  #results:has(.winner-banner.tri-banner) { gap: 16px; padding-top: 28px; }
+  .tri-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+  }
+  .tri-medal {
+    width: 80px; height: 80px;
+    margin: 0 auto;
+    animation: cmpDropIn 0.7s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+  }
+  .tri-modechip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 12px;
+    border-radius: 999px;
+    background: rgba(108,92,231,0.10);
+    border: 1px solid rgba(108,92,231,0.30);
+    color: #a29bfe;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+  }
+  .tri-modechip::before {
+    content: '';
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #a29bfe;
+  }
+  .tri-modechip.neutral {
+    background: rgba(144,144,168,0.10);
+    border-color: rgba(144,144,168,0.30);
+    color: #9090a8;
+  }
+  .tri-modechip.neutral::before { background: #9090a8; }
+  /* Headline — strip the legacy .winner-name gradient explicitly so a stale
+     rule from a previous round can't bleed through. */
+  .winner-name.tri-headline {
+    background: none;
+    -webkit-text-fill-color: initial;
+    color: var(--text);
+    animation: none;
+    font-size: 1.6rem;
+    font-weight: 800;
+    line-height: 1.15;
+    margin: 4px 0 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .winner-name.tri-headline.lose { color: var(--text); font-weight: 700; }
+  .winner-name.tri-headline.abandoned { color: var(--text2); font-weight: 700; }
+  .tri-swatch {
+    display: inline-block;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px rgba(255,255,255,0.10);
+  }
+  .tri-sub {
+    color: var(--text2);
+    font-size: 0.92rem;
+    margin: 2px 0 0;
+  }
+  .tri-sub strong { color: var(--text); }
+
+  /* Goal pill row — Start → T1 → T2 strip rendered above the card grid.
+     Reveals at t=550ms (between banner and cards) so the targets register
+     before the per-player paths animate in. Wraps on narrow viewports. */
+  .tri-goal-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin: 0 auto 4px;
+    padding: 10px 14px;
+    border-radius: 14px;
+    background: rgba(108, 92, 231, 0.06);
+    border: 1px solid rgba(108, 92, 231, 0.18);
+    opacity: 0;
+    transform: translateY(-4px);
+    transition: opacity 0.32s ease, transform 0.32s ease;
+  }
+  .tri-goal-row.revealed { opacity: 1; transform: translateY(0); }
+  .tg-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    font-weight: 700;
+  }
+  .tg-pill .tg-label {
+    font-size: 0.65rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    opacity: 0.75;
+  }
+  .tg-start {
+    background: rgba(108, 92, 231, 0.22);
+    color: #d4cdff;
+    border: 1px solid rgba(108, 92, 231, 0.5);
+  }
+  .tg-target { border: 1px solid rgba(255, 255, 255, 0.12); }
+  .tg-target.hit {
+    background: rgba(0, 184, 148, 0.18);
+    color: #6ee7b7;
+    border-color: rgba(0, 184, 148, 0.5);
+  }
+  .tg-target.miss {
+    background: rgba(255, 255, 255, 0.04);
+    color: #9090a8;
+    border-color: rgba(255, 255, 255, 0.10);
+  }
+  .tg-target.hit .tg-mark {
+    font-weight: 800;
+    color: #00b894;
+    margin-right: 2px;
+  }
+  .tg-arrow {
+    color: #6e6e85;
+    font-size: 0.9rem;
+    user-select: none;
+  }
+  @media (max-width: 600px) {
+    .tri-goal-row { font-size: 0.78rem; gap: 6px; padding: 8px 10px; }
+    .tg-pill { padding: 5px 9px; }
+  }
+
+  /* Card border rules — winner gold, my-card-not-winner purple,
+     my-card-and-winner gold + purple inset. Border weight + padding match
+     cmp-card / mk-mp-card so all four modes read as one card family. */
+  .result-card.tri-card {
+    background: var(--surface);
+    border: 1.5px solid var(--surface2);
+    border-radius: 14px;
+    padding: 14px 16px;
+    box-shadow: none;
+    transition: opacity 0.4s ease, transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .result-card.tri-card.tri-winner {
+    border-color: var(--gold);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(253, 203, 110, 0.25);
+  }
+  .result-card.tri-card.tri-mine:not(.tri-winner) {
+    border-color: rgba(108, 92, 231, 0.55);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(108, 92, 231, 0.2);
+  }
+  .result-card.tri-card.tri-winner.tri-mine {
+    border-color: var(--gold);
+    box-shadow:
+      inset 0 0 0 2px rgba(108, 92, 231, 0.55),
+      0 4px 14px rgba(0, 0, 0, 0.3),
+      0 0 0 1px rgba(253, 203, 110, 0.3),
+      0 0 18px rgba(253, 203, 110, 0.2);
+  }
+  /* Solo Tri card — no rank, no swatch, just stats + path. Subtle purple
+     accent because there's only one card and "this is me" is implicit. */
+  .result-card.tri-card.tri-solo {
+    border-color: rgba(108, 92, 231, 0.45);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  }
+  .tri-card .tri-card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .tri-rank-pill {
+    display: inline-flex;
+    align-items: center; justify-content: center;
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    background: var(--surface2);
+    color: var(--text2);
+    font-size: 0.78rem;
+    font-weight: 800;
+    flex-shrink: 0;
+  }
+  /* Winner rank — gold-tinted disc with gold "1" text. Matches MP Classic
+     `.cmp-rank-pill.r1` for cross-mode parity. */
+  .tri-rank-pill.r1 {
+    background: rgba(253, 203, 110, 0.18);
+    color: var(--gold);
+  }
+  .tri-card .tri-name {
+    font-size: 1.05rem;
+    font-weight: 700;
+    flex: 1 1 auto;
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .tri-card .tri-name-swatch {
+    display: inline-block;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.06);
+  }
+  .tri-card .tri-you-tag {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    padding: 2px 6px;
+    border-radius: 999px;
+    background: rgba(108, 92, 231, 0.18);
+    color: #a29bfe;
+  }
+  .tri-card .tri-stats {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text2);
+    font-size: 0.88rem;
+    flex-shrink: 0;
+  }
+  .tri-card .tri-stats strong { color: var(--text); }
+  /* Target-completion pips: ●● = both reached, ●○ = one, ○○ = none. */
+  .tri-card .stat-pips {
+    display: inline-flex;
+    gap: 3px;
+    margin-right: 4px;
+  }
+  .tri-card .stat-pips .pip {
+    width: 9px; height: 9px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.20);
+    box-sizing: border-box;
+  }
+  .tri-card .stat-pips .pip.on {
+    background: var(--green);
+    border-color: var(--green);
+    box-shadow: 0 0 6px rgba(0, 184, 148, 0.45);
+  }
+  /* Tier-colored distance pills inside Tri cards — same scale as MP Classic. */
+  .tri-card .path-node .path-dist {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 1px 6px;
+    margin-left: 6px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text2);
+    font-size: 0.78rem;
+    font-weight: 600;
+  }
+  .tri-card .path-node .path-dist .dist-close { color: #fbbf24; }
+  .tri-card .path-node .path-dist .dist-mid   { color: #c084fc; }
+  .tri-card .path-node .path-dist .dist-far   { color: #7dd3fc; }
+  .tri-card .path-node .path-dist .path-dir.closer  { color: #00b894; }
+  .tri-card .path-node .path-dist .path-dir.further { color: #e17055; }
+  .tri-card .path-node .path-dist .path-dir.same    { color: var(--text2); }
+
+  /* Inline share row — Solo 2/2 + MP winner only. */
+  .tri-share {
+    position: relative;
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    margin-top: 14px;
+    opacity: 0;
+    transition: opacity 0.4s ease;
+  }
+  .tri-share.revealed { opacity: 1; }
+  .tri-share-btn {
+    background: var(--surface2);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    color: var(--text);
+    padding: 8px 14px;
+    border-radius: 999px;
+    cursor: pointer;
+    font-size: 0.86rem;
+    font-weight: 600;
+    transition: background 0.2s, transform 0.15s, color 0.2s;
+  }
+  .tri-share-btn:hover {
+    background: color-mix(in oklab, var(--accent) 18%, var(--surface2));
+    color: #fff;
+    transform: translateY(-1px);
+  }
+  .tri-share-toast {
+    position: absolute;
+    bottom: -32px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 4px 10px;
+    background: var(--surface2);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 999px;
+    color: var(--text);
+    font-size: 0.75rem;
+    opacity: 0;
+    transition: opacity 0.3s;
+    pointer-events: none;
+  }
+  .tri-share-toast.show { opacity: 1; }
+
+  /* "Closest you got" chip for Tri MP abandoned — surfaces the highest
+     target-completion across the room. Tucked into the banner sub-line. */
+  .tri-closest {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(253, 203, 110, 0.10);
+    border: 1px solid rgba(253, 203, 110, 0.30);
+    color: var(--gold);
+    font-size: 0.82rem;
+    font-weight: 600;
+    margin-top: 6px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tri-medal { animation: none; }
+    .tri-goal-row { transition: none; }
   }
 
   /* ─── Difficulty Slider ─── */
@@ -6025,6 +6401,30 @@ const CLASSIC_MP_FLAG_SVG = `
   </svg>
 `;
 
+// Tri-mode third-place medallion. Bronze parallel of CLASSIC_MP_RUNNER_UP_SVG
+// — same disc composition + brand-purple→green ribbon, but bronze body and
+// "3rd" inscription. Used only in the banner when the viewer's MP rank is 3
+// in a normal-finish (non-abandoned) Tri MP game.
+const CLASSIC_MP_THIRD_PLACE_SVG = `
+  <svg viewBox="0 0 80 80" fill="none" width="100%" height="100%" aria-hidden="true">
+    <defs>
+      <linearGradient id="cmpBronze" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#a87a4a"/>
+        <stop offset="1" stop-color="#6e4a25"/>
+      </linearGradient>
+      <linearGradient id="cmpBronzeRibbon" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="#6c5ce7"/>
+        <stop offset="1" stop-color="#00b894"/>
+      </linearGradient>
+    </defs>
+    <path d="M28 8 L32 40 L40 34 L48 40 L52 8 Z" fill="url(#cmpBronzeRibbon)" opacity="0.7"/>
+    <circle cx="40" cy="46" r="22" fill="url(#cmpBronze)" stroke="#b0845e" stroke-width="1.5"/>
+    <circle cx="40" cy="46" r="17" fill="none" stroke="rgba(255,255,255,0.10)" stroke-width="1"/>
+    <text x="40" y="50" font-size="11" font-weight="800" text-anchor="middle"
+          fill="#f3dab8" font-family="system-ui, sans-serif">3rd</text>
+  </svg>
+`;
+
 // Marathon results screen. Mirrors classic/tri visually:
 //   - Shared winner-banner with "You Won" / "You Suck" copy
 //   - Standard result-card rows (one per player)
@@ -6074,8 +6474,11 @@ function showMarathonResults(msg) {
   const icon = document.getElementById('resultIcon');
   // Tear down any leftover banner state from a prior round (SP marathon /
   // SP classic redesigns inject extra DOM + classes onto .winner-banner).
-  banner.classList.remove('mk-solo-banner', 'mk-mp-banner', 'cs-banner', 'cs-surrender', 'cmp-banner', 'cmp-lose', 'cmp-abandoned', 'visible', 'revealed');
-  banner.querySelectorAll(':scope > .mk-solo-content, :scope > .mk-mp-content, :scope > .cs-content, :scope > .cmp-content').forEach(el => el.remove());
+  banner.classList.remove('mk-solo-banner', 'mk-mp-banner', 'cs-banner', 'cs-surrender', 'cmp-banner', 'cmp-lose', 'cmp-abandoned', 'tri-banner', 'tri-lose', 'tri-abandoned', 'tri-surrender', 'visible', 'revealed');
+  banner.querySelectorAll(':scope > .mk-solo-content, :scope > .mk-mp-content, :scope > .cs-content, :scope > .cmp-content, :scope > .tri-content').forEach(el => el.remove());
+  // Hide the Tri-only goal pill row in case it was left visible from a
+  // previous Tri round (lazy-created on first Tri render).
+  { const _gr = document.getElementById('triGoalRow'); if (_gr) _gr.style.display = 'none'; }
   for (const child of banner.children) child.style.display = '';
   document.getElementById('shareCard').style.display = 'none';
   document.getElementById('shareToggleBtn').style.display = 'none';
@@ -6277,18 +6680,10 @@ function showMarathonResults(msg) {
     // Card classes (mk-mp-card / is-mine / winner-card) were set upfront.
     let rankHtml;
     if (r.isWinner) {
-      // Inline SVG trophy — replaces the legacy 🏆 emoji which font-rendered
-      // inconsistently across OSes (was the only redesigned mode that still
-      // had an emoji where every other surface uses the brand SVG language).
-      rankHtml = `<span class="rank-badge rank-winner" aria-label="Winner">
-        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" aria-hidden="true">
-          <path d="M4 3 L12 3 L11 8 Q8 10 5 8 Z" fill="#fdcb6e" stroke="#b87d1e" stroke-width="0.6"/>
-          <path d="M4 3 Q2 4 3 7 Q4 8 5 7" fill="none" stroke="#fdcb6e" stroke-width="1" stroke-linecap="round"/>
-          <path d="M12 3 Q14 4 13 7 Q12 8 11 7" fill="none" stroke="#fdcb6e" stroke-width="1" stroke-linecap="round"/>
-          <rect x="6.5" y="9.5" width="3" height="1" fill="#a87a2c"/>
-          <rect x="5.5" y="10.5" width="5" height="1.5" rx="0.3" fill="#8a611d"/>
-        </svg>
-      </span>`;
+      // Numeric "1" with gold tint — matches MP Classic / Tri rank pills.
+      // Cross-mode parity: every MP card surface shows the rank as a number,
+      // never an emoji or SVG. Banner medals carry the iconography.
+      rankHtml = `<span class="rank-badge rank-winner" aria-label="Winner — rank 1">1</span>`;
     } else {
       const rankNum = i + 1;
       const rankCls = rankNum <= 3 ? `rank-${rankNum}` : '';
@@ -6407,11 +6802,13 @@ function showMarathonSoloResults(msg) {
   // #winnerSub / #shareToggleBtn) — we keep them in the DOM so MP results
   // can reuse them next round — and inject a sibling solo-content wrapper.
   const banner = document.querySelector('.winner-banner');
-  banner.classList.remove('visible', 'mk-mp-banner', 'cs-banner', 'cs-surrender', 'cmp-banner', 'cmp-lose', 'cmp-abandoned');
+  banner.classList.remove('visible', 'mk-mp-banner', 'cs-banner', 'cs-surrender', 'cmp-banner', 'cmp-lose', 'cmp-abandoned', 'tri-banner', 'tri-lose', 'tri-abandoned', 'tri-surrender');
   banner.classList.add('mk-solo-banner');
-  // Drop any leftover MP / classic-solo banner content as well so a SP
-  // marathon run after MP or classic doesn't show stale state.
-  banner.querySelectorAll(':scope > .mk-solo-content, :scope > .mk-mp-content, :scope > .cs-content, :scope > .cmp-content').forEach(el => el.remove());
+  // Drop any leftover MP / classic-solo / tri banner content as well so a SP
+  // marathon run after another mode doesn't show stale state.
+  banner.querySelectorAll(':scope > .mk-solo-content, :scope > .mk-mp-content, :scope > .cs-content, :scope > .cmp-content, :scope > .tri-content').forEach(el => el.remove());
+  // Hide any leftover Tri goal pill row.
+  { const _gr = document.getElementById('triGoalRow'); if (_gr) _gr.style.display = 'none'; }
   for (const child of banner.children) {
     if (!child.classList.contains('mk-solo-content')) child.style.display = 'none';
   }
@@ -6682,10 +7079,11 @@ function showClassicSoloResults(msg) {
   // ── Banner: blow away any leftover marathon banner state, then inject
   // the new cs-content wrapper.
   const banner = document.querySelector('.winner-banner');
-  banner.classList.remove('visible', 'mk-solo-banner', 'mk-mp-banner', 'cmp-banner', 'cmp-lose', 'cmp-abandoned', 'revealed');
+  banner.classList.remove('visible', 'mk-solo-banner', 'mk-mp-banner', 'cmp-banner', 'cmp-lose', 'cmp-abandoned', 'tri-banner', 'tri-lose', 'tri-abandoned', 'tri-surrender', 'revealed');
   banner.classList.add('cs-banner');
   if (isSurrender) banner.classList.add('cs-surrender'); else banner.classList.remove('cs-surrender');
-  banner.querySelectorAll(':scope > .mk-solo-content, :scope > .mk-mp-content, :scope > .cs-content, :scope > .cmp-content').forEach(el => el.remove());
+  banner.querySelectorAll(':scope > .mk-solo-content, :scope > .mk-mp-content, :scope > .cs-content, :scope > .cmp-content, :scope > .tri-content').forEach(el => el.remove());
+  { const _gr = document.getElementById('triGoalRow'); if (_gr) _gr.style.display = 'none'; }
   for (const child of banner.children) {
     if (!child.classList.contains('cs-content')) child.style.display = 'none';
   }
@@ -6930,11 +7328,12 @@ function showClassicMpResults(msg) {
   // ── Banner: blow away leftover state from any other renderer, then inject
   // the cmp-content wrapper (medal / chip / headline / sub).
   const banner = document.querySelector('.winner-banner');
-  banner.classList.remove('visible', 'mk-solo-banner', 'mk-mp-banner', 'cs-banner', 'cs-surrender', 'revealed', 'cmp-banner', 'cmp-lose', 'cmp-abandoned');
+  banner.classList.remove('visible', 'mk-solo-banner', 'mk-mp-banner', 'cs-banner', 'cs-surrender', 'revealed', 'cmp-banner', 'cmp-lose', 'cmp-abandoned', 'tri-banner', 'tri-lose', 'tri-abandoned', 'tri-surrender');
   banner.classList.add('cmp-banner');
   if (isAbandoned)        banner.classList.add('cmp-abandoned');
   else if (!iWon)         banner.classList.add('cmp-lose');
-  banner.querySelectorAll(':scope > .mk-solo-content, :scope > .mk-mp-content, :scope > .cs-content, :scope > .cmp-content').forEach(el => el.remove());
+  banner.querySelectorAll(':scope > .mk-solo-content, :scope > .mk-mp-content, :scope > .cs-content, :scope > .cmp-content, :scope > .tri-content').forEach(el => el.remove());
+  { const _gr = document.getElementById('triGoalRow'); if (_gr) _gr.style.display = 'none'; }
   for (const child of banner.children) {
     if (!child.classList.contains('cmp-content')) child.style.display = 'none';
   }
@@ -7214,18 +7613,494 @@ function showClassicMpResults(msg) {
   }
 }
 
+// ─── Tri Mode results (design system zip 6) ───
+// Six states share this renderer:
+//   Solo:
+//     1. Won 2/2 — trophy + purple chip "Tri · Solo" + "Both targets reached!"
+//     2. Surrender (0/1/2) — compass + neutral chip "Tri · Solo · Surrendered"
+//   MP (3+ players):
+//     3. Winner viewer — trophy + chip "Tri · N players" + "You win!"
+//     4. 2nd viewer    — silver runner-up disc + "{Winner} wins"
+//     5. 3rd viewer    — bronze 3rd disc + "{Winner} wins"
+//     6. Abandoned     — white-flag + "Game abandoned" + closest-player chip
+//
+// New primitives unique to Tri:
+//   - .tri-goal-row  — Start → T1 → T2 strip rendered above the cards
+//   - .stat-pips     — ●● / ●○ / ○○ filled pips on each card
+//   - .tri-rank-pill — numeric 1/2/3 (winner gets a gold-tinted "1")
+//
+// Logic intentionally kept identical to legacy showResults: same data shape
+// (msg.results with id/path/visited/distances/time/isWinner, msg.targets,
+// msg.gaveUp), same playAgain / backToHome handlers, same share-image
+// pipeline, same gtag event.
+function showTriResults(msg) {
+  clearInterval(timerInterval);
+  resultsAnimationTimeouts.forEach(t => clearTimeout(t));
+  resultsAnimationTimeouts = [];
+
+  // GA — same shape as legacy so analytics aren't siloed by the redesign.
+  try {
+    const myR0 = msg.results?.find(r => r.id === myPlayerId) || msg.results?.[0];
+    const iWonGA = !!myR0?.isWinner;
+    window.gtag?.('event', 'game_finish', {
+      mode: 'tri',
+      gave_up: !!msg.gaveUp,
+      won: iWonGA,
+      multiplayer: !isSinglePlayer,
+      steps: myR0 ? Math.max(0, (myR0.path?.length || 1) - 1) : null,
+      time_sec: myR0?.time ? Math.round(myR0.time / 1000) : null,
+    });
+  } catch (e) { /* gtag blocked */ }
+
+  const results = msg.results || [];
+  const isAbandoned = !!msg.gaveUp;
+  const targets = Array.isArray(msg.targets) && msg.targets.length === 3
+    ? msg.targets
+    : (triTargets.length === 3 ? triTargets : null);
+
+  // normA: title-comparison helper used to match path entries against
+  // target articles (handles URL encoding + underscores + case).
+  const normA = s => decodeURIComponent(s || '').replace(/_/g, ' ').toLowerCase().trim();
+  // triReachedCount: 0–2, prefers authoritative `r.visited` (server emits it
+  // for both win and gaveUp paths); falls back to scanning r.path against
+  // targets for any future shape changes.
+  const triReachedCount = (r) => {
+    if (!targets) return 0;
+    const t1 = normA(targets[1]);
+    const t2 = normA(targets[2]);
+    let visited;
+    if (Array.isArray(r.visited)) {
+      visited = r.visited.map(normA);
+    } else {
+      visited = (r.path || []).map(normA);
+    }
+    return (visited.includes(t1) ? 1 : 0) + (visited.includes(t2) ? 1 : 0);
+  };
+
+  const myResult  = results.find(r => r.id === myPlayerId) || results[0] || {};
+  const myReached = triReachedCount(myResult);
+  const winner    = !isAbandoned ? results.find(r => r.isWinner) : null;
+  const iWon      = !!winner && winner.id === myPlayerId;
+  const playerCount = results.length;
+
+  // ── Banner cleanup — strip leftover state from any other renderer.
+  const banner = document.querySelector('.winner-banner');
+  banner.classList.remove('visible', 'mk-solo-banner', 'mk-mp-banner', 'cs-banner', 'cs-surrender',
+    'cmp-banner', 'cmp-lose', 'cmp-abandoned', 'tri-banner', 'tri-lose', 'tri-abandoned',
+    'tri-surrender', 'revealed');
+  banner.classList.add('tri-banner');
+  banner.querySelectorAll(':scope > .mk-solo-content, :scope > .mk-mp-content, :scope > .cs-content, :scope > .cmp-content, :scope > .tri-content').forEach(el => el.remove());
+  for (const child of banner.children) {
+    if (!child.classList.contains('tri-content')) child.style.display = 'none';
+  }
+  document.getElementById('shareCard').style.display = 'none';
+  document.getElementById('shareToggleBtn').style.display = 'none';
+  // Hide the legacy MP "waiting for host" — we control its visibility below.
+  const waitElLegacy = document.getElementById('waitingForHost');
+  if (waitElLegacy) waitElLegacy.style.display = 'none';
+
+  // ── Pick the right SVG + chip + headline + sub for this state.
+  let svg, chipText, chipCls = 'tri-modechip', headlineHtml, subHtml, closestChip = '';
+  let headlineState = ''; // '' | 'lose' | 'abandoned'
+
+  if (isSinglePlayer) {
+    // SOLO TRI
+    if (isAbandoned || myReached < 2) {
+      // Surrender — compass, "Ran out of time"
+      banner.classList.add('tri-surrender');
+      svg = CLASSIC_COMPASS_SVG;
+      chipText = 'Tri · Solo · Surrendered';
+      chipCls += ' neutral';
+      headlineHtml = `<span class="winner-name tri-headline lose">Wandered off course</span>`;
+      const stepsCount = Math.max(0, (myResult.path?.length || 1) - 1);
+      subHtml = `Reached <strong>${myReached}/2 targets</strong> &middot; <strong>${stepsCount}</strong> step${stepsCount === 1 ? '' : 's'}`;
+    } else {
+      // Won 2/2 — trophy, "Both targets reached!"
+      svg = MARATHON_SOLO_MEDAL_SVG;
+      chipText = 'Tri · Solo';
+      headlineHtml = `<span class="winner-name tri-headline">Both targets reached!</span>`;
+      const stepsCount = Math.max(0, (myResult.path?.length || 1) - 1);
+      const timeStr = myResult.time ? esc(formatTime(myResult.time)) : '';
+      subHtml = `<strong>${stepsCount} step${stepsCount === 1 ? '' : 's'}</strong>${timeStr ? ` &middot; <strong>${timeStr}</strong>` : ''}`;
+    }
+  } else {
+    // MP TRI
+    if (isAbandoned) {
+      // Everyone surrendered. Surface the closest player as a chip.
+      banner.classList.add('tri-abandoned');
+      svg = CLASSIC_MP_FLAG_SVG;
+      chipText = `Tri · ${playerCount} player${playerCount === 1 ? '' : 's'} · Abandoned`;
+      chipCls += ' neutral';
+      headlineHtml = `<span class="winner-name tri-headline abandoned">Game abandoned</span>`;
+      // Find the player with the highest reached count.
+      const ranked = [...results].map(r => ({ r, n: triReachedCount(r) }))
+                                  .sort((a, b) => b.n - a.n);
+      const top = ranked[0];
+      if (top && top.n > 0) {
+        subHtml = 'Everyone gave up';
+        closestChip = `<div class="tri-closest"><span>★</span> Closest: <strong>${esc(top.r.name)}</strong> reached ${top.n}/2</div>`;
+      } else {
+        subHtml = 'Everyone gave up &mdash; nobody reached a target';
+      }
+    } else if (iWon) {
+      svg = MARATHON_SOLO_MEDAL_SVG;
+      chipText = `Tri · ${playerCount} player${playerCount === 1 ? '' : 's'}`;
+      const winnerColor = playerColors.get(winner.id) || '#a29bfe';
+      headlineHtml = `<span class="winner-name tri-headline"><span class="tri-swatch" style="background:${esc(winnerColor)}"></span>You win!</span>`;
+      const wSteps = Math.max(0, (winner.path?.length || 1) - 1);
+      const wTime = winner.time ? esc(formatTime(winner.time)) : '';
+      subHtml = `<strong>${wSteps} step${wSteps === 1 ? '' : 's'}</strong>${wTime ? ` &middot; <strong>${wTime}</strong>` : ''}`;
+    } else if (winner) {
+      // Loser viewer — figure out my rank to pick the right disc.
+      // Sort by Tri MP order to compute my actual rank for medal selection.
+      const tmpSorted = [...results].sort((a, b) => {
+        if (a.isWinner && !b.isWinner) return -1;
+        if (!a.isWinner && b.isWinner) return 1;
+        const ra = triReachedCount(a), rb = triReachedCount(b);
+        if (ra !== rb) return rb - ra;
+        return (a.path?.length || 0) - (b.path?.length || 0);
+      });
+      const myRank = tmpSorted.findIndex(r => r.id === myPlayerId) + 1;
+      banner.classList.add('tri-lose');
+      if (myRank === 3) {
+        svg = CLASSIC_MP_THIRD_PLACE_SVG;
+      } else {
+        // 2nd, 4th+, or unknown — silver disc as a generic non-winner
+        svg = CLASSIC_MP_RUNNER_UP_SVG;
+      }
+      chipText = `Tri · ${playerCount} player${playerCount === 1 ? '' : 's'}`;
+      chipCls += ' neutral';
+      const winnerColor = playerColors.get(winner.id) || '#a29bfe';
+      headlineHtml = `<span class="winner-name tri-headline lose"><span class="tri-swatch" style="background:${esc(winnerColor)}"></span>${esc(winner.name)} wins</span>`;
+      const wSteps = Math.max(0, (winner.path?.length || 1) - 1);
+      const wTime = winner.time ? esc(formatTime(winner.time)) : '';
+      subHtml = `<strong>${wSteps} step${wSteps === 1 ? '' : 's'}</strong>${wTime ? ` &middot; <strong>${wTime}</strong>` : ''}`;
+    } else {
+      // Defensive — no winner and not abandoned. Should not happen.
+      banner.classList.add('tri-abandoned');
+      svg = CLASSIC_MP_FLAG_SVG;
+      chipText = `Tri · ${playerCount} player${playerCount === 1 ? '' : 's'}`;
+      chipCls += ' neutral';
+      headlineHtml = `<span class="winner-name tri-headline abandoned">Game over</span>`;
+      subHtml = '';
+    }
+  }
+
+  const triContent = document.createElement('div');
+  triContent.className = 'tri-content';
+  triContent.innerHTML = `
+    <div class="tri-medal">${svg}</div>
+    <div class="${chipCls}">${esc(chipText)}</div>
+    ${headlineHtml}
+    <div class="tri-sub">${subHtml}</div>
+    ${closestChip}
+  `;
+  banner.appendChild(triContent);
+
+  // Reset legacy nameEl/subEl for cleanup compat.
+  const nameEl = document.getElementById('winnerName');
+  const subEl  = document.getElementById('winnerSub');
+  if (nameEl) { nameEl.textContent = ''; nameEl.classList.remove('surrendered', 'loser'); }
+  if (subEl)  subEl.textContent = '';
+  document.getElementById('resultIcon').style.display = 'none';
+
+  // ── Goal pill row — Start → T1 → T2. Filled green = at least one player
+  // reached that target (in MP) or I reached it (in Solo).
+  let goalRow = document.getElementById('triGoalRow');
+  if (!goalRow) {
+    // Lazy-create on first Tri render. Appended above the results grid so
+    // the visual order is banner → goal-row → cards → share/actions.
+    const screen = document.getElementById('results');
+    const grid0 = document.getElementById('resultsGrid');
+    goalRow = document.createElement('div');
+    goalRow.id = 'triGoalRow';
+    goalRow.className = 'tri-goal-row';
+    if (grid0 && grid0.parentNode === screen) {
+      screen.insertBefore(goalRow, grid0);
+    } else {
+      screen.appendChild(goalRow);
+    }
+  }
+  goalRow.classList.remove('revealed');
+  if (targets) {
+    const t1Norm = normA(targets[1]);
+    const t2Norm = normA(targets[2]);
+    const anyHit = (key) => results.some(r => {
+      const visited = Array.isArray(r.visited) ? r.visited.map(normA) : (r.path || []).map(normA);
+      return visited.includes(key);
+    });
+    const t1Hit = anyHit(t1Norm);
+    const t2Hit = anyHit(t2Norm);
+    const titleize = s => (s || '').replace(/_/g, ' ');
+    goalRow.innerHTML = `
+      <span class="tg-pill tg-start"><span class="tg-label">START</span> ${esc(titleize(targets[0]))}</span>
+      <span class="tg-arrow" aria-hidden="true">→</span>
+      <span class="tg-pill tg-target ${t1Hit ? 'hit' : 'miss'}">
+        ${t1Hit ? '<span class="tg-mark" aria-hidden="true">✓</span>' : ''}<span class="tg-label">T1</span> ${esc(titleize(targets[1]))}
+      </span>
+      <span class="tg-arrow" aria-hidden="true">→</span>
+      <span class="tg-pill tg-target ${t2Hit ? 'hit' : 'miss'}">
+        ${t2Hit ? '<span class="tg-mark" aria-hidden="true">✓</span>' : ''}<span class="tg-label">T2</span> ${esc(titleize(targets[2]))}
+      </span>
+    `;
+    goalRow.style.display = '';
+  } else {
+    goalRow.style.display = 'none';
+    goalRow.innerHTML = '';
+  }
+
+  // ── Cards. Sort: abandoned → original join order; otherwise winner first
+  // → reached desc → steps asc → time asc (tri-specific — rewards "got close").
+  const grid = document.getElementById('resultsGrid');
+  grid.className = 'results-grid';
+  grid.innerHTML = '';
+  const ordered = isAbandoned
+    ? [...results]
+    : [...results].sort((a, b) => {
+        if (a.isWinner && !b.isWinner) return -1;
+        if (!a.isWinner && b.isWinner) return 1;
+        const ra = triReachedCount(a), rb = triReachedCount(b);
+        if (ra !== rb) return rb - ra;
+        const sa = (a.path?.length || 0), sb = (b.path?.length || 0);
+        if (sa !== sb) return sa - sb;
+        return (a.time || Infinity) - (b.time || Infinity);
+      });
+
+  const triDestsLower = targets ? targets.slice(1).map(normA) : [];
+
+  ordered.forEach((r, i) => {
+    const card = document.createElement('div');
+    const isMine    = r.id === myPlayerId;
+    const isCardWin = !isAbandoned && r.isWinner;
+    const reached   = triReachedCount(r);
+    const cls = ['result-card', 'tri-card'];
+    if (isSinglePlayer) cls.push('tri-solo');
+    if (isCardWin)      cls.push('tri-winner');
+    if (isMine && !isSinglePlayer) cls.push('tri-mine');
+    card.className = cls.join(' ');
+    // Hide until reveal cascade.
+    card.style.opacity = '0';
+    card.style.transform = 'translateY(10px)';
+
+    // Path — same renderer as legacy, but suppress the dist badge on target
+    // nodes (per SPEC §6a — distance is ambiguous on a multi-target run).
+    const dists = r.distances || [];
+    let pathHtml = '';
+    r.path.forEach((p, idx) => {
+      const isStart = idx === 0;
+      const isEnd = idx === r.path.length - 1;
+      const isTriDest = triDestsLower.includes(normA(p));
+      const nodeCls = isStart ? 'start' : (isTriDest ? 'end' : ((isEnd && isCardWin) ? 'end' : ''));
+      let distBadge = '';
+      if (!isStart && !isEnd && !isTriDest && dists[idx - 1] !== undefined && dists[idx - 1] !== null) {
+        const d = dists[idx - 1];
+        const prev = idx >= 2 ? dists[idx - 2] : null;
+        const distCls = distColorClass(d);
+        let arrow = '';
+        if (prev !== null && prev !== undefined) {
+          if (d < prev) arrow = '<span class="path-dir closer" aria-hidden="true">▲</span>';
+          else if (d > prev) arrow = '<span class="path-dir further" aria-hidden="true">▼</span>';
+          else arrow = '<span class="path-dir same" aria-hidden="true">=</span>';
+        }
+        distBadge = `<span class="path-dist">${arrow}<span class="${distCls}">${d}</span></span>`;
+      }
+      pathHtml += (idx > 0 ? '<span class="path-arrow">→</span>' : '') +
+        `<span class="path-node ${nodeCls}">${esc(p.replace(/_/g, ' '))}${distBadge}</span>`;
+    });
+
+    const playerColor = playerColors.get(r.id) || r.color || '#7c6fad';
+    const steps = Math.max(0, (r.path?.length || 1) - 1);
+    const timeStr = r.time ? esc(formatTime(r.time)) : '—';
+    const pipsHtml = `
+      <span class="stat-pips" aria-label="${reached} of 2 targets">
+        <span class="pip ${reached >= 1 ? 'on' : ''}"></span>
+        <span class="pip ${reached >= 2 ? 'on' : ''}"></span>
+      </span>`;
+
+    if (isSinglePlayer) {
+      // Solo card — no rank pill, no swatch (it's just "Your run"), no "you" tag.
+      card.innerHTML = `
+        <div class="tri-card-header">
+          <div class="tri-name">
+            <span class="tri-name-swatch" style="background:${esc(playerColor)}"></span>
+            Your run
+          </div>
+          <div class="tri-stats">
+            ${pipsHtml}
+            <strong>${reached}/2</strong> targets &middot;
+            <strong>${steps}</strong> step${steps === 1 ? '' : 's'}${timeStr !== '—' ? ` &middot; <strong>${timeStr}</strong>` : ''}
+          </div>
+        </div>
+        <div class="path-display">${pathHtml}</div>
+      `;
+    } else {
+      const rankNum = isAbandoned ? '·' : (i + 1);
+      // Always show the numeric rank — winner gets the `r1` gold tint via
+      // CSS. Matches MP Classic's `.cmp-rank-pill.r1` for cross-mode parity.
+      const rankClass = (isCardWin ? 'tri-rank-pill r1' : 'tri-rank-pill');
+      card.innerHTML = `
+        <div class="tri-card-header">
+          <div class="${rankClass}" aria-label="${isCardWin ? 'Winner — rank 1' : 'Rank ' + rankNum}">${rankNum}</div>
+          <div class="tri-name">
+            <span class="tri-name-swatch" style="background:${esc(playerColor)}"></span>
+            ${esc(r.name)}
+            ${isMine ? '<span class="tri-you-tag">you</span>' : ''}
+          </div>
+          <div class="tri-stats">
+            ${pipsHtml}
+            <strong>${reached}/2</strong> &middot;
+            <strong>${steps}</strong> step${steps === 1 ? '' : 's'}${timeStr !== '—' ? ` &middot; <strong>${timeStr}</strong>` : ''}
+          </div>
+        </div>
+        <div class="path-display">${pathHtml}</div>
+      `;
+    }
+    grid.appendChild(card);
+  });
+
+  // ── Action row + waiting indicator. Solo: Try again / Pick new articles
+  // (surrender) OR Play again / Back to home (won). MP: host gets buttons,
+  // guest gets the waiting-host pulse.
+  const playAgainBtn = document.getElementById('playAgainBtn');
+  const backBtn      = document.getElementById('backToHomeBtn');
+  const waitEl       = document.getElementById('waitingForHost');
+  const isSurrenderSolo = isSinglePlayer && (isAbandoned || myReached < 2);
+  if (playAgainBtn) {
+    playAgainBtn.style.display = (isSinglePlayer || isHost) ? '' : 'none';
+    playAgainBtn.textContent = isSurrenderSolo ? 'Try again' : 'Play again';
+  }
+  if (backBtn) {
+    backBtn.style.display = (isSinglePlayer || isHost) ? '' : 'none';
+    backBtn.textContent = isSurrenderSolo ? 'Pick new articles'
+                       : (isQuickPlaySession ? 'Try other modes' : 'Back to home');
+  }
+  if (waitEl) {
+    waitEl.style.display = (!isSinglePlayer && !isHost) ? '' : 'none';
+  }
+
+  // ── Inline share row. Solo 2/2 OR MP winner-and-not-abandoned.
+  const showShare = !isAbandoned && (
+    (isSinglePlayer && myReached === 2) ||
+    (!isSinglePlayer && iWon)
+  );
+  if (showShare) {
+    // Append to the winner card (MP) or the only card (Solo).
+    const targetCard = !isSinglePlayer
+      ? grid.querySelector('.tri-card.tri-winner')
+      : grid.querySelector('.tri-card');
+    if (targetCard) {
+      const S = (typeof shareStr === 'function') ? shareStr() : { copy: 'Copy share', save: 'Save image' };
+      const shareRow = document.createElement('div');
+      shareRow.className = 'tri-share';
+      shareRow.innerHTML = `
+        <button class="tri-share-btn" data-action="copy"><span aria-hidden="true">⎘ </span>${esc(S.copy)}</button>
+        <button class="tri-share-btn" data-action="save"><span aria-hidden="true">↓ </span>${esc(S.save)}</button>
+        <span class="tri-share-toast" id="triShareToast"></span>
+      `;
+      targetCard.appendChild(shareRow);
+      const showToast = (text) => {
+        const toast = shareRow.querySelector('#triShareToast');
+        if (!toast) return;
+        toast.textContent = text;
+        toast.classList.add('show');
+        clearTimeout(toast._hideT);
+        toast._hideT = setTimeout(() => toast.classList.remove('show'), 1400);
+      };
+      shareRow.addEventListener('click', async (ev) => {
+        const btn = ev.target.closest('.tri-share-btn');
+        if (!btn) return;
+        const action = btn.dataset.action;
+        const r = myRunResult(msg);
+        if (!r) return;
+        try {
+          if (action === 'copy') {
+            const text = buildShareText(r, msg);
+            await navigator.clipboard.writeText(text);
+            showToast(S.copied || 'Copied!');
+          } else if (action === 'save') {
+            const blob = await buildShareImage(r, msg);
+            const a = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            a.href = url;
+            a.download = `wikispeedrun-${Date.now()}.png`;
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+            showToast(S.saved || 'Saved!');
+          }
+        } catch (e) {
+          showToast(S.copyFail || 'Copy failed');
+        }
+      });
+    }
+  }
+
+  showScreen('results');
+
+  // ── Reveal cascade. Banner @100ms, goal row @550ms (sets context BEFORE
+  // cards), cards stagger from 700ms +280ms each, paths @80ms intervals,
+  // share row last. Confetti only on real wins.
+  const BANNER_AT     = 100;
+  const GOAL_ROW_AT   = 550;
+  const CARD_START    = 700;
+  const CARD_STAGGER  = 280;
+  const PATH_STEP     = 80;
+
+  resultsAnimationTimeouts.push(setTimeout(() => {
+    banner.classList.add('revealed');
+    if (showShare /* same condition that gates winner-state visuals */) {
+      const winnerColor = isSinglePlayer
+        ? '#a29bfe'
+        : (playerColors.get(winner.id) || '#a29bfe');
+      const palette = [winnerColor, '#fdcb6e', '#6c5ce7', '#00b894'];
+      spawnSoloMarathonConfetti(palette);
+    }
+  }, BANNER_AT));
+
+  if (targets) {
+    resultsAnimationTimeouts.push(setTimeout(() => goalRow.classList.add('revealed'), GOAL_ROW_AT));
+  }
+
+  const cards = grid.querySelectorAll('.tri-card');
+  let lastEnd = CARD_START;
+  cards.forEach((cardEl, i) => {
+    const cardAt = CARD_START + i * CARD_STAGGER;
+    resultsAnimationTimeouts.push(setTimeout(() => {
+      cardEl.style.transition = 'opacity 0.4s ease, transform 0.4s cubic-bezier(0.22, 1, 0.36, 1)';
+      cardEl.style.opacity = '1';
+      cardEl.style.transform = 'translateY(0)';
+    }, cardAt));
+    const pathEls = cardEl.querySelectorAll('.path-node, .path-arrow');
+    pathEls.forEach((el, j) => {
+      const at = cardAt + 150 + j * PATH_STEP;
+      resultsAnimationTimeouts.push(setTimeout(() => el.classList.add('revealed'), at));
+      if (at > lastEnd) lastEnd = at;
+    });
+  });
+
+  if (showShare) {
+    const shareRow = grid.querySelector('.tri-share');
+    if (shareRow) {
+      resultsAnimationTimeouts.push(setTimeout(() => shareRow.classList.add('revealed'), lastEnd + 300));
+    }
+  }
+}
+
 function showResults(msg) {
   clearInterval(timerInterval);
   // Classic + solo gets the redesigned banner / target-hero / closest-chip
   // treatment — branch out before the legacy banner copy + card builder.
-  // Tri SP / Tri MP fall through to the legacy classic shell unchanged.
   if (isSinglePlayer && (msg.mode === 'classic' || (!msg.mode && currentGameMode === 'classic'))) {
     return showClassicSoloResults(msg);
   }
-  // Classic MP redesign (design system zip 5) — covers normal-finish (winner
-  // and loser views) plus the "everyone surrendered" abandoned state.
+  // Classic MP redesign (design system zip 5) — winner / loser / abandoned.
   if (!isSinglePlayer && (msg.mode === 'classic' || (!msg.mode && currentGameMode === 'classic'))) {
     return showClassicMpResults(msg);
+  }
+  // Tri redesign (design system zip 6) — Solo (won 2/2 / surrender) and MP
+  // (winner / 2nd / 3rd / abandoned) share one renderer that branches
+  // internally on isSinglePlayer + iWon + isAbandoned.
+  if (msg.mode === 'tri' || (!msg.mode && currentGameMode === 'tri')) {
+    return showTriResults(msg);
   }
   // Reset grid classes in case the last round was marathon (which swaps the
   // grid to mk-results-grid for a different layout).
@@ -7272,8 +8147,9 @@ function showResults(msg) {
   // onto .winner-banner).
   const banner0 = document.querySelector('.winner-banner');
   if (banner0) {
-    banner0.classList.remove('mk-solo-banner', 'mk-mp-banner', 'cs-banner', 'cs-surrender', 'cmp-banner', 'cmp-lose', 'cmp-abandoned', 'revealed');
-    banner0.querySelectorAll(':scope > .mk-solo-content, :scope > .mk-mp-content, :scope > .cs-content, :scope > .cmp-content').forEach(el => el.remove());
+    banner0.classList.remove('mk-solo-banner', 'mk-mp-banner', 'cs-banner', 'cs-surrender', 'cmp-banner', 'cmp-lose', 'cmp-abandoned', 'tri-banner', 'tri-lose', 'tri-abandoned', 'tri-surrender', 'revealed');
+    banner0.querySelectorAll(':scope > .mk-solo-content, :scope > .mk-mp-content, :scope > .cs-content, :scope > .cmp-content, :scope > .tri-content').forEach(el => el.remove());
+    { const _gr = document.getElementById('triGoalRow'); if (_gr) _gr.style.display = 'none'; }
     for (const child of banner0.children) child.style.display = '';
   }
   // Restore the legacy emoji icon — MP marathon hides it and replaces it
