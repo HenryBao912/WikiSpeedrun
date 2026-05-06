@@ -1355,17 +1355,15 @@ async function pickMarathonTarget(room, rp, currentArticle) {
   const usedTitles = rp.marathonState.usedTitles;
   const currentNorm = normalizeArticle(currentArticle);
 
-  // Sample up to SAMPLE_SIZE eligible candidates and prefer the closest one
-  // (lowest hop count). Previously the picker returned the FIRST eligible
-  // candidate in shuffled order — a 4-hop target was just as likely as a
-  // 2-hop one, which made marathon feel arbitrarily punishing. Scanning a
-  // small window and biasing toward 2-hop > 3-hop > 4+ keeps targets
-  // reachable inside the per-target time budget while still producing
-  // variety (the sampling order is already shuffled at room start).
-  // SAMPLE_SIZE=4 strikes the balance: enough to usually find a 2-hop when
-  // one exists, small enough to keep latency negligible (computeDistance
-  // resolves in cache after the warm pass).
-  const SAMPLE_SIZE = 4;
+  // Bias toward easier (closer) targets while still producing variety:
+  //   - Scan ALL eligible warmed candidates (capped at 20 by warm pool size)
+  //   - Short-circuit on a 2-hop find (can't get easier than the floor)
+  //   - Otherwise pick the lowest-hop entry; ties broken by insertion order
+  //     (which is already shuffled at room start in startMarathonForRoom)
+  // Previous version capped the scan at 4, which could miss closer 2-hops
+  // sitting later in the candidates Map and skew picks toward higher hops.
+  // computeDistance hits the in-process cache after the warm pass, so the
+  // full scan stays sub-millisecond per call.
   const sampled = [];
   for (const [key, entry] of room.marathon.candidates) {
     if (usedTitles.has(key)) continue;
@@ -1378,7 +1376,6 @@ async function pickMarathonTarget(room, rp, currentArticle) {
     sampled.push({ key, entry, hops });
     // Short-circuit on a 2-hop find — can't get any closer than the floor.
     if (hops === 2) break;
-    if (sampled.length >= SAMPLE_SIZE) break;
   }
   if (!sampled.length) return null;
 
@@ -1812,7 +1809,18 @@ async function handleAction(playerId, msg) {
         player.name = name;
         player.roomCode = code;
       }
-      room.players.set(playerId, newPlayerState(name, room.colorIndex));
+      // Find the lowest-index color not currently in use by any active player.
+      // Previously this was a monotonic counter, which after 8 join+leave
+      // cycles wrapped back to 0 and collided with the host's color.
+      const usedColors = new Set();
+      for (const [, p] of room.players) usedColors.add(p.color);
+      let pickedColorIdx = 0;
+      for (let i = 0; i < PLAYER_COLORS.length; i++) {
+        if (!usedColors.has(PLAYER_COLORS[i])) { pickedColorIdx = i; break; }
+      }
+      room.players.set(playerId, newPlayerState(name, pickedColorIdx));
+      // Keep colorIndex incrementing for any legacy callers, but the actual
+      // assignment now uses the lowest-unused slot above.
       room.colorIndex++;
       sendSSE(playerId, { type: 'room_joined', code, playerId, lang: room.lang || DEFAULT_LANG });
       sendSSE(playerId, { type: 'mode_changed', mode: room.mode });
@@ -1994,7 +2002,7 @@ async function handleAction(playerId, msg) {
             winner: rp.name,
             results,
             mode: room.mode,
-            targets: room.mode === 'tri' ? room.triple.targets : null,
+            targets: room.mode === 'tri' ? (room.triple?.targets || null) : null,
           });
           logEvent('game_over', {
             roomCode: player.roomCode,
@@ -2188,6 +2196,15 @@ async function handleAction(playerId, msg) {
       if (!player) return { ok: false };
       const room = rooms.get(player.roomCode);
       if (!room || room.host !== playerId) return { ok: false };
+      // Cancel any leftover marathon end-of-round timer from the prior round.
+      // Without this, the SP path below overwrites room.marathon and the
+      // stale timer fires later, broadcasting a game_over for the WRONG round.
+      if (room.marathon?.timerId) {
+        clearTimeout(room.marathon.timerId);
+        room.marathon.timerId = null;
+      }
+      room.marathon = null;
+      for (const [, p] of room.players) p.marathonState = null;
       if (room.singlePlayer) {
         // Single player: start immediately
         room.manualArticles = null;
@@ -2196,7 +2213,6 @@ async function handleAction(playerId, msg) {
         // Multiplayer: go back to lobby for word preview
         room.started = false;
         room.manualArticles = null;
-        room.previewWords = null;
         broadcastToRoom(player.roomCode, { type: 'returned_to_lobby' });
       }
       return { ok: true };
@@ -2325,6 +2341,11 @@ async function handleAction(playerId, msg) {
       if (!player) return { ok: false };
       const room = rooms.get(player.roomCode);
       if (!room || !room.started) return { ok: false, error: 'Game not in progress' };
+      // Marathon has no surrender — the round ends on the timer. Reject any
+      // stale/malicious give_up_vote so finalizeGiveUp doesn't broadcast a
+      // non-marathon-shaped game_over for a marathon room AND leave the
+      // marathon end-of-round timer scheduled.
+      if (room.mode === 'marathon') return { ok: false, error: 'Marathon has no surrender' };
 
       // Add vote
       room.giveUpVotes.add(playerId);
@@ -2348,6 +2369,9 @@ async function handleAction(playerId, msg) {
       if (!player) return { ok: false };
       const room = rooms.get(player.roomCode);
       if (!room) return { ok: false };
+      // Host-only — guests sending this should not be able to reset the room.
+      // Mirrors the existing `play_again` host check (around line ~2190).
+      if (room.host !== playerId) return { ok: false, error: 'Only host can return to lobby' };
 
       // Reset room state but keep players connected
       room.started = false;
@@ -2357,8 +2381,18 @@ async function handleAction(playerId, msg) {
       room.triple = null;
       room.giveUpVotes.clear();
       room.destData = null;
+      // Cancel the marathon end-of-round timer if it was scheduled — otherwise
+      // it fires later and broadcasts a stale `game_over` to the lobby.
+      if (room.marathon?.timerId) {
+        clearTimeout(room.marathon.timerId);
+        room.marathon.timerId = null;
+      }
+      room.marathon = null;
       for (const [, p] of room.players) {
         Object.assign(p, { path: [], finished: false, finishTime: null, visited: [], distances: [] });
+        // Clear per-player marathon state so a stale `mk_request_next` from a
+        // racing client hits a clean slate.
+        p.marathonState = null;
       }
 
       // Broadcast lobby state
@@ -2390,7 +2424,10 @@ function finalizeGiveUp(room, roomCode) {
     gaveUp: true,
     results,
     mode: room.mode,
-    targets: room.mode === 'tri' ? room.triple.targets : null,
+    // Guard against `room.triple` being null when surrender fires before
+    // generation completes (Wikipedia error path can leave started=false +
+    // triple=null). Avoids "Cannot read properties of null" throws.
+    targets: room.mode === 'tri' ? (room.triple?.targets || null) : null,
   });
   logEvent('game_over', {
     roomCode,

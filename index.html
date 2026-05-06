@@ -869,12 +869,16 @@
   /* Reuse tri-mode's green screen-border checkpoint flash for target hits.
      Defined once in the checkpoint-flash rule above; marathon just piggybacks
      on that class so the feedback looks identical across modes. */
+  /* Bump animation drops the `color` channel so winner-card gold (set by
+     `.result-card.mk-mp-card.winner-card .mk-mp-card-total`) isn't briefly
+     overridden to `var(--text)` mid-animation. Pulse uses scale + a green
+     text-shadow flash instead. */
   @keyframes marathonScoreBump {
-    0%   { transform: scale(1); color: var(--text); }
-    40%  { transform: scale(1.3); color: var(--green); }
-    100% { transform: scale(1); color: var(--text); }
+    0%   { transform: scale(1);   text-shadow: none; }
+    40%  { transform: scale(1.3); text-shadow: 0 0 8px color-mix(in oklab, var(--green) 60%, transparent); }
+    100% { transform: scale(1);   text-shadow: none; }
   }
-  .marathon-score-bumped { animation: marathonScoreBump 0.5s ease-out; display: inline-block; }
+  .marathon-score-bumped { animation: marathonScoreBump 0.45s ease-out; display: inline-block; }
 
   /* Marathon result timeline — step-by-step navigation reveal that matches
      the rhythm of classic/tri (path-node + path-arrow staggered fade-in).
@@ -1196,6 +1200,11 @@
     .mk-mp-medal { animation: none; }
     .confetti-layer { display: none; }
     .waiting-dot { animation: none; }
+    /* Score-bump scales + flashes — kill it for users who opted out so the
+       results screen doesn't pulse on every per-event tally reveal. */
+    .marathon-score-bumped,
+    .mk-total-val.bumped,
+    .mk-mp-card-total.bumped { animation: none; text-shadow: none; }
   }
 
   /* ─── Marathon Multiplayer Results redesign — pixel-matched to the
@@ -1697,6 +1706,283 @@
 
   @media (prefers-reduced-motion: reduce) {
     .cs-medal { animation: none; }
+  }
+
+  /* ─── Classic MP results redesign — design system zip 5.
+     Three states share this block:
+       1. Winner viewer (normal finish)  — trophy + gold-bordered self-card
+       2. Loser viewer (any rank)        — runner-up SVG + neutral chip + purple-bordered self-card
+       3. Abandoned (everyone gave up)   — flag SVG + muted headline + no winner border
+     Reuses primitives from SP Classic + MP Marathon: same banner structure
+     (transparent + radial-glow ::before behind the medal — NO bg gradient
+     or border-bottom, otherwise a visible block frames the top section),
+     same drop-in keyframe (cmpDropIn), same chip pill, distance pills,
+     and inline share row. All scoped under .cmp-banner / .cmp-card so
+     cross-mode cleanup can strip them without touching shared classes. */
+  .winner-banner.cmp-banner {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    position: relative;
+    padding: 0;
+    transform: none;
+    opacity: 0;
+    transition: opacity 0.4s var(--ease-out-expo, cubic-bezier(0.22, 1, 0.36, 1));
+    background: transparent;
+    border: none;
+  }
+  .winner-banner.cmp-banner.revealed { opacity: 1; }
+  /* Soft purple glow behind the medal — matches the cs-banner / mk-mp-banner
+     pattern. Loser + abandoned states drop the purple cast for a neutral grey. */
+  .winner-banner.cmp-banner::before {
+    content: '';
+    position: absolute;
+    top: -24px; left: 50%;
+    width: 340px; height: 180px;
+    transform: translateX(-50%);
+    background: radial-gradient(ellipse at center, rgba(108, 92, 231, 0.16), transparent 70%);
+    pointer-events: none;
+    z-index: -1;
+  }
+  .winner-banner.cmp-banner.cmp-lose::before,
+  .winner-banner.cmp-banner.cmp-abandoned::before {
+    background: radial-gradient(ellipse at center, rgba(144, 144, 168, 0.10), transparent 70%);
+  }
+  /* Tighten #results spacing for MP Classic — matches cs-banner / mk-mp-banner
+     so banner+cards+actions don't drift apart (default global gap is 24px). */
+  #results:has(.winner-banner.cmp-banner) { gap: 16px; padding-top: 28px; }
+  .cmp-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+  }
+  .cmp-medal {
+    width: 80px; height: 80px;
+    margin: 0 auto;
+    animation: cmpDropIn 0.7s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+  }
+  @keyframes cmpDropIn {
+    0%   { opacity: 0; transform: translateY(-30px) scale(0.6); }
+    60%  { opacity: 1; transform: translateY(4px)   scale(1.05); }
+    100% { opacity: 1; transform: translateY(0)     scale(1); }
+  }
+  .cmp-modechip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 12px;
+    border-radius: 999px;
+    background: rgba(108,92,231,0.10);
+    border: 1px solid rgba(108,92,231,0.30);
+    color: #a29bfe;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+  }
+  .cmp-modechip::before {
+    content: '';
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #a29bfe;
+  }
+  .cmp-modechip.neutral {
+    background: rgba(144,144,168,0.10);
+    border-color: rgba(144,144,168,0.30);
+    color: #9090a8;
+  }
+  .cmp-modechip.neutral::before { background: #9090a8; }
+  /* Headline — winner state is brand gradient; loser/abandoned are plain
+     muted text. Override .winner-name's existing gradient explicitly so a
+     stale gradient from a previous round can't bleed through. */
+  .winner-name.cmp-headline {
+    background: none;
+    -webkit-text-fill-color: initial;
+    color: var(--text);
+    animation: none;
+    font-size: 1.6rem;
+    font-weight: 800;
+    line-height: 1.15;
+    margin: 4px 0 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .winner-name.cmp-headline.lose {
+    color: var(--text);
+    font-weight: 700;
+  }
+  .winner-name.cmp-headline.abandoned {
+    color: var(--text2);
+    font-weight: 700;
+  }
+  .cmp-swatch {
+    display: inline-block;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px rgba(255,255,255,0.10);
+  }
+  .cmp-sub {
+    color: var(--text2);
+    font-size: 0.92rem;
+    margin: 2px 0 0;
+  }
+  .cmp-sub strong { color: var(--text); }
+
+  /* Card border rules — winner gold, my-card-when-not-winner purple,
+     my-card-and-winner gold + purple inset. Border weight + padding match
+     mk-mp-card so MP Classic and MP Marathon read as one card family. */
+  .result-card.cmp-card {
+    background: var(--surface);
+    border: 1.5px solid var(--surface2);
+    border-radius: 14px;
+    padding: 14px 16px;
+    box-shadow: none;
+    transition: opacity 0.4s ease, transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .result-card.cmp-card.cmp-winner {
+    border-color: var(--gold);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(253, 203, 110, 0.25);
+  }
+  .result-card.cmp-card.cmp-mine:not(.cmp-winner) {
+    border-color: rgba(108, 92, 231, 0.55);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(108, 92, 231, 0.2);
+  }
+  .result-card.cmp-card.cmp-winner.cmp-mine {
+    border-color: var(--gold);
+    box-shadow:
+      inset 0 0 0 2px rgba(108, 92, 231, 0.55),
+      0 4px 14px rgba(0, 0, 0, 0.3),
+      0 0 0 1px rgba(253, 203, 110, 0.3),
+      0 0 18px rgba(253, 203, 110, 0.2);
+  }
+  /* Card header — rank pill + name + swatch + stats inline. */
+  .cmp-card .cmp-card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .cmp-rank-pill {
+    display: inline-flex;
+    align-items: center; justify-content: center;
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    background: var(--surface2);
+    color: var(--text2);
+    font-size: 0.78rem;
+    font-weight: 800;
+    flex-shrink: 0;
+  }
+  .cmp-rank-pill.r1 { background: rgba(253,203,110,0.18); color: var(--gold); }
+  .cmp-card .cmp-name {
+    font-size: 1.05rem;
+    font-weight: 700;
+    flex: 1 1 auto;
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .cmp-card .cmp-name-swatch {
+    display: inline-block;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: 0 0 0 2px rgba(255,255,255,0.06);
+  }
+  .cmp-card .cmp-you-tag {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    padding: 2px 6px;
+    border-radius: 999px;
+    background: rgba(108,92,231,0.18);
+    color: #a29bfe;
+  }
+  .cmp-card .cmp-stats {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text2);
+    font-size: 0.88rem;
+    flex-shrink: 0;
+  }
+  .cmp-card .cmp-stats strong {
+    color: var(--text);
+  }
+  /* Tier-colored distance pills inside MP cards — same scale as SP Classic. */
+  .cmp-card .path-node .path-dist {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 1px 6px;
+    margin-left: 6px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.05);
+    color: var(--text2);
+    font-size: 0.78rem;
+    font-weight: 600;
+  }
+  .cmp-card .path-node .path-dist .dist-close { color: #fbbf24; }
+  .cmp-card .path-node .path-dist .dist-mid   { color: #c084fc; }
+  .cmp-card .path-node .path-dist .dist-far   { color: #7dd3fc; }
+  .cmp-card .path-node .path-dist .path-dir.closer  { color: #00b894; }
+  .cmp-card .path-node .path-dist .path-dir.further { color: #e17055; }
+  .cmp-card .path-node .path-dist .path-dir.same    { color: var(--text2); }
+
+  /* Inline share row — winner view only (matches Solo). */
+  .cmp-share {
+    /* position:relative anchors the absolutely-positioned toast below;
+       without this the toast falls back to the next positioned ancestor
+       and lands in the upper-left corner. */
+    position: relative;
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    margin-top: 14px;
+    opacity: 0;
+    transition: opacity 0.4s ease;
+  }
+  .cmp-share.revealed { opacity: 1; }
+  .cmp-share-btn {
+    background: var(--surface2);
+    border: 1px solid rgba(255,255,255,0.06);
+    color: var(--text);
+    padding: 8px 14px;
+    border-radius: 999px;
+    cursor: pointer;
+    font-size: 0.86rem;
+    font-weight: 600;
+    transition: background 0.2s, transform 0.15s, color 0.2s;
+  }
+  .cmp-share-btn:hover {
+    background: color-mix(in oklab, var(--accent) 18%, var(--surface2));
+    color: #fff;
+    transform: translateY(-1px);
+  }
+  .cmp-share-toast {
+    position: absolute;
+    bottom: -32px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 4px 10px;
+    background: var(--surface2);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 999px;
+    color: var(--text);
+    font-size: 0.75rem;
+    opacity: 0;
+    transition: opacity 0.3s;
+    pointer-events: none;
+  }
+  .cmp-share-toast.show { opacity: 1; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .cmp-medal { animation: none; }
   }
 
   /* ─── Difficulty Slider ─── */
@@ -3253,7 +3539,7 @@
 
 <!-- ─── Results Screen ─── -->
 <div id="results" class="screen">
-  <div class="winner-banner">
+  <div class="winner-banner" role="status" aria-live="polite">
     <span class="trophy" id="resultIcon">🏆</span>
     <div class="winner-name" id="winnerName"></div>
     <div class="winner-sub" id="winnerSub"></div>
@@ -5660,6 +5946,9 @@ function spawnSoloMarathonConfetti(palette) {
   const colors = (Array.isArray(palette) && palette.length) ? palette : MARATHON_SOLO_CONFETTI_COLORS;
   const layer = document.createElement('div');
   layer.className = 'confetti-layer confetti-layer-results';
+  // Decorative — screen readers should ignore the falling pieces and the
+  // role="status" winner-banner above is what they actually announce.
+  layer.setAttribute('aria-hidden', 'true');
   for (let i = 0; i < 20; i++) {
     const piece = document.createElement('div');
     piece.className = 'confetti';
@@ -5702,6 +5991,40 @@ const CLASSIC_COMPASS_SVG = `
   </svg>
 `;
 
+// Classic MP losers' medallion. Silver-grey ring + "2nd" glyph — signals
+// "you finished, just not first" without the gold cup that the winner gets.
+// Drops in like the trophy/compass; no shine sweep (per saved memory rule).
+const CLASSIC_MP_RUNNER_UP_SVG = `
+  <svg viewBox="0 0 80 80" fill="none" width="100%" height="100%" aria-hidden="true">
+    <defs>
+      <linearGradient id="cmpRu" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#6a6a82"/>
+        <stop offset="1" stop-color="#3a3a4f"/>
+      </linearGradient>
+      <linearGradient id="cmpRuRibbon" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="#6c5ce7"/>
+        <stop offset="1" stop-color="#00b894"/>
+      </linearGradient>
+    </defs>
+    <path d="M28 8 L32 40 L40 34 L48 40 L52 8 Z" fill="url(#cmpRuRibbon)" opacity="0.7"/>
+    <circle cx="40" cy="46" r="22" fill="url(#cmpRu)" stroke="#9090a8" stroke-width="1.5"/>
+    <circle cx="40" cy="46" r="17" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+    <text x="40" y="52" font-size="14" font-weight="800" text-anchor="middle"
+          fill="#e0e0eb" font-family="system-ui, sans-serif">2</text>
+  </svg>
+`;
+
+// Classic MP abandoned-game flag. Neutral grey waving rectangle on a pole.
+// Distinctly NOT the trophy/runner-up shape — flag = "no winner, no contest".
+const CLASSIC_MP_FLAG_SVG = `
+  <svg viewBox="0 0 80 80" fill="none" width="100%" height="100%" aria-hidden="true">
+    <rect x="20" y="14" width="3" height="52" rx="1.5" fill="#9090a8"/>
+    <path d="M23 18 L60 20 Q50 30 60 40 L23 38 Z"
+          fill="#3a3a4f" stroke="#5a5a72" stroke-width="1"/>
+    <circle cx="42" cy="29" r="3" fill="#9090a8" opacity="0.55"/>
+  </svg>
+`;
+
 // Marathon results screen. Mirrors classic/tri visually:
 //   - Shared winner-banner with "You Won" / "You Suck" copy
 //   - Standard result-card rows (one per player)
@@ -5716,6 +6039,10 @@ function showMarathonResults(msg) {
     return showMarathonSoloResults(msg);
   }
   clearInterval(timerInterval);
+  // Stop the per-player "warming up" target poll the moment results land —
+  // otherwise a queued mk_request_next fires against a finished game and
+  // the server returns an error.
+  clearTimeout(_mkRetryTimer); _mkRetryTimer = null;
   resultsAnimationTimeouts.forEach(t => clearTimeout(t));
   resultsAnimationTimeouts = [];
 
@@ -5747,8 +6074,8 @@ function showMarathonResults(msg) {
   const icon = document.getElementById('resultIcon');
   // Tear down any leftover banner state from a prior round (SP marathon /
   // SP classic redesigns inject extra DOM + classes onto .winner-banner).
-  banner.classList.remove('mk-solo-banner', 'mk-mp-banner', 'cs-banner', 'cs-surrender', 'visible', 'revealed');
-  banner.querySelectorAll(':scope > .mk-solo-content, :scope > .cs-content').forEach(el => el.remove());
+  banner.classList.remove('mk-solo-banner', 'mk-mp-banner', 'cs-banner', 'cs-surrender', 'cmp-banner', 'cmp-lose', 'cmp-abandoned', 'visible', 'revealed');
+  banner.querySelectorAll(':scope > .mk-solo-content, :scope > .mk-mp-content, :scope > .cs-content, :scope > .cmp-content').forEach(el => el.remove());
   for (const child of banner.children) child.style.display = '';
   document.getElementById('shareCard').style.display = 'none';
   document.getElementById('shareToggleBtn').style.display = 'none';
@@ -5831,13 +6158,15 @@ function showMarathonResults(msg) {
   const cards = results.map((r, i) => {
     const card = document.createElement('div');
     const isMe = r.id === myPlayerId;
-    // Mirror classic/tri border logic: my own card lights up gold if I won
-    // or my player color if I lost; everyone else's card stays neutral. This
-    // way the card-color story is identical across all three modes.
-    card.className = 'result-card ' + (r.isWinner && isMe ? 'winner-card' : '');
-    if (isMe && !r.isWinner && !isSinglePlayer) {
-      card.style.borderColor = playerColors.get(myPlayerId) || r.color || '#7c6fad';
-    }
+    // Border rules (matches MP Classic):
+    //   - winner-card → gold border for ANY winner (was previously gated to
+    //     isMe, which left peer winners' cards looking like losers).
+    //   - is-mine     → my own card always carries the purple "this is me"
+    //     accent on top, even when I'm also the winner (gold + inset).
+    const cls = ['result-card', 'mk-mp-card'];
+    if (r.isWinner) cls.push('winner-card');
+    if (isMe)       cls.push('is-mine');
+    card.className = cls.join(' ');
 
     // Walk events in chronological order, advancing through the path as we
     // go. Hits consume `clicks` path entries; skips happen at the player's
@@ -5942,14 +6271,24 @@ function showMarathonResults(msg) {
     if (bonusSum > 0) bdParts.push(`<span class="pos">Bonus <b>+${bonusSum}</b></span>`);
     const breakdownHtml = `<div class="mk-mp-bd">${bdParts.join('')}</div>`;
 
-    // MP redesign: rank badge (🏆 / 2 / 3 …) + player swatch + name (with
-    // optional "you" tag) + running total. No 👑/💀 emoji or text badges
-    // — the rank badge + card-border color tell the same story visually.
-    card.classList.add('mk-mp-card');
-    if (isMe) card.classList.add('is-mine');
+    // MP redesign: rank badge (SVG trophy / 2 / 3 …) + player swatch + name
+    // (with optional "you" tag) + running total. No 👑/💀 emoji or text
+    // badges — the rank badge + card-border color tell the same story.
+    // Card classes (mk-mp-card / is-mine / winner-card) were set upfront.
     let rankHtml;
     if (r.isWinner) {
-      rankHtml = `<span class="rank-badge rank-winner">🏆</span>`;
+      // Inline SVG trophy — replaces the legacy 🏆 emoji which font-rendered
+      // inconsistently across OSes (was the only redesigned mode that still
+      // had an emoji where every other surface uses the brand SVG language).
+      rankHtml = `<span class="rank-badge rank-winner" aria-label="Winner">
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" aria-hidden="true">
+          <path d="M4 3 L12 3 L11 8 Q8 10 5 8 Z" fill="#fdcb6e" stroke="#b87d1e" stroke-width="0.6"/>
+          <path d="M4 3 Q2 4 3 7 Q4 8 5 7" fill="none" stroke="#fdcb6e" stroke-width="1" stroke-linecap="round"/>
+          <path d="M12 3 Q14 4 13 7 Q12 8 11 7" fill="none" stroke="#fdcb6e" stroke-width="1" stroke-linecap="round"/>
+          <rect x="6.5" y="9.5" width="3" height="1" fill="#a87a2c"/>
+          <rect x="5.5" y="10.5" width="5" height="1.5" rx="0.3" fill="#8a611d"/>
+        </svg>
+      </span>`;
     } else {
       const rankNum = i + 1;
       const rankCls = rankNum <= 3 ? `rank-${rankNum}` : '';
@@ -6010,9 +6349,11 @@ function showMarathonResults(msg) {
 
   resultsAnimationTimeouts.push(setTimeout(() => {
     banner.classList.add('revealed');
-    if ((winner?.completed || 0) > 0) {
-      const palette = iAmWinner ? MP_CONFETTI_PALETTE_WIN : MP_CONFETTI_PALETTE_LOSS;
-      spawnSoloMarathonConfetti(palette);
+    // Confetti only when *I* won and the round produced a real win (winner
+    // completed at least one target). Losers + zero-target rounds get no
+    // celebration — matches the saved memory rule "confetti only on success".
+    if (iAmWinner && (winner?.completed || 0) > 0) {
+      spawnSoloMarathonConfetti(MP_CONFETTI_PALETTE_WIN);
     }
   }, BANNER_AT));
 
@@ -6050,6 +6391,9 @@ function showMarathonResults(msg) {
 // Inline share buttons replace the old "Share your run" toggle.
 function showMarathonSoloResults(msg) {
   clearInterval(timerInterval);
+  // Same reasoning as showMarathonResults — kill the warming-up poll so it
+  // can't fire against a finished round.
+  clearTimeout(_mkRetryTimer); _mkRetryTimer = null;
   resultsAnimationTimeouts.forEach(t => clearTimeout(t));
   resultsAnimationTimeouts = [];
 
@@ -6063,11 +6407,11 @@ function showMarathonSoloResults(msg) {
   // #winnerSub / #shareToggleBtn) — we keep them in the DOM so MP results
   // can reuse them next round — and inject a sibling solo-content wrapper.
   const banner = document.querySelector('.winner-banner');
-  banner.classList.remove('visible', 'mk-mp-banner', 'cs-banner', 'cs-surrender');
+  banner.classList.remove('visible', 'mk-mp-banner', 'cs-banner', 'cs-surrender', 'cmp-banner', 'cmp-lose', 'cmp-abandoned');
   banner.classList.add('mk-solo-banner');
   // Drop any leftover MP / classic-solo banner content as well so a SP
   // marathon run after MP or classic doesn't show stale state.
-  banner.querySelectorAll(':scope > .mk-solo-content, :scope > .mk-mp-content, :scope > .cs-content').forEach(el => el.remove());
+  banner.querySelectorAll(':scope > .mk-solo-content, :scope > .mk-mp-content, :scope > .cs-content, :scope > .cmp-content').forEach(el => el.remove());
   for (const child of banner.children) {
     if (!child.classList.contains('mk-solo-content')) child.style.display = 'none';
   }
@@ -6191,8 +6535,8 @@ function showMarathonSoloResults(msg) {
     ${breakdownHtml}
     <div class="mk-total-row"><span>Total</span><span class="mk-total-val">0</span></div>
     <div class="mk-solo-share" style="position:relative;">
-      <button class="mk-solo-share-btn" data-action="copy">⎘ ${esc(S.copy)}</button>
-      <button class="mk-solo-share-btn" data-action="save">↓ ${esc(S.save)}</button>
+      <button class="mk-solo-share-btn" data-action="copy"><span aria-hidden="true">⎘ </span>${esc(S.copy)}</button>
+      <button class="mk-solo-share-btn" data-action="save"><span aria-hidden="true">↓ </span>${esc(S.save)}</button>
       <span class="mk-solo-share-toast" id="mkSoloShareToast"></span>
     </div>
   `;
@@ -6338,10 +6682,10 @@ function showClassicSoloResults(msg) {
   // ── Banner: blow away any leftover marathon banner state, then inject
   // the new cs-content wrapper.
   const banner = document.querySelector('.winner-banner');
-  banner.classList.remove('visible', 'mk-solo-banner', 'mk-mp-banner', 'revealed');
+  banner.classList.remove('visible', 'mk-solo-banner', 'mk-mp-banner', 'cmp-banner', 'cmp-lose', 'cmp-abandoned', 'revealed');
   banner.classList.add('cs-banner');
   if (isSurrender) banner.classList.add('cs-surrender'); else banner.classList.remove('cs-surrender');
-  banner.querySelectorAll(':scope > .mk-solo-content, :scope > .mk-mp-content, :scope > .cs-content').forEach(el => el.remove());
+  banner.querySelectorAll(':scope > .mk-solo-content, :scope > .mk-mp-content, :scope > .cs-content, :scope > .cmp-content').forEach(el => el.remove());
   for (const child of banner.children) {
     if (!child.classList.contains('cs-content')) child.style.display = 'none';
   }
@@ -6444,8 +6788,8 @@ function showClassicSoloResults(msg) {
     <div class="path-display">${pathHtml || '<span class="path-node">No navigation</span>'}</div>
     ${isSurrender ? '' : `
       <div class="cs-share">
-        <button class="cs-share-btn" data-action="copy">⎘ ${esc(S.copy)}</button>
-        <button class="cs-share-btn" data-action="save">↓ ${esc(S.save)}</button>
+        <button class="cs-share-btn" data-action="copy"><span aria-hidden="true">⎘ </span>${esc(S.copy)}</button>
+        <button class="cs-share-btn" data-action="save"><span aria-hidden="true">↓ </span>${esc(S.save)}</button>
         <span class="cs-share-toast" id="csShareToast"></span>
       </div>
     `}
@@ -6543,13 +6887,345 @@ function showClassicSoloResults(msg) {
   }
 }
 
+// ─── Classic Multiplayer results (design system zip 5) ───
+// Three states share this renderer:
+//   1. Winner viewer (normal finish)  — trophy + gold-bordered self-card,
+//      confetti, inline share row
+//   2. Loser viewer (any rank)        — runner-up SVG + neutral chip + purple
+//      "this is me" border on my card, no confetti, no share row, host or
+//      "Waiting for host…" depending on role
+//   3. Abandoned (everyone surrendered) — flag SVG + muted "Game abandoned"
+//      headline, no winner border anywhere, cards in original join order
+//
+// Logic intentionally kept identical to the legacy showResults: same data
+// shape (msg.results with id/path/distances/time/isWinner), same playAgain /
+// backToHome handlers, same share-image pipeline, same gtag event.
+function showClassicMpResults(msg) {
+  clearInterval(timerInterval);
+  resultsAnimationTimeouts.forEach(t => clearTimeout(t));
+  resultsAnimationTimeouts = [];
+
+  // GA: same shape as the legacy showResults event so analytics aren't
+  // siloed by the redesign.
+  try {
+    const myR0 = msg.results?.find(r => r.id === myPlayerId);
+    const iWonGA = !!myR0?.isWinner;
+    window.gtag?.('event', 'game_finish', {
+      mode: 'classic',
+      gave_up: !!msg.gaveUp,
+      won: iWonGA,
+      multiplayer: true,
+      steps: myR0 ? Math.max(0, (myR0.path?.length || 1) - 1) : null,
+      time_sec: myR0?.time ? Math.round(myR0.time / 1000) : null,
+    });
+  } catch (e) { /* gtag blocked */ }
+
+  const results = msg.results || [];
+  const isAbandoned = !!msg.gaveUp;
+  const myResult   = results.find(r => r.id === myPlayerId);
+  const winner     = !isAbandoned ? results.find(r => r.isWinner) : null;
+  const iWon       = !!winner && winner.id === myPlayerId;
+  const playerCount = results.length;
+
+  // ── Banner: blow away leftover state from any other renderer, then inject
+  // the cmp-content wrapper (medal / chip / headline / sub).
+  const banner = document.querySelector('.winner-banner');
+  banner.classList.remove('visible', 'mk-solo-banner', 'mk-mp-banner', 'cs-banner', 'cs-surrender', 'revealed', 'cmp-banner', 'cmp-lose', 'cmp-abandoned');
+  banner.classList.add('cmp-banner');
+  if (isAbandoned)        banner.classList.add('cmp-abandoned');
+  else if (!iWon)         banner.classList.add('cmp-lose');
+  banner.querySelectorAll(':scope > .mk-solo-content, :scope > .mk-mp-content, :scope > .cs-content, :scope > .cmp-content').forEach(el => el.remove());
+  for (const child of banner.children) {
+    if (!child.classList.contains('cmp-content')) child.style.display = 'none';
+  }
+  document.getElementById('shareCard').style.display = 'none';
+  document.getElementById('shareToggleBtn').style.display = 'none';
+  // Hide the legacy MP "waiting for host" indicator — we inject our own
+  // styled version inside the action row when needed.
+  const waitElLegacy = document.getElementById('waitingForHost');
+  if (waitElLegacy) waitElLegacy.style.display = 'none';
+
+  // Pick the right SVG + chip + headline for this state.
+  let svg, chipText, chipCls = 'cmp-modechip', headlineHtml, subHtml;
+  if (isAbandoned) {
+    svg = CLASSIC_MP_FLAG_SVG;
+    chipText = 'Classic · abandoned';
+    chipCls += ' neutral';
+    headlineHtml = `<span class="winner-name cmp-headline abandoned">Game abandoned</span>`;
+    subHtml = `Everyone gave up &mdash; no winner`;
+  } else if (iWon) {
+    svg = MARATHON_SOLO_MEDAL_SVG; // same trophy as Solo + MP Marathon
+    chipText = `Classic · ${playerCount} player${playerCount === 1 ? '' : 's'}`;
+    const winnerColor = playerColors.get(winner.id) || '#a29bfe';
+    headlineHtml = `<span class="winner-name cmp-headline"><span class="cmp-swatch" style="background:${esc(winnerColor)}"></span>You win!</span>`;
+    const wSteps = Math.max(0, (winner.path?.length || 1) - 1);
+    const wTime = winner.time ? esc(formatTime(winner.time)) : '';
+    subHtml = `<strong>${wSteps} step${wSteps === 1 ? '' : 's'}</strong>${wTime ? ` &middot; <strong>${wTime}</strong>` : ''}`;
+  } else if (winner) {
+    svg = CLASSIC_MP_RUNNER_UP_SVG;
+    chipText = `Classic · ${playerCount} player${playerCount === 1 ? '' : 's'}`;
+    chipCls += ' neutral';
+    const winnerColor = playerColors.get(winner.id) || '#a29bfe';
+    headlineHtml = `<span class="winner-name cmp-headline lose"><span class="cmp-swatch" style="background:${esc(winnerColor)}"></span>${esc(winner.name)} wins</span>`;
+    const wSteps = Math.max(0, (winner.path?.length || 1) - 1);
+    const wTime = winner.time ? esc(formatTime(winner.time)) : '';
+    subHtml = `<strong>${wSteps} step${wSteps === 1 ? '' : 's'}</strong>${wTime ? ` &middot; <strong>${wTime}</strong>` : ''}`;
+  } else {
+    // Defensive: no winner found and not abandoned (shouldn't happen with
+    // current server emits, but degrade gracefully).
+    svg = CLASSIC_MP_FLAG_SVG;
+    chipText = `Classic · ${playerCount} player${playerCount === 1 ? '' : 's'}`;
+    chipCls += ' neutral';
+    headlineHtml = `<span class="winner-name cmp-headline abandoned">Game over</span>`;
+    subHtml = '';
+  }
+
+  const cmpContent = document.createElement('div');
+  cmpContent.className = 'cmp-content';
+  cmpContent.innerHTML = `
+    <div class="cmp-medal">${svg}</div>
+    <div class="${chipCls}">${esc(chipText)}</div>
+    ${headlineHtml}
+    <div class="cmp-sub">${subHtml}</div>
+  `;
+  banner.appendChild(cmpContent);
+
+  // Reset legacy nameEl/subEl for cleanup compat.
+  const nameEl = document.getElementById('winnerName');
+  const subEl  = document.getElementById('winnerSub');
+  if (nameEl) { nameEl.textContent = ''; nameEl.classList.remove('surrendered', 'loser'); }
+  if (subEl)  subEl.textContent = '';
+  document.getElementById('resultIcon').style.display = 'none';
+
+  // ── Cards: order depends on state.
+  //   normal   : winner first, then by step count (shorter = higher rank)
+  //   abandoned: original join order — there's no ranking
+  const grid = document.getElementById('resultsGrid');
+  grid.className = 'results-grid';
+  grid.innerHTML = '';
+  // Sort per SPEC §11. Abandoned: keep join order (no ranking to compare
+  // against). Normal: winner first, then non-winners by closest distance
+  // they reached (minHops asc) — rewards getting closer to the target
+  // rather than just having a short path. Tiebreaker: shorter path wins.
+  const minHops = (r) => {
+    if (!Array.isArray(r.distances) || !r.distances.length) return Infinity;
+    return r.distances.reduce((m, d) => (d != null && d < m ? d : m), Infinity);
+  };
+  const ordered = isAbandoned
+    ? [...results]
+    : [...results].sort((a, b) => {
+        if (a.isWinner && !b.isWinner) return -1;
+        if (!a.isWinner && b.isWinner) return 1;
+        const dh = minHops(a) - minHops(b);
+        if (dh !== 0) return dh;
+        return (a.path?.length || 0) - (b.path?.length || 0);
+      });
+
+  ordered.forEach((r, i) => {
+    const card = document.createElement('div');
+    const isMine    = r.id === myPlayerId;
+    const isCardWin = !isAbandoned && r.isWinner;
+    const cls = ['result-card', 'cmp-card'];
+    if (isCardWin) cls.push('cmp-winner');
+    if (isMine)    cls.push('cmp-mine');
+    card.className = cls.join(' ');
+    // Hide until reveal cascade; matches the inline-style approach used by
+    // the other redesigned renderers so we don't need a separate keyframe.
+    card.style.opacity = '0';
+    card.style.transform = 'translateY(10px)';
+
+    // Path with tier-colored distance pills + green/red direction arrows.
+    // Identical to the SP Classic + MP Marathon path code path; no new helper.
+    const dists = r.distances || [];
+    let pathHtml = '';
+    r.path.forEach((p, idx) => {
+      const isStart = idx === 0;
+      const isEnd = idx === r.path.length - 1;
+      // Skip the green ".end" tint when this player didn't actually win
+      // (per SPEC §7) — abandoned games and non-finishers shouldn't get
+      // the "you reached the target" visual.
+      const nodeCls = isStart ? 'start' : ((isEnd && isCardWin) ? 'end' : '');
+      let distBadge = '';
+      if (!isStart && !isEnd && dists[idx - 1] !== undefined && dists[idx - 1] !== null) {
+        const d = dists[idx - 1];
+        const prev = idx >= 2 ? dists[idx - 2] : null;
+        const distCls = distColorClass(d);
+        let arrow = '';
+        if (prev !== null && prev !== undefined) {
+          if (d < prev) arrow = '<span class="path-dir closer">▲</span>';
+          else if (d > prev) arrow = '<span class="path-dir further">▼</span>';
+          else arrow = '<span class="path-dir same">=</span>';
+        }
+        distBadge = `<span class="path-dist">${arrow}<span class="${distCls}">${d}</span></span>`;
+      }
+      pathHtml += (idx > 0 ? '<span class="path-arrow">→</span>' : '') +
+        `<span class="path-node ${nodeCls}">${esc(p.replace(/_/g, ' '))}${distBadge}</span>`;
+    });
+
+    const playerColor = playerColors.get(r.id) || r.color || '#7c6fad';
+    const steps = Math.max(0, (r.path?.length || 1) - 1);
+    const timeStr = r.time ? esc(formatTime(r.time)) : '—';
+    const rankNum = isAbandoned ? '·' : (i + 1);
+    const rankClass = (i === 0 && !isAbandoned) ? 'cmp-rank-pill r1' : 'cmp-rank-pill';
+
+    card.innerHTML = `
+      <div class="cmp-card-header">
+        <div class="${rankClass}">${rankNum}</div>
+        <div class="cmp-name">
+          <span class="cmp-name-swatch" style="background:${esc(playerColor)}"></span>
+          ${esc(r.name)}
+          ${isMine ? '<span class="cmp-you-tag">you</span>' : ''}
+        </div>
+        <div class="cmp-stats">
+          <strong>${steps}</strong> step${steps === 1 ? '' : 's'} &middot; <strong>${timeStr}</strong>
+        </div>
+      </div>
+      <div class="path-display">${pathHtml}</div>
+    `;
+    grid.appendChild(card);
+  });
+
+  // ── Action row + share. Host always gets Play again / Back to home.
+  // Guests in MP get a styled "Waiting for host…" pill instead. Buttons reuse
+  // the existing playAgain() / backToHome() handlers — no new logic, just
+  // visibility toggles + label swaps for the abandoned variant.
+  const playAgainBtn = document.getElementById('playAgainBtn');
+  const backBtn      = document.getElementById('backToHomeBtn');
+  const waitEl       = document.getElementById('waitingForHost');
+  if (playAgainBtn) {
+    playAgainBtn.style.display = isHost ? '' : 'none';
+    playAgainBtn.textContent = 'Play again';
+  }
+  if (backBtn) {
+    backBtn.style.display = isHost ? '' : 'none';
+    backBtn.textContent = 'Back to home';
+  }
+  if (waitEl) {
+    // Show waiting-for-host for non-host guests on every state (win, lose,
+    // abandoned). When the host clicks Play again the room transitions back
+    // to setup; the existing room-state listener hides #results which hides
+    // this indicator with it.
+    waitEl.style.display = isHost ? 'none' : '';
+  }
+
+  // Append inline share row to the WINNER's card (the first card in normal
+  // finish + iWon). Mirrors SP Classic — losers and abandoned skip this.
+  if (iWon && !isAbandoned) {
+    const winnerCard = grid.querySelector('.cmp-card.cmp-winner');
+    if (winnerCard) {
+      const S = (typeof shareStr === 'function') ? shareStr() : { copy: 'Copy share', save: 'Save image' };
+      const shareRow = document.createElement('div');
+      shareRow.className = 'cmp-share';
+      shareRow.innerHTML = `
+        <button class="cmp-share-btn" data-action="copy"><span aria-hidden="true">⎘ </span>${esc(S.copy)}</button>
+        <button class="cmp-share-btn" data-action="save"><span aria-hidden="true">↓ </span>${esc(S.save)}</button>
+        <span class="cmp-share-toast" id="cmpShareToast"></span>
+      `;
+      winnerCard.appendChild(shareRow);
+      // Wire to existing share-image pipeline (unchanged).
+      // Toast hide-timer is stashed on the toast element so rapid double-
+      // clicks reset rather than stack timers (otherwise the second click's
+      // hide can race with the third click's reveal).
+      const showToast = (text) => {
+        const toast = shareRow.querySelector('#cmpShareToast');
+        if (!toast) return;
+        toast.textContent = text;
+        toast.classList.add('show');
+        clearTimeout(toast._hideT);
+        toast._hideT = setTimeout(() => toast.classList.remove('show'), 1400);
+      };
+      shareRow.addEventListener('click', async (ev) => {
+        const btn = ev.target.closest('.cmp-share-btn');
+        if (!btn) return;
+        const action = btn.dataset.action;
+        const r = myRunResult(msg);
+        if (!r) return;
+        try {
+          if (action === 'copy') {
+            const text = buildShareText(r, msg);
+            await navigator.clipboard.writeText(text);
+            showToast(S.copied || 'Copied!');
+          } else if (action === 'save') {
+            const blob = await buildShareImage(r, msg);
+            const a = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            a.href = url;
+            a.download = `wikispeedrun-${Date.now()}.png`;
+            document.body.appendChild(a); a.click(); a.remove();
+            // Defer revoke — synchronous revocation can invalidate the URL
+            // before the browser actually starts the download (varies per
+            // browser; matches the cs-share / mk-solo-share handlers).
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+            showToast(S.saved || 'Saved!');
+          }
+        } catch (e) {
+          showToast(S.copyFail || 'Copy failed');
+        }
+      });
+    }
+  }
+
+  showScreen('results');
+
+  // ── Reveal cascade. Banner first (100ms), then cards stagger in (700ms +
+  // 280ms each), then path nodes inside each card (80ms apart), then share
+  // row. Confetti only on winner view, only on normal finish.
+  const BANNER_AT    = 100;
+  const CARD_START   = 700;
+  const CARD_STAGGER = 280;
+  const PATH_STEP    = 80;
+
+  resultsAnimationTimeouts.push(setTimeout(() => {
+    // .revealed alone — the legacy `.visible` class triggers a
+    // transform: scale(1) keyframe that races with the cmp-banner's
+    // `transform: none` and produces a tiny snap on reveal.
+    banner.classList.add('revealed');
+    if (iWon && !isAbandoned) {
+      // Winner color leads the palette so the confetti reads as "your win".
+      const winnerColor = playerColors.get(winner.id) || '#a29bfe';
+      const palette = [winnerColor, '#fdcb6e', '#6c5ce7', '#00b894'];
+      spawnSoloMarathonConfetti(palette);
+    }
+  }, BANNER_AT));
+
+  const cards = grid.querySelectorAll('.cmp-card');
+  let lastEnd = CARD_START;
+  cards.forEach((cardEl, i) => {
+    const cardAt = CARD_START + i * CARD_STAGGER;
+    resultsAnimationTimeouts.push(setTimeout(() => {
+      cardEl.style.transition = 'opacity 0.4s ease, transform 0.4s cubic-bezier(0.22, 1, 0.36, 1)';
+      cardEl.style.opacity = '1';
+      cardEl.style.transform = 'translateY(0)';
+    }, cardAt));
+    const pathEls = cardEl.querySelectorAll('.path-node, .path-arrow');
+    pathEls.forEach((el, j) => {
+      const at = cardAt + 150 + j * PATH_STEP;
+      resultsAnimationTimeouts.push(setTimeout(() => el.classList.add('revealed'), at));
+      if (at > lastEnd) lastEnd = at;
+    });
+  });
+
+  // Share row last, only when present (winner viewer only).
+  if (iWon && !isAbandoned) {
+    const shareRow = grid.querySelector('.cmp-share');
+    if (shareRow) {
+      resultsAnimationTimeouts.push(setTimeout(() => shareRow.classList.add('revealed'), lastEnd + 300));
+    }
+  }
+}
+
 function showResults(msg) {
   clearInterval(timerInterval);
   // Classic + solo gets the redesigned banner / target-hero / closest-chip
   // treatment — branch out before the legacy banner copy + card builder.
-  // Tri SP and all MP paths fall through to the classic shell unchanged.
+  // Tri SP / Tri MP fall through to the legacy classic shell unchanged.
   if (isSinglePlayer && (msg.mode === 'classic' || (!msg.mode && currentGameMode === 'classic'))) {
     return showClassicSoloResults(msg);
+  }
+  // Classic MP redesign (design system zip 5) — covers normal-finish (winner
+  // and loser views) plus the "everyone surrendered" abandoned state.
+  if (!isSinglePlayer && (msg.mode === 'classic' || (!msg.mode && currentGameMode === 'classic'))) {
+    return showClassicMpResults(msg);
   }
   // Reset grid classes in case the last round was marathon (which swaps the
   // grid to mk-results-grid for a different layout).
@@ -6596,8 +7272,8 @@ function showResults(msg) {
   // onto .winner-banner).
   const banner0 = document.querySelector('.winner-banner');
   if (banner0) {
-    banner0.classList.remove('mk-solo-banner', 'mk-mp-banner', 'cs-banner', 'cs-surrender', 'revealed');
-    banner0.querySelectorAll(':scope > .mk-solo-content, :scope > .mk-mp-content, :scope > .cs-content').forEach(el => el.remove());
+    banner0.classList.remove('mk-solo-banner', 'mk-mp-banner', 'cs-banner', 'cs-surrender', 'cmp-banner', 'cmp-lose', 'cmp-abandoned', 'revealed');
+    banner0.querySelectorAll(':scope > .mk-solo-content, :scope > .mk-mp-content, :scope > .cs-content, :scope > .cmp-content').forEach(el => el.remove());
     for (const child of banner0.children) child.style.display = '';
   }
   // Restore the legacy emoji icon — MP marathon hides it and replaces it
@@ -7047,6 +7723,14 @@ function backToHome() {
   clearInterval(timerInterval);
   resultsAnimationTimeouts.forEach(t => clearTimeout(t));
   resultsAnimationTimeouts = [];
+  // Cancel any pending marathon "warming up" retry poll — otherwise a queued
+  // mk_request_next can fire after the player navigates home and produce a
+  // noisy server-side rejection log.
+  clearTimeout(_mkRetryTimer);
+  _mkRetryTimer = null;
+  // Sweep any in-flight confetti layer so a rapid game-over → home navigation
+  // doesn't leave pieces fluttering across the home screen.
+  document.querySelectorAll('.confetti-layer').forEach(el => el.remove());
   // Tear down any lingering checkpoint flash / pill pulses so they don't
   // flicker on the home screen mid-fade.
   document.querySelectorAll('.checkpoint-flash').forEach(el => el.remove());
