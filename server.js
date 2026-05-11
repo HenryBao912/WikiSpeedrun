@@ -2523,6 +2523,28 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Healthcheck for Railway (and any other uptime probe). Returns 200
+  // only when puzzle pools have actually loaded — protects against the
+  // edge case where the HTTP server starts listening before the pool
+  // load completes (currently synchronous, but cheap insurance if that
+  // ever becomes async). Intentionally tiny + unlogged so probe traffic
+  // doesn't pollute access logs at 1 req/s.
+  if (parsed.pathname === '/health') {
+    const loadedLangs = Object.keys(puzzlePools).filter(l => puzzlePools[l]?.pairs?.length > 0);
+    const ready = loadedLangs.length > 0 && !!indexHtmlRaw;
+    const body = JSON.stringify({
+      status: ready ? 'ok' : 'starting',
+      uptime: Math.floor(process.uptime()),
+      pools: loadedLangs,
+    });
+    res.writeHead(ready ? 200 : 503, {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store',
+    });
+    res.end(body);
+    return;
+  }
+
   if (parsed.pathname === '/' || parsed.pathname === '/index.html') {
     // Honor If-None-Match: send 304 instead of re-shipping the body when
     // the client has the same version cached. Saves ~265KB raw / ~50KB gz
