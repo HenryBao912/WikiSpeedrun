@@ -4238,17 +4238,52 @@ function showScreen(id) {
 // close + reopen, which churned a playerId per click, orphaned server-side
 // room state, and doubled the CSRF-token / game-state resync work.
 let ssePending = null;
-function connectSSE() {
+let sseRecycleTimer = null;
+// Railway (and most PaaS proxies) terminate any HTTP request — including SSE
+// streams — at a hard 15-minute mark, no exception. EventSource's auto-
+// reconnect is unreliable under tab backgrounding / device sleep / network
+// roaming, which is exactly when a 15-min-old connection tends to die.
+// Recycle proactively at 10min so we always cycle on our own terms instead
+// of waiting for the platform to kill us mid-game.
+const SSE_RECYCLE_MS = 10 * 60 * 1000;
+
+function scheduleSSERecycle() {
+  if (sseRecycleTimer) clearTimeout(sseRecycleTimer);
+  if (!myPlayerId) return;
+  sseRecycleTimer = setTimeout(() => {
+    sseRecycleTimer = null;
+    if (!myPlayerId || !eventSource) return;
+    // forceNew: open a SECOND EventSource alongside the live one, only close
+    // the original after the new one's 'connected' arrives. Server's rebind
+    // path swaps res handles atomically (in Node.js single-threaded context),
+    // so no broadcasts go to the dead socket. Result: zero-gap recycle, no
+    // missed messages, no lost room state.
+    connectSSE(true).catch(err => {
+      console.error('[SSE] recycle failed', err);
+      // Retry recycle in 1 min if it failed — EventSource's own auto-reconnect
+      // will also be trying.
+      sseRecycleTimer = setTimeout(scheduleSSERecycle, 60_000);
+    });
+  }, SSE_RECYCLE_MS);
+}
+
+function connectSSE(forceNew = false) {
   // Open or still-connecting socket with a known player — reuse it.
-  if (eventSource && eventSource.readyState !== 2 /* CLOSED */ && myPlayerId) {
+  // forceNew=true skips this check (used by proactive recycle).
+  if (!forceNew && eventSource && eventSource.readyState !== 2 /* CLOSED */ && myPlayerId) {
     return Promise.resolve();
   }
   // Already dialing — return the in-flight promise so parallel callers share it.
   if (ssePending) return ssePending;
   ssePending = new Promise((resolve, reject) => {
-    if (eventSource) eventSource.close();
+    // For recycle (forceNew), keep the old source open until the new one
+    // confirms 'connected'. For first-time / dead-socket reopen, close
+    // immediately to free the slot.
+    const oldSource = forceNew ? eventSource : null;
+    if (!forceNew && eventSource) eventSource.close();
     const url = myPlayerId ? `/events?playerId=${myPlayerId}` : '/events';
-    eventSource = new EventSource(url);
+    const newSource = new EventSource(url);
+    eventSource = newSource;
 
     // Intentionally silent on connect — we open + reopen the SSE on every
     // screen transition + reconnect, and the noise drowns out real signal
@@ -4259,15 +4294,29 @@ function connectSSE() {
     // handleServerMessage branches on that id and silently drops otherwise.
     const pending = [];
     let ready = !!myPlayerId;
-    eventSource.onmessage = (e) => {
+    newSource.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data);
         if (msg.type === 'connected') {
           myPlayerId = msg.playerId;
           myCsrfToken = msg.csrfToken || null;
           ready = true;
+          // Server has rebound — safe to close the old EventSource. Any
+          // server-side broadcasts already use the new res handle.
+          // Critically, detach the old source's handlers FIRST. EventSource
+          // .close() can fire an error event in some browsers, and the old
+          // source's onerror would otherwise misinterpret an intentional
+          // recycle as a real connection loss (and show "Please refresh").
+          if (oldSource) {
+            oldSource.onmessage = null;
+            oldSource.onerror = null;
+            oldSource.onopen = null;
+            try { oldSource.close(); } catch (_) {}
+          }
           while (pending.length) handleServerMessage(pending.shift());
           ssePending = null;
+          // Arm next recycle window now that we're connected.
+          scheduleSSERecycle();
           resolve();
           return;
         }
@@ -4278,10 +4327,21 @@ function connectSSE() {
       }
     };
 
-    eventSource.onerror = (e) => {
-      console.error('[SSE] Error:', e);
-      if (eventSource.readyState === EventSource.CLOSED) {
+    newSource.onerror = (e) => {
+      // EventSource fires error events for transient issues + before
+      // auto-reconnect attempts. Only log when actually CLOSED — the
+      // intermediate retries are noise that scared users when surfaced.
+      if (newSource.readyState !== EventSource.CLOSED) return;
+      console.error('[SSE] Closed unexpectedly');
+      // During recycle, an error on the NEW source means the recycle failed.
+      // Don't show "Connection lost" — the OLD source is still alive serving
+      // the user. Just abandon the recycle attempt.
+      if (!oldSource) {
         showError('mpError', 'Connection lost. Please refresh.');
+      }
+      // If recycle failed, restore the old source as the active one.
+      if (oldSource && oldSource.readyState !== 2) {
+        eventSource = oldSource;
       }
       ssePending = null;
       reject(new Error('SSE connection failed'));
@@ -5139,6 +5199,9 @@ function handleServerMessage(msg) {
       mpIsHost = false;
       isSinglePlayer = false;
       myPath = [];
+      // Cancel any pending recycle — we're tearing down state and a recycle
+      // would otherwise reopen SSE for a player record we just nuked.
+      if (sseRecycleTimer) { clearTimeout(sseRecycleTimer); sseRecycleTimer = null; }
       try { eventSource?.close(); } catch (_) {}
       eventSource = null;
       myPlayerId = null;

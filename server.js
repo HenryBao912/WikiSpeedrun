@@ -2619,33 +2619,47 @@ const server = http.createServer(async (req, res) => {
     // cookie) and echoes it back on every /action via X-Csrf-Token. An attacker
     // on another origin can't read the EventSource body from the victim's tab,
     // so they cannot forge actions even if they guess a playerId.
-    const csrfToken = crypto.randomBytes(16).toString('hex');
+    const newCsrfToken = crypto.randomBytes(16).toString('hex');
     const connectedAt = Date.now();
 
-    // Reconnect path: same playerId arrived within the grace window. Cancel
-    // the pending teardown and rebind the existing player record (preserving
-    // roomCode / room membership) onto the new SSE handle. Otherwise the
-    // client would resume mid-game with a fresh roomCode=null record and
-    // every navigate would 404.
+    // Reconnect path. Two scenarios both rebind to preserve room state:
+    //   (a) Pending grace: SSE dropped, EventSource auto-reconnected within
+    //       30s. pendingDisconnects has a timer to cancel.
+    //   (b) Proactive recycle: client opened a NEW SSE while the old one is
+    //       still technically alive (used to pre-empt platform timeouts like
+    //       Railway's 15-min request cap — without this the SSE silently dies
+    //       mid-game, EventSource may not reconnect cleanly under tab-bg/
+    //       sleep, and the player loses their room).
+    // Either way, swap the res handle on the existing player record instead
+    // of allocating a fresh one with roomCode=null.
     const pendingTid = pendingDisconnects.get(playerId);
     const existing = players.get(playerId);
-    if (pendingTid && existing) {
-      clearTimeout(pendingTid);
-      pendingDisconnects.delete(playerId);
-      // Best-effort close of the old SSE handle (already dead in practice).
+    let activeCsrf = newCsrfToken;
+    if (existing) {
+      if (pendingTid) {
+        clearTimeout(pendingTid);
+        pendingDisconnects.delete(playerId);
+      }
+      // Best-effort close of the old SSE handle. Its req.on('close') will
+      // fire but our guard below skips cleanup since cur.res !== oldRes.
       try { existing.res?.end?.(); } catch (_) {}
       existing.res = res;
-      existing.csrfToken = csrfToken;
+      // KEEP the existing CSRF token, don't rotate. During proactive recycle
+      // the client may have action requests in flight signed with the old
+      // token between opening the new SSE and processing 'connected'. Rotating
+      // would 403 those (subtle "lost click" bug). The token is still per-
+      // session; rotation buys nothing if the client can't atomically swap.
+      activeCsrf = existing.csrfToken;
       existing.connectedAt = connectedAt;
-      console.log(`SSE reconnected: ${playerId.slice(0, 8)} (room: ${existing.roomCode || 'none'})`);
-      logEvent('sse_reconnect', { playerId, roomCode: existing.roomCode || null, totalConnected: players.size });
+      console.log(`SSE reconnected: ${playerId.slice(0, 8)} (room: ${existing.roomCode || 'none'}, mode: ${pendingTid ? 'grace' : 'proactive'})`);
+      logEvent('sse_reconnect', { playerId, roomCode: existing.roomCode || null, mode: pendingTid ? 'grace' : 'proactive', totalConnected: players.size });
     } else {
-      players.set(playerId, { res, roomCode: null, name: null, csrfToken, connectedAt });
+      players.set(playerId, { res, roomCode: null, name: null, csrfToken: newCsrfToken, connectedAt });
       console.log(`SSE connected: ${playerId.slice(0, 8)} (total: ${players.size})`);
       logEvent('sse_connect', { playerId, totalConnected: players.size });
     }
 
-    sendSSE(playerId, { type: 'connected', playerId, csrfToken });
+    sendSSE(playerId, { type: 'connected', playerId, csrfToken: activeCsrf });
 
     const keepalive = setInterval(() => {
       if (!res.writableEnded) {
