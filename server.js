@@ -80,6 +80,13 @@ function isValidArticle(s) {
   if (s.length === 0 || s.length > MAX_ARTICLE_LEN) return false;
   // Reject control chars and separators that would break API URL params
   if (/[\x00-\x1f\x7f|#<>\[\]{}]/.test(s)) return false;
+  // Reject Wikipedia namespace prefixes — these point at chrome (Special:Random,
+  // User:foo, File:bar, Wikipedia:Sandbox, Talk:X, etc.) not real articles, and
+  // would let a host trick the link/distance crawler into fanning out across
+  // namespaces. Article-namespace titles never contain a colon followed by an
+  // uppercase letter at position < ~20 (real articles like "Pat:_The_Story" do,
+  // but never with a known namespace prefix; we only block the namespace forms).
+  if (/^(Special|Wikipedia|WP|User|File|Image|Help|Talk|Template|Category|Portal|Project|Module|Draft|MediaWiki|TimedText|Book)(?:_talk)?:/i.test(s)) return false;
   return true;
 }
 
@@ -508,6 +515,457 @@ function loadPuzzlePools() {
   }
 }
 loadPuzzlePools();
+
+// ─── Daily Challenge ───
+// Same puzzle for everyone today, derived deterministically from the date.
+// Resets at midnight UTC. Picking from the validated en pool means we know
+// the puzzle is solvable + has known difficulty characteristics.
+//
+// Why UTC rather than per-user local: the social mechanic (sharing,
+// "I beat #17 in 4 steps") only works if everyone today sees the same
+// puzzle. UTC is the simplest agreed-upon "today".
+const DAILY_LAUNCH_DATE = '2026-05-12'; // Daily Challenge feature launch — today = #1
+const DAILY_LAUNCH_MS = Date.parse(DAILY_LAUNCH_DATE + 'T00:00:00Z');
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function utcDateStr(d = new Date()) {
+  return d.toISOString().slice(0, 10);
+}
+
+// ─── Daily Leaderboard ───
+// In-memory store, keyed by date. Each entry: { anonId, name, won, steps,
+// timeMs, path, ts }. Lost on restart — acceptable for MVP since dailies
+// reset at midnight UTC anyway, and Railway redeploys are rare. Move to a
+// JSON file on disk or KV store when leaderboard size warrants.
+const dailyLeaderboards = new Map(); // "YYYY-MM-DD" -> Array<entry>
+const MAX_LEADERBOARD_RETENTION_DAYS = 14;
+const MAX_NAME_LEN = 20;
+const MAX_ANONID_LEN = 64;
+const LEADERBOARD_TARGET_SIZE = 25; // Fakes fill out to this; real entries push fakes off the bottom.
+
+// ─── Country / flag detection ───
+// Source order:
+//   1. Edge-proxy header (Cloudflare / Vercel / Railway-set) — free, fast
+//   2. ipapi.co lookup with in-memory cache — falls back when no header
+// Returns ISO-3166-1 alpha-2 (e.g. "US") or null. Client renders to a flag
+// emoji via two regional-indicator code points.
+const ipCountryCache = new Map(); // ip -> "US" / null
+const COUNTRY_LOOKUP_TIMEOUT_MS = 1500;
+
+function countryFromHeaders(req) {
+  const h = req.headers;
+  const code = (h['cf-ipcountry'] || h['x-vercel-ip-country'] || h['x-country-code'] || '').toString().toUpperCase();
+  return /^[A-Z]{2}$/.test(code) ? code : null;
+}
+
+function clientIpFromReq(req) {
+  // Standard proxy chain: x-forwarded-for is comma-separated, leftmost is original client.
+  const xff = (req.headers['x-forwarded-for'] || '').toString();
+  if (xff) return xff.split(',')[0].trim();
+  return req.socket?.remoteAddress || null;
+}
+
+async function lookupCountryByIp(ip) {
+  if (!ip) return null;
+  // Skip private / loopback ranges (common in local dev) — no point geolocating.
+  if (ip === '127.0.0.1' || ip === '::1' || ip.startsWith('10.') || ip.startsWith('192.168.') || ip.startsWith('172.')) {
+    return null;
+  }
+  if (ipCountryCache.has(ip)) return ipCountryCache.get(ip);
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), COUNTRY_LOOKUP_TIMEOUT_MS);
+    const r = await fetch(`https://ipapi.co/${encodeURIComponent(ip)}/country/`, {
+      signal: ctrl.signal,
+      headers: { 'User-Agent': WIKI_USER_AGENT },
+    });
+    clearTimeout(t);
+    if (!r.ok) throw new Error('lookup failed');
+    const code = (await r.text()).trim().toUpperCase();
+    if (/^[A-Z]{2}$/.test(code)) {
+      ipCountryCache.set(ip, code);
+      return code;
+    }
+  } catch (_) { /* swallow — country is non-critical */ }
+  ipCountryCache.set(ip, null);
+  return null;
+}
+
+async function getCountryForReq(req) {
+  const fromHeader = countryFromHeaders(req);
+  if (fromHeader) return fromHeader;
+  return await lookupCountryByIp(clientIpFromReq(req));
+}
+
+// Per-day caches populated as soon as the first player starts the daily.
+// `dailyHop1Cache[date]` = real backlinks to today's destination (each guaranteed
+// to link → destination). `dailyOriginLinksCache[date]` = forward links from
+// today's origin (each guaranteed to be a valid first-step). Used to make fake
+// leaderboard paths look like authentic player routes — at minimum the first
+// and last hops are real Wikipedia edges.
+const dailyHop1Cache = new Map();          // date -> Array<title>
+const dailyOriginLinksCache = new Map();   // date -> Array<title>
+
+function warmDailyLinkCaches(daily) {
+  if (!daily) return;
+  // Fire-and-forget — runs once per (date, server-process). cacheDestination
+  // already runs synchronously when the first player starts, so this typically
+  // hits the cache instantly. We snapshot the sets into plain arrays for
+  // deterministic indexing in fake-path generation.
+  cacheDestination(daily.destination, 'en').then(destData => {
+    if (destData?.hop1?.size) dailyHop1Cache.set(daily.date, [...destData.hop1].slice(0, 200));
+  }).catch(() => {});
+  getPageLinks(daily.origin, 'en').then(links => {
+    if (links?.size) dailyOriginLinksCache.set(daily.date, [...links].slice(0, 200));
+  }).catch(() => {});
+}
+
+// ─── Fake leaderboard generation ───
+// Cold-start UX: an empty leaderboard feels dead. Pre-fill with deterministic
+// fake entries so day one feels populated. Same daily date → same fakes for
+// every viewer (no inconsistency between server restarts). Real entries take
+// priority and push fakes off the bottom.
+const FAKE_NAMES = [
+  'wikiwiz_42','PuzzleHopper','clickfast','Maya','RoamingByte','linkninja',
+  'cheese_seeker','Atlas','HyperlinkHero','navigatrix','wandering_paul','foxtrot',
+  'snowsong','RebelSummer','Iris','quasar','MarsRunner','BookMoth','tealcaper',
+  'Linus','PixelPaige','quietfox','Theo','BananaPeel','redmaple','sage',
+  'Jules','MeritOrbit','panda','spicy_otter','Calliope','knot','glitchwitch',
+  'Zara','minty_fox','Edna','dewfall','sleepysam','crispycoder','Cassia',
+  'TundraTaro','Vivi','rookie_cube','quill','Mochi','OakLeaf','Penny','Jin',
+  'sunburn','Hank','wiseowl','breeze','sweetbun','copperjay','Roma','Yuki',
+  'lazy_yak','PinkBlade','tides','Olive','Ezra','Amber','Kuma','Jasper'
+];
+// Plausible-looking transit articles. NOT validated paths — they just need to
+// look like the kind of intermediate links a player would click through.
+const FAKE_PATH_HUBS = [
+  'United_States','England','New_York_City','London','World_War_II','Internet',
+  'Wikipedia','Hollywood','Television','Film','Music','Wikipedia','Computer',
+  'BBC','The_New_York_Times','Reuters','Apple_Inc.','Microsoft','Google',
+  'India','Japan','Germany','France','Mexico','Spain','Italy','Russia',
+  'Olympic_Games','FIFA','NBA','Manchester_United','Tom_Hanks','Netflix',
+  'Earth','Sun','Moon','Pacific_Ocean','Mount_Everest','Amazon_River',
+  'Mathematics','Physics','Biology','Chemistry','History','Geography',
+  'Bill_Gates','Elon_Musk','Albert_Einstein','Plato','Aristotle',
+  'Twitter','Facebook','YouTube','TikTok','Instagram','Reddit',
+];
+
+// Country code pool for fake entries. Weighted toward English-Wikipedia
+// readership (US heavy, UK/Canada/Australia common, mix of EU/Asia/Latin
+// America for variety). Each fake entry gets a deterministic country so
+// the same fake players have the same flags every day.
+const FAKE_COUNTRIES = [
+  'US','US','US','US','US','US','US','US','US','US', // ~30% US
+  'GB','GB','GB','GB','GB',                            // 14% UK
+  'CA','CA','CA',                                       // 9% Canada
+  'AU','AU',                                            // 6% Australia
+  'IN','IN','IN',                                       // 9% India
+  'DE','DE','FR','FR','NL','SE','PL','ES','IT',         // EU mix
+  'JP','JP','KR','SG','PH','MY',                        // Asia mix
+  'BR','BR','MX','AR',                                  // Latin America
+  'NG','ZA','EG',                                       // Africa
+  'NZ','IE',                                            // Misc anglophone
+];
+
+// Tiny seedable PRNG (mulberry32) — keeps fake generation deterministic per
+// (date, daily-number) so all viewers see the exact same fake leaderboard,
+// even after server restart.
+function mulberry32(seed) {
+  return function() {
+    let t = (seed = (seed + 0x6D2B79F5) >>> 0);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function generateFakeLeaderboard(date, daily) {
+  if (!daily) return [];
+  // Seed: hash(date + dailyNumber) → stable across restarts, varies per day.
+  const seedHex = crypto.createHash('sha256').update(date + ':' + daily.dailyNumber).digest('hex').slice(0, 8);
+  const rng = mulberry32(parseInt(seedHex, 16));
+  const used = new Set();
+  const entries = [];
+  // Difficulty-aware step distribution: parDist is the optimal hop count.
+  // Most players are within +1..+5 of par, a few near-optimal, ~12% surrender.
+  const par = daily.parDist || 4;
+  for (let i = 0; i < LEADERBOARD_TARGET_SIZE; i++) {
+    // Pick unused name
+    let nameIdx;
+    do { nameIdx = Math.floor(rng() * FAKE_NAMES.length); } while (used.has(nameIdx));
+    used.add(nameIdx);
+    const name = FAKE_NAMES[nameIdx];
+    const country = FAKE_COUNTRIES[Math.floor(rng() * FAKE_COUNTRIES.length)];
+
+    // ~12% surrender, slightly biased to bottom of pool
+    const isSurrender = rng() < 0.12;
+    if (isSurrender) {
+      const steps = 1 + Math.floor(rng() * 5); // 1-5 steps before giving up
+      const closestHops = 1 + Math.floor(rng() * 4); // 1-4 hops away when they quit
+      const path = generateFakePath(daily.origin, daily.destination, steps, rng, false, date);
+      entries.push({
+        anonId: `fake-${date}-${i}`,
+        name, country,
+        won: false, steps,
+        timeMs: 30_000 + Math.floor(rng() * 240_000), // 30s-4.5m
+        closestHops,
+        path,
+        ts: Date.now(),
+        fake: true,
+      });
+      continue;
+    }
+    // Win: most cluster near par+1..par+3; a few aces (par exact); long tail to par+5
+    const overPar = (rng() < 0.15) ? 0 : Math.floor(rng() * 5) + 1; // 0, or 1-5
+    const steps = par + overPar;
+    // Time scales loosely with steps but with variance
+    const baseSec = 25 + steps * 12 + Math.floor(rng() * 60);
+    const timeMs = baseSec * 1000;
+    const path = generateFakePath(daily.origin, daily.destination, steps, rng, true, date);
+    entries.push({
+      anonId: `fake-${date}-${i}`,
+      name, country,
+      won: true, steps, timeMs,
+      closestHops: 0,
+      path,
+      ts: Date.now(),
+      fake: true,
+    });
+  }
+  return entries;
+}
+
+// Build a path that LOOKS like a real Wikipedia route. Strategy:
+//   - First hop: real outgoing link from origin (if cache warm)
+//   - Last hop (won only): real backlink to destination (if cache warm)
+//   - Middle hops: generic transit hubs that plausibly link the two
+// Falls back to all-hubs when caches are cold (first leaderboard fetch
+// before anyone has played). This means paths PROGRESSIVELY become more
+// authentic as the day's first player warms the link caches.
+function generateFakePath(origin, destination, steps, rng, won, date) {
+  const hop1Pool = (date && dailyHop1Cache.get(date)) || [];
+  const originLinkPool = (date && dailyOriginLinksCache.get(date)) || [];
+  const path = [origin];
+  const pickHub = () => FAKE_PATH_HUBS[Math.floor(rng() * FAKE_PATH_HUBS.length)];
+  const pickFromArr = (arr) => arr[Math.floor(rng() * arr.length)];
+
+  if (won) {
+    // Build path: origin → [originLink] → [hubs...] → [hop1] → destination
+    // Reserves hop1 for penultimate (guaranteed to link to destination).
+    const middleCount = Math.max(0, steps - 2); // hops between first and penultimate
+    if (originLinkPool.length > 0) {
+      path.push(pickFromArr(originLinkPool));
+    } else {
+      path.push(pickHub());
+    }
+    for (let i = 1; i < middleCount; i++) {
+      let cand = pickHub();
+      if (cand === path[path.length - 1]) cand = FAKE_PATH_HUBS[(FAKE_PATH_HUBS.indexOf(cand) + 1) % FAKE_PATH_HUBS.length];
+      path.push(cand);
+    }
+    if (steps >= 2) {
+      // Penultimate: real backlink to destination if available.
+      const penult = (hop1Pool.length > 0) ? pickFromArr(hop1Pool) : pickHub();
+      if (penult !== path[path.length - 1]) path.push(penult);
+      else path.push(pickHub());
+    }
+    path.push(destination);
+  } else {
+    // Surrender: terminate mid-route, didn't reach destination.
+    const intermediates = steps;
+    if (intermediates > 0 && originLinkPool.length > 0) {
+      path.push(pickFromArr(originLinkPool));
+    }
+    for (let i = path.length - 1; i < intermediates; i++) {
+      let cand = pickHub();
+      if (cand === path[path.length - 1]) cand = FAKE_PATH_HUBS[(FAKE_PATH_HUBS.indexOf(cand) + 1) % FAKE_PATH_HUBS.length];
+      path.push(cand);
+    }
+  }
+  return path;
+}
+
+function pruneOldLeaderboards() {
+  // Drop boards older than retention window so the Map doesn't grow forever.
+  // Cheap to call — runs O(dates). Also prunes the per-day link caches and
+  // the daily challenge cache to the same window so they don't drift.
+  const cutoffMs = Date.now() - MAX_LEADERBOARD_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+  const cutoffDate = utcDateStr(new Date(cutoffMs));
+  for (const date of dailyLeaderboards.keys()) {
+    if (date < cutoffDate) dailyLeaderboards.delete(date);
+  }
+  for (const date of dailyHop1Cache.keys()) {
+    if (date < cutoffDate) dailyHop1Cache.delete(date);
+  }
+  for (const date of dailyOriginLinksCache.keys()) {
+    if (date < cutoffDate) dailyOriginLinksCache.delete(date);
+  }
+  for (const date of dailyChallengeCache.keys()) {
+    if (date < cutoffDate) dailyChallengeCache.delete(date);
+  }
+  // ipCountryCache: simple LRU-ish trim if oversized. Capped to avoid the
+  // unbounded-growth attack vector from rotating client IPs.
+  const IP_CACHE_MAX = 10000;
+  if (ipCountryCache.size > IP_CACHE_MAX) {
+    const overshoot = ipCountryCache.size - IP_CACHE_MAX;
+    const it = ipCountryCache.keys();
+    for (let i = 0; i < overshoot; i++) ipCountryCache.delete(it.next().value);
+  }
+}
+
+function addLeaderboardEntry(date, entry) {
+  pruneOldLeaderboards();
+  let board = dailyLeaderboards.get(date);
+  if (!board) { board = []; dailyLeaderboards.set(date, board); }
+  // First-attempt-only: ignore subsequent submissions from the same anonId.
+  // Locks in the score the user committed to (Wordle/NYT model).
+  if (board.some(e => e.anonId === entry.anonId)) return false;
+  board.push(entry);
+  return true;
+}
+
+function sortLeaderboard(arr) {
+  return [...arr].sort((a, b) => {
+    if (a.won !== b.won) return a.won ? -1 : 1;
+    if (a.won) {
+      if (a.steps !== b.steps) return a.steps - b.steps;
+      return (a.timeMs || 0) - (b.timeMs || 0);
+    }
+    return (a.closestHops ?? 999) - (b.closestHops ?? 999);
+  });
+}
+
+// Returns exactly LEADERBOARD_TARGET_SIZE entries: real entries always
+// appear (substituting the worst fakes), padded with deterministic fakes
+// to keep the board lively from day one. The total never exceeds the
+// target — a real entry below the cap displaces the worst-ranked fake.
+function getLeaderboard(date, limit = LEADERBOARD_TARGET_SIZE) {
+  const real = (dailyLeaderboards.get(date) || []).filter(e => !e.fake);
+  const dailyForDate = (date === utcDateStr()) ? getDailyChallenge() : getDailyChallenge(new Date(date + 'T00:00:00Z'));
+  const fakes = generateFakeLeaderboard(date, dailyForDate);
+  const merged = sortLeaderboard([...real, ...fakes]);
+  // Real-count > limit: just trim sorted reals to limit.
+  if (real.length >= limit) return sortLeaderboard(real).slice(0, limit);
+  // Take top `limit` from merged, then SUBSTITUTE: any real entry that fell
+  // below `limit` swaps with the worst-ranked fake currently in the top.
+  let top = merged.slice(0, limit);
+  for (let i = limit; i < merged.length; i++) {
+    if (merged[i].fake) continue;
+    const realE = merged[i];
+    for (let j = top.length - 1; j >= 0; j--) {
+      if (top[j].fake) { top.splice(j, 1); top.push(realE); break; }
+    }
+  }
+  return sortLeaderboard(top);
+}
+
+// Called from game_over sites for daily rooms. Idempotent — relies on
+// addLeaderboardEntry's first-attempt-only guard (per anonId).
+function submitDailyToLeaderboard(room, gaveUp) {
+  if (!room.daily || !room.dailyMeta || !room.dailyAnonId) return;
+  if (room.dailySubmitted) return;
+  room.dailySubmitted = true;
+  // Singleplayer rooms have one entry; if multiplayer dailies are added later
+  // this loop already supports multiple players per room.
+  for (const [pid, rp] of room.players.entries()) {
+    const distances = (rp.distances || []).filter(d => d != null && Number.isFinite(d));
+    addLeaderboardEntry(room.dailyMeta.date, {
+      anonId: room.dailyAnonId,
+      name: room.dailyName || 'Anonymous',
+      country: room.dailyCountry || null,
+      won: !gaveUp && rp.finished,
+      steps: Math.max(0, (rp.path?.length || 1) - 1),
+      timeMs: rp.finishTime || (room.startTime ? Date.now() - room.startTime : null),
+      closestHops: distances.length ? Math.min(...distances) : null,
+      // Full path lets the leaderboard's click-to-expand show real player
+      // routes. Capped to keep payloads bounded if someone visits 100 articles.
+      path: Array.isArray(rp.path) ? rp.path.slice(0, 50) : [],
+      ts: Date.now(),
+      fake: false,
+    });
+  }
+}
+
+// Pick a pair for a single date from the curated pool, optionally filtering
+// out pairs whose origin/destination role-collide with previously-used words.
+// Note: a previous origin CAN reappear as a future destination (and vice
+// versa) — only same-role reuse is blocked.
+//
+// Fallback ladder (each step relaxes more) when the strict filter empties:
+//   1. both origin AND destination unique          (best — strict no-repeat)
+//   2. destination unique (origin may repeat)      (preserves variety where it matters most)
+//   3. origin unique (destination may repeat)
+//   4. full curated pool                            (last resort — repeats expected)
+function pickDailyPairForDate(date, usedOrigins, usedDestinations) {
+  const ymd = utcDateStr(date);
+  const seed = parseInt(crypto.createHash('sha256').update(ymd).digest('hex').slice(0, 8), 16);
+  const fullPool = puzzlePools.en?.pairs || [];
+  const curated = fullPool.filter(p => p.viewRange?.[0] >= 500000 && p.dist >= 3);
+  let pool = curated.length > 0 ? curated : fullPool;
+  if (usedOrigins && usedDestinations) {
+    const candidates = [
+      pool.filter(p => !usedOrigins.has(p.origin) && !usedDestinations.has(p.destination)),
+      pool.filter(p => !usedDestinations.has(p.destination)),
+      pool.filter(p => !usedOrigins.has(p.origin)),
+      pool,
+    ];
+    pool = candidates.find(c => c.length > 0) || pool;
+  }
+  if (pool.length === 0) return null;
+  return pool[seed % pool.length];
+}
+
+// Cache resolved dailies per date. The walk-from-launch logic is O(N days),
+// so caching matters once we're 30+ days deep. Lost on restart but determinism
+// guarantees identical results when rebuilt.
+const dailyChallengeCache = new Map();
+
+// Resolve today's (or any date's) daily challenge. Walks forward from launch
+// to the requested date, accumulating used origins/destinations and picking
+// each day's pair under the no-repeat constraint. Same-role reuse blocked;
+// cross-role swaps allowed (yesterday's destination → today's origin OK).
+function getDailyChallenge(date = new Date()) {
+  const ymd = utcDateStr(date);
+  if (dailyChallengeCache.has(ymd)) return dailyChallengeCache.get(ymd);
+  const targetMs = Date.parse(ymd + 'T00:00:00Z');
+  if (isNaN(targetMs) || targetMs < DAILY_LAUNCH_MS) return null;
+  const usedOrigins = new Set();
+  const usedDestinations = new Set();
+  let result = null;
+  for (let cur = DAILY_LAUNCH_MS; cur <= targetMs; cur += DAY_MS) {
+    const curDate = new Date(cur);
+    const curYmd = utcDateStr(curDate);
+    if (dailyChallengeCache.has(curYmd)) {
+      const cached = dailyChallengeCache.get(curYmd);
+      if (cached) {
+        usedOrigins.add(cached.origin);
+        usedDestinations.add(cached.destination);
+      }
+      if (curYmd === ymd) result = cached;
+      continue;
+    }
+    const pair = pickDailyPairForDate(curDate, usedOrigins, usedDestinations);
+    if (!pair) { dailyChallengeCache.set(curYmd, null); continue; }
+    const dailyNumber = Math.max(1, Math.floor((cur - DAILY_LAUNCH_MS) / DAY_MS) + 1);
+    const entry = {
+      date: curYmd,
+      dailyNumber,
+      origin: pair.origin,
+      destination: pair.destination,
+      parDist: pair.dist,
+    };
+    dailyChallengeCache.set(curYmd, entry);
+    // For PAST days, accumulate before processing the next day. For the
+    // requested day itself we don't add to the sets — they're a snapshot
+    // of what was used BEFORE today.
+    if (cur < targetMs) {
+      usedOrigins.add(pair.origin);
+      usedDestinations.add(pair.destination);
+    }
+    if (curYmd === ymd) result = entry;
+  }
+  return result;
+}
 
 // Range overlap: does entry's viewRange overlap with requested?
 // Null requested range = accept anything.
@@ -1466,6 +1924,8 @@ async function endMarathonForRoom(room, roomCode) {
     mode: 'marathon',
     results,
     durationKey: room.marathon.durationKey,
+    daily: !!room.daily,
+    dailyMeta: room.dailyMeta || null,
   });
   logEvent('game_over', {
     roomCode, mode: 'marathon',
@@ -1747,7 +2207,7 @@ function checkWin(room, rp, article) {
   }
 }
 
-async function handleAction(playerId, msg) {
+async function handleAction(playerId, msg, req = null) {
   console.log(`[${playerId.slice(0,8)}] ${msg.type}`, msg.type === 'navigate' ? msg.article : '');
 
   switch (msg.type) {
@@ -1997,12 +2457,15 @@ async function handleAction(playerId, msg) {
             visited: p.visited,
             distances: p.distances || [],
           }));
+          if (room.daily) submitDailyToLeaderboard(room, false);
           broadcastToRoom(player.roomCode, {
             type: 'game_over',
             winner: rp.name,
             results,
             mode: room.mode,
             targets: room.mode === 'tri' ? (room.triple?.targets || null) : null,
+            daily: !!room.daily,
+            dailyMeta: room.dailyMeta || null,
           });
           logEvent('game_over', {
             roomCode: player.roomCode,
@@ -2271,6 +2734,69 @@ async function handleAction(playerId, msg) {
       return { ok: true };
     }
 
+    case 'update_daily_name': {
+      // Late name update — fires after the result screen prompts the user.
+      // Allows updating only the entry tied to this player's anonId.
+      const player = players.get(playerId);
+      if (!player) return { ok: false };
+      const room = rooms.get(player.roomCode);
+      if (!room || !room.daily || !room.dailyAnonId || !room.dailyMeta) {
+        return { ok: false, error: 'No active daily room' };
+      }
+      const newName = (msg.name || '').toString().slice(0, MAX_NAME_LEN).trim() || 'Anonymous';
+      room.dailyName = newName;
+      const board = dailyLeaderboards.get(room.dailyMeta.date);
+      if (board) {
+        const entry = board.find(e => e.anonId === room.dailyAnonId);
+        if (entry) entry.name = newName;
+      }
+      return { ok: true };
+    }
+
+    case 'start_daily': {
+      // Daily challenge: same A→B for everyone today, classic mode, locked
+      // to today's puzzle (client-supplied origin/destination ignored).
+      const daily = getDailyChallenge();
+      if (!daily) return { ok: false, error: 'Daily challenge not available' };
+      // Warm caches so fake leaderboard paths use real Wikipedia link data.
+      // No-op if already warm; runs once per (date, server-process).
+      warmDailyLinkCaches(daily);
+      const code = generateRoomCode();
+      const name = (msg.name || 'Anonymous').toString().slice(0, MAX_NAME_LEN);
+      // Stable per-browser identity for leaderboard dedup. Falls back to a
+      // server-generated id if client didn't send one (locks down only for
+      // the duration of this game; no cross-day enforcement in that case).
+      const anonId = (msg.anonId || crypto.randomBytes(8).toString('hex')).toString().slice(0, MAX_ANONID_LEN);
+      // Country detection runs in the background — don't block the game start
+      // on a geo lookup. The result lands on the room before game_over fires
+      // (typical games last >1s, lookup completes in <1.5s).
+      const country = req ? await Promise.race([
+        getCountryForReq(req),
+        new Promise(r => setTimeout(() => r(null), COUNTRY_LOOKUP_TIMEOUT_MS)),
+      ]).catch(() => null) : null;
+      const player = players.get(playerId);
+      if (player) { player.name = name; player.roomCode = code; }
+      const room = initRoom(code, playerId, name, 'en');
+      room.singlePlayer = true;
+      room.daily = true;
+      room.dailyMeta = { date: daily.date, dailyNumber: daily.dailyNumber };
+      room.dailyAnonId = anonId;
+      room.dailyName = name;
+      room.dailyCountry = country; // null if undetectable; client just hides flag
+      room.mode = 'classic';
+      // Lock to "all articles" difficulty — daily must be identical for all
+      // players, so we pin to the most permissive viewRange.
+      room.viewRange = parseViewRange(null);
+      room.manualArticles = { origin: daily.origin, destination: daily.destination };
+      rooms.set(code, room);
+      sendSSE(playerId, {
+        type: 'room_created', code, playerId, singlePlayer: true, lang: 'en',
+        daily: true, dailyMeta: room.dailyMeta,
+      });
+      startGameForRoom(room, code);
+      return { ok: true, code, daily: room.dailyMeta };
+    }
+
     case 'start_single': {
       const code = generateRoomCode();
       const name = (msg.name || 'Single Player').slice(0, 20);
@@ -2419,6 +2945,7 @@ function finalizeGiveUp(room, roomCode) {
     visited: p.visited,
     distances: p.distances || [],
   }));
+  if (room.daily) submitDailyToLeaderboard(room, true);
   broadcastToRoom(roomCode, {
     type: 'game_over',
     gaveUp: true,
@@ -2428,6 +2955,8 @@ function finalizeGiveUp(room, roomCode) {
     // generation completes (Wikipedia error path can leave started=false +
     // triple=null). Avoids "Cannot read properties of null" throws.
     targets: room.mode === 'tri' ? (room.triple?.targets || null) : null,
+    daily: !!room.daily,
+    dailyMeta: room.dailyMeta || null,
   });
   logEvent('game_over', {
     roomCode,
@@ -2520,6 +3049,44 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
     res.end();
+    return;
+  }
+
+  // Daily leaderboard for a given date (default: today). Public, anonymous,
+  // capped at 25 entries. Cache-Control: no-store so each result-screen view
+  // gets the freshest standings.
+  if (parsed.pathname === '/daily/leaderboard' && req.method === 'GET') {
+    const date = (parsed.query.date && /^\d{4}-\d{2}-\d{2}$/.test(parsed.query.date))
+      ? parsed.query.date
+      : utcDateStr();
+    const entries = getLeaderboard(date);
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store',
+    });
+    res.end(JSON.stringify({ date, entries, count: entries.length }));
+    return;
+  }
+
+  // Today's daily challenge as JSON. Used by the home screen to show the
+  // "Daily Challenge #N: A → B" preview without forcing the client to also
+  // know the puzzle pool. Cached for 5 min — same puzzle for 24h, but a
+  // shorter cache lets us push a hot-fix to the picker without 24h drag.
+  if (parsed.pathname === '/daily') {
+    const c = getDailyChallenge();
+    if (!c) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'pool_not_loaded' }));
+      return;
+    }
+    // Warm link caches in the background — by the time someone fetches
+    // /daily/leaderboard, the fakes will use real link data.
+    warmDailyLinkCaches(c);
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'public, max-age=300',
+    });
+    res.end(JSON.stringify(c));
     return;
   }
 
@@ -2727,7 +3294,7 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ ok: false, error: 'Invalid CSRF token' }));
         return;
       }
-      const result = await handleAction(playerId, msg);
+      const result = await handleAction(playerId, msg, req);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(result || { ok: true }));
     } catch (e) {

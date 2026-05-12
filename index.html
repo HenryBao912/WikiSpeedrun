@@ -666,6 +666,446 @@
     50% { transform: rotate(30deg) translateX(100%); }
   }
 
+  /* ─── Daily Result Strip — design system 7 (handoff) ───
+     Sibling card to the standard path card; subtle purple tint marks it as
+     daily-specific. All tokens reused from the existing system. */
+  .dr-strip {
+    margin-top: 12px;
+    background: var(--surface);
+    border-radius: var(--radius);
+    overflow: hidden;
+    border: 1px solid rgba(108, 92, 231, 0.18);
+    position: relative;
+    width: 100%;
+    max-width: 520px;
+  }
+  .dr-strip::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(180deg, rgba(108, 92, 231, 0.06), transparent 35%);
+  }
+  .dr-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    position: relative;
+  }
+  .dr-daily-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: var(--radius-sm);
+    background: rgba(108, 92, 231, 0.15);
+    border: 1px solid rgba(108, 92, 231, 0.3);
+    color: #c084fc;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+  }
+  .dr-streak-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: 99px;
+    background: rgba(249, 115, 22, 0.12);
+    border: 1px solid rgba(249, 115, 22, 0.35);
+    color: #f97316;
+    font-size: 0.78rem;
+    font-weight: 700;
+  }
+  .dr-streak-pill b { color: #fb923c; font-weight: 800; }
+  .dr-streak-pill .flame { filter: drop-shadow(0 0 4px rgba(249, 115, 22, 0.5)); }
+  .dr-lb { padding: 8px 14px 4px; position: relative; }
+  .dr-lb-title {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--text2);
+    text-transform: uppercase;
+    letter-spacing: 1.4px;
+    text-align: center;
+    padding: 6px 0 10px;
+  }
+  /* Scrolling viewport sized to show top 5 rows by default; users can scroll
+     to see the rest (target 25). Subtle gradient fades the bottom to hint
+     at more content. */
+  .dr-lb-scroll {
+    max-height: 232px; /* ~5 rows × 44px + gaps; tuned to design */
+    overflow-y: auto;
+    position: relative;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(168, 85, 247, 0.4) transparent;
+  }
+  .dr-lb-scroll::-webkit-scrollbar { width: 6px; }
+  .dr-lb-scroll::-webkit-scrollbar-thumb { background: rgba(168, 85, 247, 0.4); border-radius: 3px; }
+  .dr-lb-scroll::-webkit-scrollbar-track { background: transparent; }
+  /* Center the leaderboard within the strip (in case parent is wider). */
+  .dr-strip { margin-left: auto; margin-right: auto; }
+  .dr-row {
+    display: grid;
+    grid-template-columns: 28px 1fr auto auto;
+    gap: 12px;
+    align-items: center;
+    padding: 7px 8px;
+    border-radius: var(--radius-sm);
+    font-size: 0.86rem;
+    margin-bottom: 2px;
+    transition: background 0.15s;
+    cursor: pointer;
+  }
+  .dr-row:hover { background: rgba(255, 255, 255, 0.04); }
+  .dr-row.you {
+    background: rgba(168, 85, 247, 0.18);
+    border: 1px solid rgba(168, 85, 247, 0.45);
+  }
+  .dr-row.surrender { opacity: 0.55; }
+  /* When YOUR row is also a surrender, soften the dim slightly so the
+     highlight still reads. */
+  .dr-row.you.surrender { opacity: 0.85; }
+  .dr-rank {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-weight: 700;
+    color: var(--text2);
+    text-align: center;
+    font-size: 0.82rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .dr-rank.r1 { color: #facc15; font-size: 1.05rem; }
+  .dr-rank.r2 { color: #cbd5e1; font-size: 1.05rem; }
+  .dr-rank.r3 { color: #fb923c; font-size: 1.05rem; }
+  .dr-name {
+    font-weight: 600;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .dr-name .you-tag {
+    color: #c084fc;
+    font-weight: 700;
+    margin-left: 4px;
+    font-size: 0.78rem;
+  }
+  /* Flag emoji follows the name. Mac/iOS render fully colored; on Windows
+     the OS may show 2-letter pairs instead — acceptable fallback. */
+  .dr-name .dr-flag {
+    margin-left: 6px;
+    font-size: 0.95rem;
+    vertical-align: middle;
+    line-height: 1;
+  }
+  .dr-steps {
+    font-family: ui-monospace, monospace;
+    font-weight: 700;
+    color: var(--text);
+    font-size: 0.8rem;
+  }
+  .dr-time {
+    font-family: ui-monospace, monospace;
+    color: var(--text2);
+    font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .dr-empty {
+    text-align: center;
+    padding: 22px 12px;
+    color: var(--text2);
+    font-size: 0.88rem;
+  }
+  .dr-empty b {
+    display: block;
+    color: #c084fc;
+    font-weight: 800;
+    font-size: 1rem;
+    margin-bottom: 4px;
+  }
+  .dr-skel {
+    height: 30px;
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: var(--radius-sm);
+    margin: 4px 0;
+    position: relative;
+    overflow: hidden;
+  }
+  .dr-skel::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(168, 85, 247, 0.18), transparent);
+    animation: drSkel 1.6s linear infinite;
+  }
+  @keyframes drSkel {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(100%); }
+  }
+  .dr-share {
+    display: block;
+    width: calc(100% - 28px);
+    margin: 8px 14px 12px;
+    padding: 12px;
+    border: none;
+    border-radius: var(--radius);
+    background: linear-gradient(135deg, #10b981, #059669);
+    color: #fff;
+    font-weight: 700;
+    font-size: 0.95rem;
+    letter-spacing: 0.3px;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgba(16, 185, 129, 0.3);
+    transition: transform 0.12s, box-shadow 0.15s;
+    font-family: inherit;
+  }
+  .dr-share:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(16, 185, 129, 0.4); }
+  .dr-share .check { margin-right: 6px; }
+  .dr-foot {
+    text-align: center;
+    font-size: 0.78rem;
+    color: var(--text2);
+    padding: 0 14px 14px;
+    font-style: italic;
+  }
+
+  /* Expanded path view inside a leaderboard row — shows the player's full
+     route. Origin/destination collapsed to colored circles to save space:
+     purple = origin, green = destination, neutral pills for intermediates. */
+  .dr-path {
+    display: none;
+    grid-column: 1 / -1;
+    margin-top: 6px;
+    padding: 8px 4px 4px;
+    border-top: 1px dashed rgba(255, 255, 255, 0.08);
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.78rem;
+  }
+  .dr-row.expanded .dr-path { display: flex; }
+  .dr-row.expanded { background: rgba(168, 85, 247, 0.06); }
+  .dr-row.expanded.you { background: rgba(168, 85, 247, 0.22); }
+  .dr-circle {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .dr-circle.origin { background: var(--accent); box-shadow: 0 0 0 2px rgba(108, 92, 231, 0.3); }
+  .dr-circle.dest { background: var(--green); box-shadow: 0 0 0 2px rgba(0, 184, 148, 0.3); }
+  .dr-step {
+    padding: 2px 8px;
+    border-radius: 99px;
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text);
+    font-size: 0.72rem;
+    font-weight: 600;
+    white-space: nowrap;
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .dr-arrow-sm {
+    color: var(--text2);
+    font-size: 0.7rem;
+    opacity: 0.5;
+  }
+  .dr-row .expand-hint {
+    grid-column: 1 / -1;
+    text-align: center;
+    color: var(--text2);
+    font-size: 0.7rem;
+    margin-top: 2px;
+    opacity: 0.5;
+    display: none;
+  }
+
+  /* Name prompt modal — fires once on first daily completion if no localStorage
+     name. Plain centered modal, doesn't gate the leaderboard load. */
+  .name-modal-bg {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    z-index: 3000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    animation: nmFade 0.2s ease;
+  }
+  @keyframes nmFade { from { opacity: 0; } to { opacity: 1; } }
+  .name-modal {
+    background: var(--surface);
+    border: 1px solid rgba(168, 85, 247, 0.3);
+    border-radius: var(--radius);
+    padding: 22px 22px 18px;
+    max-width: 360px;
+    width: 100%;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  }
+  .name-modal h3 {
+    color: var(--text);
+    font-size: 1.05rem;
+    font-weight: 800;
+    margin: 0 0 4px;
+  }
+  .name-modal p {
+    color: var(--text2);
+    font-size: 0.82rem;
+    margin: 0 0 14px;
+  }
+  .name-modal input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    color: var(--text);
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin-bottom: 12px;
+    box-sizing: border-box;
+  }
+  .name-modal input:focus {
+    outline: none;
+    border-color: rgba(168, 85, 247, 0.6);
+  }
+  .name-modal-btns {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+  }
+  .name-modal-btns button {
+    padding: 8px 16px;
+    border-radius: var(--radius-sm);
+    border: none;
+    font-size: 0.88rem;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: inherit;
+    transition: opacity 0.15s, transform 0.12s;
+  }
+  .name-modal-btns .skip {
+    background: transparent;
+    color: var(--text2);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  .name-modal-btns .save {
+    background: linear-gradient(135deg, #a855f7, #ec4899);
+    color: #fff;
+  }
+  .name-modal-btns button:hover { transform: translateY(-1px); }
+
+  /* Leaderboard modal — opened from home button when user already played
+     today. Reuses the .dr-strip styling but inside an overlay. */
+  .lb-modal {
+    position: relative;
+    max-width: 540px;
+    width: 100%;
+    animation: nmFade 0.2s ease;
+  }
+  .lbm-strip-host { display: flex; justify-content: center; }
+  .lbm-strip-host .dr-strip { margin-top: 0; }
+  .lbm-close {
+    position: absolute;
+    top: -38px;
+    right: -8px;
+    background: var(--surface2);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--text);
+    font-size: 1.2rem;
+    font-weight: 700;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    transition: opacity 0.15s, transform 0.12s;
+  }
+  .lbm-close:hover { transform: scale(1.05); opacity: 0.85; }
+
+  /* Daily Challenge home button — original height preserved; corner
+     pills are absolute-positioned flush with the top edge of the box,
+     the label sits in normal flow centered like before. */
+  .home-btn.quick {
+    position: relative;
+    /* Same padding as the original Quick Play button — height unchanged. */
+  }
+  .home-btn .dc-corner-l,
+  .home-btn .dc-corner-r {
+    position: absolute;
+    top: 4px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-weight: 700;
+    font-size: 0.7rem;
+    padding: 2px 8px;
+    border-radius: 99px;
+    background: rgba(0, 0, 0, 0.22);
+    color: #fff;
+    letter-spacing: 0.4px;
+    line-height: 1.1;
+    pointer-events: none;
+  }
+  .home-btn .dc-corner-l { left: 8px; }
+  .home-btn .dc-corner-r { right: 8px; display: inline-flex; align-items: center; gap: 4px; }
+  .home-btn .dc-corner-r .clock { font-size: 0.72rem; opacity: 0.85; }
+  .home-btn .dc-label {
+    display: block;
+    text-align: center;
+    font-size: 1.22rem;
+    font-weight: 800;
+    letter-spacing: 0.2px;
+  }
+
+  /* In-game Daily indicator pill (sits in .game-stats next to the timer). */
+  .gh-daily {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: rgba(108, 92, 231, 0.15);
+    border: 1px solid rgba(108, 92, 231, 0.3);
+    color: #c084fc;
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  /* Result-screen toast (success ✓ green / failure ✕ red). */
+  .share-toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--surface2);
+    color: var(--text);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 10px 16px;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-md, 0 4px 12px rgba(0,0,0,0.2));
+    z-index: 2000;
+    font-size: 0.85rem;
+    font-weight: 600;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+  }
+  .share-toast.show { opacity: 1; }
+  .share-toast .check { color: var(--green); margin-right: 6px; font-weight: 800; }
+  .share-toast .cross { color: var(--red); margin-right: 6px; font-weight: 800; }
+  .share-toast.fail { color: var(--red); }
+
   /* ─── Single Player Setup Screen ─── */
   #sp-setup {
     flex-direction: column;
@@ -3671,9 +4111,16 @@
       <span class="logo-arrow">→</span>
       <span class="logo-link dest" id="heroLink4"><span class="logo-link-inner">Evolution</span></span>
     </div>
-    <p class="logo-sub">Navigate Wikipedia | Race to the destination</p>
+    <p class="logo-sub">Navigate Wikipedia | Race to destination</p>
     <div class="home-buttons home-buttons-primary">
-      <button class="home-btn quick" onclick="quickPlay(this)"><span>Quick Play</span></button>
+      <!-- Daily Challenge: same puzzle for everyone today. Badge top-left
+           (#N), label centered, countdown to next daily top-right. Both
+           corners populated by hydrateDailyBadge() / startDailyCountdown(). -->
+      <button class="home-btn quick" onclick="startDailyFromHome(this)">
+        <span class="dc-corner-l" id="dailyHomeBadge">#—</span>
+        <span class="dc-label">Daily Challenge</span>
+        <span class="dc-corner-r"><span class="clock">⏱</span><span id="dailyCountdown">—:—:—</span></span>
+      </button>
     </div>
     <div class="home-buttons">
       <button class="home-btn sp" onclick="selectMode('singleplayer')"><span>Singleplayer</span></button>
@@ -3894,6 +4341,9 @@
       </div>
     </div>
     <div class="game-stats">
+      <!-- Daily indicator pill — only shown when this is a daily run.
+           Toggled visible by the room_created handler when daily=true. -->
+      <span class="gh-daily" id="dailyGameIndicator" style="display:none">Daily #—</span>
       <span class="stats-classic-tri"><span>Steps: <span class="stat-val" id="stepCount">0</span></span></span>
       <span>Time: <span class="stat-val" id="timerDisplay">0:00</span></span>
       <button class="surrender-btn" onclick="sendGiveUpVote()">Surrender</button>
@@ -4231,6 +4681,9 @@ function showScreen(id) {
   // setup screen. Clearing here covers every path (success, retry, going home)
   // without each handler having to remember to reset its own button.
   document.querySelectorAll('.btn-loading').forEach(b => b.classList.remove('btn-loading'));
+  // Returning to home: refresh the daily button label (Daily Challenge ↔
+  // View Leaderboard depending on today's-completion state).
+  if (id === 'home' && typeof applyDailyButtonState === 'function') applyDailyButtonState();
 }
 
 // ─── SSE Connection ───
@@ -4370,6 +4823,9 @@ async function send(msg) {
   } catch(e) {
     console.error('[HTTP] Send error:', e);
     showError('mpError', 'Failed to send action. Is the server running?');
+    // Always return a structured failure so callers doing `if (!result.ok)`
+    // don't NPE on undefined. Mirrors the error shape of server responses.
+    return { ok: false, error: 'network' };
   }
 }
 
@@ -4445,8 +4901,451 @@ function selectMode(choice) {
   else if (choice === 'multiplayer') showScreen('mp-setup');
 }
 
-// One-click game: classic mode, default difficulty, server-picked random pair.
-// Skips sp-setup entirely to cut the landing→playing path to a single tap.
+// ─── Daily Challenge ───
+// Same puzzle for everyone today (driven by server's /daily picker).
+// Streak + leaderboard provide the retention loop:
+//   - localStorage tracks personal streak + today's committed result
+//   - Server tracks the per-day leaderboard (same puzzle = comparable scores)
+// One committed attempt per UTC day (server enforces via stable anonId).
+const DAILY_STORAGE_KEY = 'wsr_daily_state';
+const DAILY_ANON_KEY = 'wsr_anon_id';
+const DAILY_NAME_KEY = 'wsr_player_name';
+let cachedDaily = null;
+let cachedLeaderboard = null;
+let dailyResultRecorded = false; // dedupe across MP-style game_over rebroadcasts
+
+function loadDailyState() {
+  try {
+    const raw = localStorage.getItem(DAILY_STORAGE_KEY);
+    const s = raw ? JSON.parse(raw) : null;
+    return {
+      v: 1,
+      lastPlayedDate: s?.lastPlayedDate || null,
+      streak: s?.streak || 0,
+      longestStreak: s?.longestStreak || 0,
+      todayResult: s?.todayResult || null,
+    };
+  } catch { return { v: 1, lastPlayedDate: null, streak: 0, longestStreak: 0, todayResult: null }; }
+}
+function saveDailyState(s) {
+  try { localStorage.setItem(DAILY_STORAGE_KEY, JSON.stringify(s)); } catch {}
+}
+function getTodayResult(state, todayDate) {
+  return (state.todayResult && state.todayResult.date === todayDate) ? state.todayResult : null;
+}
+function getOrCreateAnonId() {
+  let id = localStorage.getItem(DAILY_ANON_KEY);
+  if (!id) {
+    id = (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36));
+    try { localStorage.setItem(DAILY_ANON_KEY, id); } catch {}
+  }
+  return id;
+}
+function getPlayerName() {
+  return (localStorage.getItem(DAILY_NAME_KEY) || '').slice(0, 20);
+}
+function setPlayerName(n) {
+  try { localStorage.setItem(DAILY_NAME_KEY, (n || '').slice(0, 20)); } catch {}
+}
+
+// Hydrate the small `#N` badge inside the Daily Challenge button on home,
+// AND morph the button label depending on whether the user has played today.
+// Played → button becomes "View Leaderboard" + opens the leaderboard modal
+// instead of starting a fresh game.
+async function hydrateDailyBadge() {
+  try {
+    const r = await fetch('/daily', { cache: 'no-store' });
+    if (!r.ok) return;
+    cachedDaily = await r.json();
+    const b = document.getElementById('dailyHomeBadge');
+    if (b && cachedDaily?.dailyNumber != null) b.textContent = '#' + cachedDaily.dailyNumber;
+  } catch { /* badge stays at #— on failure — button still works */ }
+  applyDailyButtonState();
+}
+
+// Switch the home CTA based on today's-completion state. Called after we
+// know today's daily date AND any time the user returns to home.
+function applyDailyButtonState() {
+  if (!cachedDaily) return;
+  const state = loadDailyState();
+  const todayResult = getTodayResult(state, cachedDaily.date);
+  const label = document.querySelector('.home-btn.quick .dc-label');
+  if (!label) return;
+  if (todayResult) {
+    label.textContent = 'View Leaderboard';
+  } else {
+    label.textContent = 'Daily Challenge';
+  }
+}
+
+// Countdown to next daily (midnight UTC). Updates every second; on rollover
+// re-fetches /daily so the home badge picks up the new daily number.
+let dailyCountdownTimer = null;
+function startDailyCountdown() {
+  if (dailyCountdownTimer) clearInterval(dailyCountdownTimer);
+  const tick = async () => {
+    const el = document.getElementById('dailyCountdown');
+    if (!el) return;
+    const now = new Date();
+    const tomorrow = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+    const diff = Math.max(0, tomorrow - now);
+    const h = Math.floor(diff / 3600000);
+    const m = Math.floor((diff % 3600000) / 60000);
+    const s = Math.floor((diff % 60000) / 1000);
+    el.textContent = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    if (diff < 1100) {
+      // Crossed midnight UTC — refresh badge for new daily number.
+      setTimeout(hydrateDailyBadge, 500);
+    }
+  };
+  tick();
+  dailyCountdownTimer = setInterval(tick, 1000);
+}
+document.addEventListener('DOMContentLoaded', () => { hydrateDailyBadge(); startDailyCountdown(); });
+
+// Home Daily Challenge button — single CTA, two modes:
+//   - Not yet played today → starts the daily game
+//   - Already played today → opens a modal showing today's leaderboard +
+//     the user's submitted result + share button (no fresh game start)
+async function startDailyFromHome(btn) {
+  // If the user has already played today, route to the leaderboard view
+  // instead of starting another game (their committed result is locked in).
+  if (cachedDaily) {
+    const state = loadDailyState();
+    const todayResult = getTodayResult(state, cachedDaily.date);
+    if (todayResult) {
+      openLeaderboardModal(todayResult, state);
+      return;
+    }
+  }
+  setBtnLoading(btn, true);
+  try {
+    await connectSSE();
+    isSinglePlayer = true;
+    isQuickPlaySession = false;
+    currentGameMode = 'classic';
+    dailyResultRecorded = false;
+    const result = await send({
+      type: 'start_daily',
+      name: getPlayerName() || 'Anonymous',
+      anonId: getOrCreateAnonId(),
+    });
+    if (!result.ok) {
+      showGlobalToast(result.error || 'Could not start daily challenge');
+      setBtnLoading(btn, false);
+    } else {
+      currentRoomCode = result.code;
+      isHost = true;
+      // Pre-fetch /daily so we know the puzzle date locally for streak math.
+      try { cachedDaily = await fetch('/daily', { cache: 'no-store' }).then(r => r.json()); } catch {}
+    }
+  } catch (e) {
+    setBtnLoading(btn, false);
+    showGlobalToast('Connection failed');
+  }
+}
+
+// Called from game_over handler when msg.daily=true. Idempotent (dedupe via
+// dailyResultRecorded flag) since some game-end paths can fire twice.
+function recordDailyResult(msg) {
+  if (!msg.daily || !msg.dailyMeta || dailyResultRecorded) return null;
+  const meta = msg.dailyMeta;
+  const myR = msg.results?.find(r => r.id === myPlayerId) || msg.results?.[0] || {};
+  const distances = (myR.distances || []).filter(d => d != null && Number.isFinite(d));
+  const won = !msg.gaveUp;
+  const result = {
+    date: meta.date,
+    dailyNumber: meta.dailyNumber,
+    won,
+    steps: Math.max(0, (myR.path?.length || 1) - 1),
+    timeMs: myR.time || null,
+    closestHops: distances.length ? Math.min(...distances) : null,
+  };
+  const state = loadDailyState();
+  const wasFirstToday = !state.todayResult || state.todayResult.date !== meta.date;
+  if (wasFirstToday) {
+    // Compute "yesterday" in UTC from the puzzle date — keeps streak math
+    // consistent with the server's day boundary.
+    const yDate = new Date(meta.date + 'T00:00:00Z');
+    yDate.setUTCDate(yDate.getUTCDate() - 1);
+    const yesterday = yDate.toISOString().slice(0, 10);
+    state.streak = (state.lastPlayedDate === yesterday) ? (state.streak + 1) : 1;
+    state.lastPlayedDate = meta.date;
+    state.longestStreak = Math.max(state.longestStreak || 0, state.streak);
+  }
+  state.todayResult = result;
+  saveDailyState(state);
+  dailyResultRecorded = true;
+  return { state, result };
+}
+
+// Open a modal showing today's leaderboard + the user's stored result.
+// Used when an already-played user re-enters from home. Reuses the same
+// dr-strip rendering as the post-game result screen for consistency.
+function openLeaderboardModal(todayResult, state) {
+  // Bail if a modal is already open
+  if (document.getElementById('leaderboardModalBg')) return;
+  const dailyMeta = { date: cachedDaily.date, dailyNumber: cachedDaily.dailyNumber };
+  const bg = document.createElement('div');
+  bg.id = 'leaderboardModalBg';
+  bg.className = 'name-modal-bg';
+  bg.innerHTML = `
+    <div class="lb-modal" role="dialog" aria-labelledby="lbmTitle">
+      <div id="lbmStripHost" class="lbm-strip-host"></div>
+      <button class="lbm-close" id="lbmClose" aria-label="Close">×</button>
+    </div>
+  `;
+  document.body.appendChild(bg);
+  // Render strip into the modal host (same code path as result screen).
+  // Clone the renderer logic by temporarily redirecting to the modal's host.
+  const host = document.getElementById('lbmStripHost');
+  const origGet = document.getElementById.bind(document);
+  // Mount the strip
+  const stub = document.createElement('div');
+  stub.id = 'resultsGrid'; // renderDailyResultStrip looks for this
+  host.appendChild(stub);
+  const realResultsGrid = origGet('resultsGrid'); // null if not on results screen
+  // Render strip — function appends to #resultsGrid
+  renderDailyResultStrip(dailyMeta, todayResult, state);
+  // Move the strip into our host (in case there were two #resultsGrid)
+  const strip = document.getElementById('dailyResultStrip');
+  if (strip && strip.parentElement !== host) host.appendChild(strip);
+  if (stub.parentElement === host) stub.remove();
+  const close = () => { bg.remove(); };
+  document.getElementById('lbmClose').onclick = close;
+  bg.addEventListener('click', (e) => { if (e.target === bg) close(); });
+}
+
+// Build the daily result strip (streak + leaderboard + share) appended to
+// the result screen's grid. Idempotent — replaces existing strip if any.
+// Markup matches design system 7 handoff (.dr-* classes).
+function renderDailyResultStrip(dailyMeta, todayResult, state) {
+  const grid = document.getElementById('resultsGrid');
+  if (!grid) return;
+  let strip = document.getElementById('dailyResultStrip');
+  if (strip) strip.remove();
+  strip = document.createElement('div');
+  strip.id = 'dailyResultStrip';
+  strip.className = 'dr-strip';
+  const streakHtml = state.streak > 0
+    ? `<div class="dr-streak-pill"><span class="flame">🔥</span><b>${state.streak}</b> day streak</div>`
+    : '';
+  // Share button copy varies by outcome — leading ✓ only on win per spec.
+  const shareCopy = todayResult.won
+    ? `<span class="check">✓</span>Share Result`
+    : `Share Attempt`;
+  // 4 skeleton rows while leaderboard loads. Replaced by either rows / empty
+  // state / error in fetchAndRenderLeaderboard.
+  const skeletonHtml = Array(5).fill('<div class="dr-skel"></div>').join('');
+  strip.innerHTML = `
+    <div class="dr-head">
+      <div class="dr-daily-pill">Daily Challenge #${dailyMeta.dailyNumber}</div>
+      ${streakHtml}
+    </div>
+    <div class="dr-lb" id="dailyLbContainer">
+      <div class="dr-lb-title">Today's Leaderboard</div>
+      <div class="dr-lb-scroll"><div id="dailyLbList">${skeletonHtml}</div></div>
+    </div>
+    <button class="dr-share" id="dailyShareBtn">${shareCopy}</button>
+    <div class="dr-foot">Come back tomorrow for Daily #${dailyMeta.dailyNumber + 1}</div>
+  `;
+  grid.appendChild(strip);
+  document.getElementById('dailyShareBtn').onclick = () => shareDailyResult(todayResult, state.streak);
+  fetchAndRenderLeaderboard(dailyMeta.date);
+  // Prompt for a name on first daily completion (no localStorage value yet).
+  // Defer so the result screen has a moment to settle before the modal pops.
+  if (!getPlayerName()) setTimeout(promptForName, 800);
+}
+
+async function fetchAndRenderLeaderboard(date) {
+  try {
+    const r = await fetch('/daily/leaderboard?date=' + encodeURIComponent(date), { cache: 'no-store' });
+    if (!r.ok) throw new Error('lb fetch failed');
+    cachedLeaderboard = await r.json();
+  } catch (e) {
+    const list = document.getElementById('dailyLbList');
+    if (list) list.innerHTML = '<div class="dr-empty">Couldn\'t load leaderboard</div>';
+    return;
+  }
+  renderLeaderboard();
+}
+
+// ISO-3166-1 alpha-2 country code → flag emoji. Works because flag emojis
+// are pairs of regional indicator symbols offset from A-Z by 0x1F1A5.
+function countryToFlag(code) {
+  if (!code || typeof code !== 'string' || code.length !== 2) return '';
+  const A = 0x1F1E6; // 🇦
+  const c = code.toUpperCase();
+  return String.fromCodePoint(A + c.charCodeAt(0) - 65) + String.fromCodePoint(A + c.charCodeAt(1) - 65);
+}
+
+function renderLeaderboard() {
+  const list = document.getElementById('dailyLbList');
+  if (!list || !cachedLeaderboard) return;
+  const entries = cachedLeaderboard.entries || [];
+  if (entries.length === 0) {
+    list.innerHTML = '<div class="dr-empty"><b>Be the first today!</b>Your result lands here once submitted</div>';
+    return;
+  }
+  const myAnonId = getOrCreateAnonId();
+  list.innerHTML = entries.map((e, i) => {
+    const rank = i + 1;
+    const rankCls = rank === 1 ? 'r1' : rank === 2 ? 'r2' : rank === 3 ? 'r3' : '';
+    const rankContent = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : String(rank);
+    const isMe = e.anonId === myAnonId;
+    const surrendered = !e.won;
+    const stepsTxt = e.won
+      ? `<div class="dr-steps">${e.steps} step${e.steps === 1 ? '' : 's'}</div>`
+      : `<div class="dr-steps">🏳️</div>`;
+    const timeTxt = e.won && e.timeMs
+      ? `<div class="dr-time">${esc(formatTime(e.timeMs))}</div>`
+      : `<div class="dr-time">—</div>`;
+    // Flag follows the name. Empty span when no country detected (most local
+    // dev / first-time users) so layout stays consistent.
+    const flag = countryToFlag(e.country);
+    const flagHtml = flag ? `<span class="dr-flag" title="${esc(e.country)}">${flag}</span>` : '';
+    const youTag = isMe ? `<span class="you-tag">(you)</span>` : '';
+    const rowCls = ['dr-row'];
+    if (isMe) rowCls.push('you');
+    if (surrendered) rowCls.push('surrender');
+    // Build expandable path: start/end collapsed to colored circles to save
+    // space. Intermediate steps as small pills. Hidden until row is clicked.
+    const path = Array.isArray(e.path) ? e.path : [];
+    let pathHtml = '';
+    if (path.length >= 2) {
+      const intermediates = path.slice(1, -1); // strip origin + dest
+      const intermediateHtml = intermediates.map(p =>
+        `<span class="dr-step">${esc(p.replace(/_/g, ' '))}</span><span class="dr-arrow-sm">›</span>`
+      ).join('');
+      pathHtml = `<div class="dr-path">
+        <span class="dr-circle origin" title="Origin"></span>
+        <span class="dr-arrow-sm">›</span>
+        ${intermediateHtml || '<span class="dr-step" style="opacity:0.5">—</span><span class="dr-arrow-sm">›</span>'}
+        <span class="dr-circle dest" title="Destination"></span>
+      </div>`;
+    } else if (path.length === 1) {
+      pathHtml = `<div class="dr-path"><span class="dr-circle origin"></span><span class="dr-arrow-sm">›</span><span class="dr-step" style="opacity:0.5">no further navigation</span></div>`;
+    }
+    return `<div class="${rowCls.join(' ')}" data-row-idx="${i}">
+      <div class="dr-rank ${rankCls}">${rankContent}</div>
+      <div class="dr-name">${esc(e.name || 'Anonymous')}${flagHtml}${youTag}</div>
+      ${stepsTxt}
+      ${timeTxt}
+      ${pathHtml}
+    </div>`;
+  }).join('');
+  // Wire click-to-expand. Toggle .expanded on the row.
+  list.querySelectorAll('.dr-row').forEach(row => {
+    row.addEventListener('click', () => row.classList.toggle('expanded'));
+  });
+  // Auto-scroll user's row into view if it would otherwise be below the fold.
+  // The viewport shows top 5 by default — outside-top-5 users get centered
+  // in their visible area so they always see themselves on render.
+  const myRow = list.querySelector('.dr-row.you');
+  const scroller = document.querySelector('.dr-lb-scroll');
+  if (myRow && scroller) {
+    // Use offsetTop instead of scrollIntoView to avoid scrolling the page.
+    const rowTop = myRow.offsetTop;
+    const visibleH = scroller.clientHeight;
+    if (rowTop > visibleH * 0.6) {
+      scroller.scrollTop = Math.max(0, rowTop - visibleH / 2 + myRow.offsetHeight / 2);
+    }
+  }
+}
+
+function buildDailyShareText(result, streak) {
+  const lines = [`WikiSpeedrun Daily #${result.dailyNumber}`];
+  if (cachedDaily) {
+    lines.push(`${cachedDaily.origin.replace(/_/g, ' ')} → ${cachedDaily.destination.replace(/_/g, ' ')}`);
+  }
+  if (result.won) {
+    lines.push(`✅ ${result.steps} step${result.steps === 1 ? '' : 's'}${result.timeMs ? ' · ' + formatTime(result.timeMs) : ''}`);
+  } else {
+    lines.push(`🏳️ Surrendered${result.closestHops != null ? ' · closest ' + result.closestHops + ' hop' + (result.closestHops === 1 ? '' : 's') : ''}`);
+  }
+  if (streak > 0) lines.push(`🔥 ${streak} day streak`);
+  lines.push('https://wikispeedrun.io');
+  return lines.join('\n');
+}
+
+async function shareDailyResult(result, streak) {
+  const text = buildDailyShareText(result, streak);
+  // Native share sheet on mobile is the highest-conversion path. Fall back
+  // to clipboard on desktop / unsupported browsers.
+  if (navigator.share) {
+    try { await navigator.share({ text }); return; } catch (e) { /* user cancelled */ }
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    showShareToast('Result copied to clipboard!', 'success');
+  } catch {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); showShareToast('Result copied to clipboard!', 'success'); }
+    catch { showShareToast('Copy failed', 'fail'); }
+    document.body.removeChild(ta);
+  }
+}
+
+// Toast supports two states matching design system 7: success (✓ green
+// leading icon) and fail (✕ red, body text also red).
+// Name prompt modal — shown once on first daily completion if user hasn't
+// set a name. Saves to localStorage AND updates the just-submitted leaderboard
+// entry so friends viewing the share don't see "Anonymous".
+function promptForName() {
+  // Bail if a modal is already up or a name is already saved.
+  if (getPlayerName() || document.getElementById('nameModalBg')) return;
+  const bg = document.createElement('div');
+  bg.id = 'nameModalBg';
+  bg.className = 'name-modal-bg';
+  bg.innerHTML = `
+    <div class="name-modal" role="dialog" aria-labelledby="nmTitle">
+      <h3 id="nmTitle">What should we call you?</h3>
+      <p>Your name will appear on today's leaderboard.</p>
+      <input id="nmInput" maxlength="20" placeholder="e.g. wikiwiz" autocomplete="off" />
+      <div class="name-modal-btns">
+        <button class="skip" id="nmSkip">Skip</button>
+        <button class="save" id="nmSave">Save</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(bg);
+  const input = document.getElementById('nmInput');
+  const close = () => { bg.remove(); };
+  const commit = async () => {
+    const v = (input.value || '').trim().slice(0, 20);
+    if (v) {
+      setPlayerName(v);
+      try {
+        // Update the entry the server already submitted under "Anonymous".
+        await send({ type: 'update_daily_name', name: v });
+      } catch {}
+      // Refresh leaderboard so updated name appears.
+      if (cachedDaily) await fetchAndRenderLeaderboard(cachedDaily.date);
+    }
+    close();
+  };
+  input.focus();
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') commit(); else if (e.key === 'Escape') close(); });
+  document.getElementById('nmSave').onclick = commit;
+  document.getElementById('nmSkip').onclick = close;
+}
+
+function showShareToast(text, kind = 'success') {
+  const t = document.getElementById('shareToast');
+  if (!t) return;
+  const icon = kind === 'fail' ? '<span class="cross">✕</span>' : '<span class="check">✓</span>';
+  t.innerHTML = `${icon}${text}`;
+  t.classList.toggle('fail', kind === 'fail');
+  t.classList.add('show');
+  clearTimeout(t._hideT);
+  t._hideT = setTimeout(() => t.classList.remove('show'), 1800);
+}
+
+// (Legacy Quick Play — now unused. The Daily Challenge button uses
+// startDailyFromHome instead. Kept for one release in case any older
+// inline handler still calls it. Safe to delete next pass.)
 async function quickPlay(btn) {
   try {
     window.gtag?.('event', 'mode_selected', { selection: 'quick_play' });
@@ -5049,6 +5948,13 @@ function autoJoinRoom(event) {
 function backToMultiplayerSetup() {
   eventSource?.close();
   eventSource = null;
+  // Clear the proactive SSE recycle timer — it would otherwise fire after
+  // tear-down and try to reopen SSE for a player record we just nuked.
+  if (typeof sseRecycleTimer !== 'undefined' && sseRecycleTimer) {
+    clearTimeout(sseRecycleTimer); sseRecycleTimer = null;
+  }
+  myPlayerId = null;
+  myCsrfToken = null;
   currentRoomCode = null;
   isHost = false;
   currentGameLang = null;
@@ -5217,6 +6123,20 @@ function handleServerMessage(msg) {
       isSinglePlayer = msg.singlePlayer || false;
       if (msg.lang) { currentGameLang = msg.lang; updateWikiLangToggleUI(); }
       document.getElementById('codeText').textContent = msg.code;
+      // Daily indicator pill on the in-game header — show only for daily
+      // rooms. Hidden by default + reset on every new room creation so a
+      // prior daily session's pill doesn't leak into a regular game.
+      {
+        const pill = document.getElementById('dailyGameIndicator');
+        if (pill) {
+          if (msg.daily && msg.dailyMeta) {
+            pill.textContent = 'Daily #' + msg.dailyMeta.dailyNumber;
+            pill.style.display = '';
+          } else {
+            pill.style.display = 'none';
+          }
+        }
+      }
       if (isSinglePlayer) {
         // Single player: start immediately
       } else {
@@ -5403,6 +6323,10 @@ function handleServerMessage(msg) {
       break;
 
     case 'game_over':
+      // Daily challenge: persist the result + streak BEFORE rendering so the
+      // result screen can read fresh state. Idempotent — safe if game_over
+      // fires more than once for the same room.
+      if (msg.daily) recordDailyResult(msg);
       if (msg.mode === 'marathon') {
         showMarathonResults(msg);
       } else {
@@ -7310,6 +8234,16 @@ function showClassicSoloResults(msg) {
     backBtn.textContent = isSurrender ? 'Pick new articles' : 'Back to home';
   }
 
+  // Daily challenge: hide "Play again" (locked till tomorrow), inject a
+  // streak/leaderboard strip so the player has a reason to come back.
+  // recordDailyResult upstream already updated localStorage.
+  if (msg.daily) {
+    if (playAgainBtn) playAgainBtn.style.display = 'none';
+    const state = loadDailyState();
+    const tr = state.todayResult;
+    if (tr) renderDailyResultStrip(msg.dailyMeta, tr, state);
+  }
+
   // ── Reveal cascade per the design:
   //   100  banner reveals; confetti fires (win only — never on surrender,
   //        per saved memory rule "no celebration on no-progress / loss")
@@ -8512,14 +9446,8 @@ async function buildShareImage(r, msg) {
   return new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
 }
 
-function showShareToast(message) {
-  const toast = document.getElementById('shareToast');
-  if (!toast) return;
-  toast.textContent = message;
-  toast.classList.add('show');
-  clearTimeout(toast._hideT);
-  toast._hideT = setTimeout(() => toast.classList.remove('show'), 1800);
-}
+// Deprecated duplicate removed — see showShareToast(text, kind) above
+// (defined alongside the daily share helpers, supports ✓/✕ icons).
 
 function populateShareCard(msg) {
   const card = document.getElementById('shareCard');
@@ -8554,13 +9482,19 @@ function populateShareCard(msg) {
   }
 
   const steps = Math.max(0, r.path.length - 1);
-  document.getElementById('scSteps').textContent = steps;
-  document.getElementById('scTime').textContent = r.time ? formatTime(r.time) : '—';
-  // Localize the "steps" suffix in the static label too.
+  // Update the localized "steps" label first — this rebuilds the span that
+  // holds the step count, so we update its textContent here directly to
+  // avoid the duplicate-id pitfall (innerHTML used to inject a second
+  // id="scSteps", and the prior getElementById call overwrote a now-stale
+  // reference).
   const scStepsLabel = card.querySelector('.share-card-stats span:first-child');
   if (scStepsLabel) {
-    scStepsLabel.innerHTML = `<span class="sc-emoji">⚡</span><span id="scSteps">${steps}</span> ${esc(S.steps)}`;
+    scStepsLabel.innerHTML = `<span class="sc-emoji">⚡</span><span class="sc-steps-num">${steps}</span> ${esc(S.steps)}`;
+  } else {
+    const fallback = document.getElementById('scSteps');
+    if (fallback) fallback.textContent = steps;
   }
+  document.getElementById('scTime').textContent = r.time ? formatTime(r.time) : '—';
 
   // Path preview inside the card (distinct from the big results grid below).
   const pathEl = document.getElementById('scPath');
@@ -8619,13 +9553,13 @@ function populateShareCard(msg) {
       ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
       document.body.appendChild(ta); ta.select();
       try { document.execCommand('copy'); showShareToast(S.copied); }
-      catch { showShareToast(S.copyFail); }
+      catch { showShareToast(S.copyFail, 'fail'); }
       document.body.removeChild(ta);
     }
   };
   saveBtn.onclick = async () => {
     const blob = await buildShareImage(r, msg);
-    if (!blob) { showShareToast(S.copyFail); return; }
+    if (!blob) { showShareToast(S.copyFail, 'fail'); return; }
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -8659,6 +9593,14 @@ function playAgain() {
 function backToHome() {
   eventSource?.close();
   eventSource = null;
+  // Clear the proactive SSE recycle timer — orphaned, it would later try to
+  // reopen the SSE for a player record that's already been GC'd, racing
+  // with server cleanup and risking a session_lost on the next game.
+  if (typeof sseRecycleTimer !== 'undefined' && sseRecycleTimer) {
+    clearTimeout(sseRecycleTimer); sseRecycleTimer = null;
+  }
+  myPlayerId = null;
+  myCsrfToken = null;
   clearInterval(timerInterval);
   resultsAnimationTimeouts.forEach(t => clearTimeout(t));
   resultsAnimationTimeouts = [];
