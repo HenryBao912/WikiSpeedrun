@@ -900,10 +900,16 @@ function pickDailyPairForDate(date, usedOrigins, usedDestinations) {
   const ymd = utcDateStr(date);
   const seed = parseInt(crypto.createHash('sha256').update(ymd).digest('hex').slice(0, 8), 16);
   const fullPool = puzzlePools.en?.pairs || [];
-  // Difficulty matches the old Quick Play: medium-popular destinations
-  // (>=50K monthly views, recognizable but not always world-famous) and
-  // par >= 2 (so some days are quick wins, others take more thinking).
-  const curated = fullPool.filter(p => p.viewRange?.[0] >= 50000 && p.dist >= 2);
+  // Daily curation rules:
+  //   - Destination popularity: >=100K monthly views (very-popular bucket
+  //     only — household-name destinations like Facebook, ChatGPT, Madonna)
+  //   - Distance: >=2 hops (no trivial 1-hop puzzles)
+  //   - Destination word count: <=2 words (snappy + shareable; excludes
+  //     titles like "UEFA Champions League" or "2026 in film")
+  // Note: pool buckets are discrete; 100K threshold effectively keeps only
+  // the [500K, 100M] bucket. Yields ~33 pairs (>1 month unique).
+  const wordCount = (s) => (s || '').split('_').length;
+  const curated = fullPool.filter(p => p.viewRange?.[0] >= 100000 && p.dist >= 2 && wordCount(p.destination) <= 2);
   let pool = curated.length > 0 ? curated : fullPool;
   if (usedOrigins && usedDestinations) {
     const candidates = [

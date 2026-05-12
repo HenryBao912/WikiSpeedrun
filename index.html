@@ -8235,10 +8235,24 @@ function showClassicSoloResults(msg) {
   }
 
   // Daily challenge: hide "Play again" (locked till tomorrow), inject a
-  // streak/leaderboard strip so the player has a reason to come back.
-  // recordDailyResult upstream already updated localStorage.
+  // streak/leaderboard strip so the player has a reason to come back, and
+  // re-route the bottom button to the singleplayer setup (classic) so the
+  // player can immediately try a different non-daily game instead of being
+  // dumped on home.
   if (msg.daily) {
     if (playAgainBtn) playAgainBtn.style.display = 'none';
+    if (backBtn) {
+      backBtn.textContent = 'New game';
+      backBtn.onclick = () => {
+        // Reuse the standard cleanup path then drop into the SP setup screen
+        // (default tab = Classic). Avoids duplicating teardown logic and
+        // keeps SSE state consistent.
+        backToHome();
+        // showScreen('home') already ran inside backToHome — overlay with
+        // sp-setup so the user lands ready to pick new articles.
+        showScreen('sp-setup');
+      };
+    }
     const state = loadDailyState();
     const tr = state.todayResult;
     if (tr) renderDailyResultStrip(msg.dailyMeta, tr, state);
