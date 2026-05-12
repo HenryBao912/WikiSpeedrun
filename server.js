@@ -900,7 +900,10 @@ function pickDailyPairForDate(date, usedOrigins, usedDestinations) {
   const ymd = utcDateStr(date);
   const seed = parseInt(crypto.createHash('sha256').update(ymd).digest('hex').slice(0, 8), 16);
   const fullPool = puzzlePools.en?.pairs || [];
-  const curated = fullPool.filter(p => p.viewRange?.[0] >= 500000 && p.dist >= 3);
+  // Difficulty matches the old Quick Play: medium-popular destinations
+  // (>=50K monthly views, recognizable but not always world-famous) and
+  // par >= 2 (so some days are quick wins, others take more thinking).
+  const curated = fullPool.filter(p => p.viewRange?.[0] >= 50000 && p.dist >= 2);
   let pool = curated.length > 0 ? curated : fullPool;
   if (usedOrigins && usedDestinations) {
     const candidates = [
