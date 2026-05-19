@@ -1056,8 +1056,7 @@
     pointer-events: none;
   }
   .home-btn .dc-corner-l { left: 8px; }
-  .home-btn .dc-corner-r { right: 8px; display: inline-flex; align-items: center; gap: 4px; }
-  .home-btn .dc-corner-r .clock { font-size: 0.72rem; opacity: 0.85; }
+  .home-btn .dc-corner-r { right: 8px; display: inline-flex; align-items: center; }
   .home-btn .dc-label {
     display: block;
     text-align: center;
@@ -4119,7 +4118,7 @@
       <button class="home-btn quick" onclick="startDailyFromHome(this)">
         <span class="dc-corner-l" id="dailyHomeBadge">#—</span>
         <span class="dc-label">Daily Challenge</span>
-        <span class="dc-corner-r"><span class="clock">⏱</span><span id="dailyCountdown">—:—:—</span></span>
+        <span class="dc-corner-r"><span id="dailyCountdown">—:—:—</span></span>
       </button>
     </div>
     <div class="home-buttons">
@@ -6351,11 +6350,24 @@ function handleServerMessage(msg) {
 
     case 'start_rejected':
       // Guardrail in startGameForRoom refused to start the game (e.g.,
-      // destination too isolated). Show the reason and send the host back
-      // to a screen where they can pick a new destination.
+      // destination too isolated). Show the reason and route to the right
+      // recovery screen depending on context.
       showGlobalToast(msg.message || 'Game could not start. Try a different destination.', 6000);
-      if (isSinglePlayer) {
-        // Singleplayer lobby == SP setup screen. Reset and send back.
+      if (msg.daily) {
+        // Daily user didn't come from SP setup — they tapped the home CTA.
+        // Server has already self-healed (blacklisted dest + cleared cache),
+        // so sending them back to home lets a re-tap hit the new puzzle.
+        isSinglePlayer = false;
+        currentRoomCode = null;
+        if (typeof sseRecycleTimer !== 'undefined' && sseRecycleTimer) {
+          clearTimeout(sseRecycleTimer); sseRecycleTimer = null;
+        }
+        showScreen('home');
+        // Refresh the home Daily Challenge badge in case the daily number /
+        // destination changed under the hood (self-heal moves the puzzle).
+        if (typeof hydrateDailyBadge === 'function') hydrateDailyBadge();
+      } else if (isSinglePlayer) {
+        // Singleplayer manual setup: send back to SP setup so user can retype.
         isSinglePlayer = false;
         currentRoomCode = null;
         showScreen('sp-setup');
