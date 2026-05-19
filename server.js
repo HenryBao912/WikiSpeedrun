@@ -886,6 +886,26 @@ function submitDailyToLeaderboard(room, gaveUp) {
   }
 }
 
+// Hardcoded blacklist — destinations we KNOW are bad regardless of what the
+// pool data claims. Pool generation uses page views as a popularity proxy,
+// but views ≠ backlinks (e.g. "1win" had 350K monthly views as a trending
+// gambling brand but only 3 articles linking to it, making the game
+// unwinnable). Add entries here when prod logs surface a sparse destination
+// that the runtime guardrail caught. Survives restarts (in-memory blacklist
+// below does not).
+const HARDCODED_DAILY_BLACKLIST = new Set([
+  '1win',                 // 3 backlinks (caught 2026-05-19)
+]);
+
+// In-memory blacklist of destinations the runtime guardrail has rejected
+// this process lifetime. When a daily room rejects via startGameForRoom's
+// MIN_BACKLINKS check, we add to this set AND clear today's cached daily so
+// the next call re-derives — flipping the day's puzzle to the next
+// deterministic pick. Self-healing: one user's failure fixes today's daily
+// for every later viewer. Lost on restart (HARDCODED_DAILY_BLACKLIST is the
+// permanent record; add to it after prod incidents).
+const rejectedDailyDestinations = new Set();
+
 // Pick a pair for a single date from the curated pool, optionally filtering
 // out pairs whose origin/destination role-collide with previously-used words.
 // Note: a previous origin CAN reappear as a future destination (and vice
@@ -909,7 +929,13 @@ function pickDailyPairForDate(date, usedOrigins, usedDestinations) {
   // Note: pool buckets are discrete; 100K threshold effectively keeps only
   // the [500K, 100M] bucket. Yields ~33 pairs (>1 month unique).
   const wordCount = (s) => (s || '').split('_').length;
-  const curated = fullPool.filter(p => p.viewRange?.[0] >= 100000 && p.dist >= 2 && wordCount(p.destination) <= 2);
+  const isBadDest = (dest) => HARDCODED_DAILY_BLACKLIST.has(dest) || rejectedDailyDestinations.has(dest);
+  const curated = fullPool.filter(p =>
+    p.viewRange?.[0] >= 100000 &&
+    p.dist >= 2 &&
+    wordCount(p.destination) <= 2 &&
+    !isBadDest(p.destination) // permanent + runtime blacklist
+  );
   let pool = curated.length > 0 ? curated : fullPool;
   if (usedOrigins && usedDestinations) {
     const candidates = [
@@ -2048,7 +2074,17 @@ async function startGameForRoom(room, roomCode) {
           const dest = room.pair.destination;
           logEvent('start_rejected_sparse', {
             roomCode, lang, destination: dest, backlinks: backlinks.size, threshold: MIN_BACKLINKS,
+            daily: !!room.daily, dailyDate: room.dailyMeta?.date || null,
           });
+          // Self-heal: if this was a daily room, blacklist the destination AND
+          // invalidate the cached daily for the same date. The next /daily or
+          // start_daily call will derive a fresh pair (next deterministic seed
+          // slot), so all subsequent viewers see a different — and hopefully
+          // valid — puzzle for today. One user's failure fixes the day.
+          if (room.daily && room.dailyMeta?.date) {
+            rejectedDailyDestinations.add(dest);
+            dailyChallengeCache.delete(room.dailyMeta.date);
+          }
           // Reset room so the host can try again
           room.started = false;
           room.manualArticles = null;
@@ -2058,7 +2094,13 @@ async function startGameForRoom(room, roomCode) {
             reason: 'destination_too_isolated',
             destination: dest,
             backlinks: backlinks.size,
-            message: `"${dest.replace(/_/g, ' ')}" is too isolated — only ${backlinks.size} articles link to it. Pick a more popular destination.`,
+            // Daily-specific message: hide the curation detail, frame as
+            // recoverable. The client routes daily rejections to home where
+            // the now-self-healed daily can be retried.
+            message: room.daily
+              ? "Today's daily had a snag — we picked a new one. Try again."
+              : `"${dest.replace(/_/g, ' ')}" is too isolated — only ${backlinks.size} articles link to it. Pick a more popular destination.`,
+            daily: !!room.daily,
           });
           return;
         }
