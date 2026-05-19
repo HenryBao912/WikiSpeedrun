@@ -1,50 +1,50 @@
 {
-  "generatedAt": "2026-05-19T10:33:47.398Z",
+  "generatedAt": "2026-05-01T07:28:43.186Z",
   "lang": "zh",
   "pairs": [
     {
-      "origin": "中华人民共和国",
-      "destination": "日本",
-      "viewRange": [
-        500000,
-        100000000
-      ],
-      "difficulty": "easy",
-      "dist": 1
-    },
-    {
-      "origin": "阿拉伯联合酋长国",
-      "destination": "迈克尔·杰克逊",
+      "origin": "文化大革命",
+      "destination": "罗志祥",
       "viewRange": [
         500000,
         100000000
       ],
       "difficulty": "easy",
       "dist": 3
+    },
+    {
+      "origin": "曾沛慈",
+      "destination": "白沙屯妈祖进香",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 4
+    },
+    {
+      "origin": "白日提灯",
+      "destination": "UTF-16的八位元相容编码方案",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 5
+    },
+    {
+      "origin": "匈牙利",
+      "destination": "颜慧欣",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 4
     },
     {
       "origin": "文化大革命",
-      "destination": "六四事件",
-      "viewRange": [
-        500000,
-        100000000
-      ],
-      "difficulty": "easy",
-      "dist": 1
-    },
-    {
-      "origin": "习近平",
-      "destination": "何润东",
-      "viewRange": [
-        500000,
-        100000000
-      ],
-      "difficulty": "easy",
-      "dist": 3
-    },
-    {
-      "origin": "欧洲冠军联赛",
-      "destination": "周杰伦",
+      "destination": "杰基·鲁宾逊",
       "viewRange": [
         500000,
         100000000
@@ -53,44 +53,14 @@
       "dist": 4
     },
     {
-      "origin": "中华人民共和国",
-      "destination": "胡锦涛",
+      "origin": "郭家麒",
+      "destination": "郑丽文",
       "viewRange": [
         500000,
         100000000
       ],
       "difficulty": "easy",
-      "dist": 1
-    },
-    {
-      "origin": "4月16日",
-      "destination": "简化字",
-      "viewRange": [
-        500000,
-        100000000
-      ],
-      "difficulty": "easy",
-      "dist": 2
-    },
-    {
-      "origin": "迈克尔·杰克逊",
-      "destination": "河智苑",
-      "viewRange": [
-        500000,
-        100000000
-      ],
-      "difficulty": "easy",
-      "dist": 3
-    },
-    {
-      "origin": "李小冉",
-      "destination": "ISO/IEC_8859",
-      "viewRange": [
-        500000,
-        100000000
-      ],
-      "difficulty": "easy",
-      "dist": 4
+      "dist": 5
     },
     {
       "origin": "台湾",
@@ -113,18 +83,8 @@
       "dist": 4
     },
     {
-      "origin": "中华人民共和国",
-      "destination": "弗拉基米尔·列宁",
-      "viewRange": [
-        500000,
-        100000000
-      ],
-      "difficulty": "easy",
-      "dist": 2
-    },
-    {
-      "origin": "中国共产党",
-      "destination": "统一码",
+      "origin": "阿拉伯联合酋长国",
+      "destination": "向华强",
       "viewRange": [
         500000,
         100000000
@@ -143,8 +103,8 @@
       "dist": 2
     },
     {
-      "origin": "文化大革命",
-      "destination": "杰基·鲁宾逊",
+      "origin": "4月16日",
+      "destination": "Re:从零开始的异世界生活",
       "viewRange": [
         500000,
         100000000
@@ -153,118 +113,28 @@
       "dist": 4
     },
     {
-      "origin": "迈克尔·杰克逊",
-      "destination": "赖清德",
+      "origin": "T.O.P.",
+      "destination": "鞠婧祎",
       "viewRange": [
         500000,
         100000000
       ],
       "difficulty": "easy",
-      "dist": 3
-    },
-    {
-      "origin": "林彪",
-      "destination": "黄道十二宫",
-      "viewRange": [
-        500000,
-        100000000
-      ],
-      "difficulty": "easy",
-      "dist": 3
+      "dist": 4
     },
     {
       "origin": "中华人民共和国",
-      "destination": "钟汉良",
+      "destination": "日本",
       "viewRange": [
         500000,
         100000000
       ],
       "difficulty": "easy",
-      "dist": 3
-    },
-    {
-      "origin": "匈牙利",
-      "destination": "黄秋生",
-      "viewRange": [
-        500000,
-        100000000
-      ],
-      "difficulty": "easy",
-      "dist": 3
-    },
-    {
-      "origin": "文化大革命",
-      "destination": "斯威士兰",
-      "viewRange": [
-        500000,
-        100000000
-      ],
-      "difficulty": "easy",
-      "dist": 2
-    },
-    {
-      "origin": "柯文哲",
-      "destination": "王楚然",
-      "viewRange": [
-        500000,
-        100000000
-      ],
-      "difficulty": "easy",
-      "dist": 3
-    },
-    {
-      "origin": "薄熙来",
-      "destination": "杰基·鲁宾逊",
-      "viewRange": [
-        500000,
-        100000000
-      ],
-      "difficulty": "easy",
-      "dist": 4
-    },
-    {
-      "origin": "匈牙利",
-      "destination": "4月16日",
-      "viewRange": [
-        500000,
-        100000000
-      ],
-      "difficulty": "easy",
-      "dist": 3
-    },
-    {
-      "origin": "4月16日",
-      "destination": "尹乃菁",
-      "viewRange": [
-        500000,
-        100000000
-      ],
-      "difficulty": "easy",
-      "dist": 3
-    },
-    {
-      "origin": "阿拉伯联合酋长国",
-      "destination": "向华强",
-      "viewRange": [
-        500000,
-        100000000
-      ],
-      "difficulty": "easy",
-      "dist": 3
+      "dist": 1
     },
     {
       "origin": "4月16日",
       "destination": "何润东",
-      "viewRange": [
-        500000,
-        100000000
-      ],
-      "difficulty": "easy",
-      "dist": 3
-    },
-    {
-      "origin": "4月16日",
-      "destination": "钟汉良",
       "viewRange": [
         500000,
         100000000
@@ -284,7 +154,7 @@
     },
     {
       "origin": "台湾",
-      "destination": "寒战",
+      "destination": "台湾积体电路制造",
       "viewRange": [
         500000,
         100000000
@@ -293,34 +163,54 @@
       "dist": 3
     },
     {
-      "origin": "逐玉",
-      "destination": "张凌赫",
+      "origin": "柯文哲",
+      "destination": "王楚然",
       "viewRange": [
         500000,
         100000000
       ],
       "difficulty": "easy",
-      "dist": 1
+      "dist": 3
+    },
+    {
+      "origin": "欧洲冠军联赛",
+      "destination": "周杰伦",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 3
     },
     {
       "origin": "4月16日",
-      "destination": "ISO/IEC_8859",
-      "viewRange": [
-        500000,
-        100000000
-      ],
-      "difficulty": "easy",
-      "dist": 3
-    },
-    {
-      "origin": "文化大革命",
-      "destination": "YouTube",
+      "destination": "简化字",
       "viewRange": [
         500000,
         100000000
       ],
       "difficulty": "easy",
       "dist": 2
+    },
+    {
+      "origin": "4月16日",
+      "destination": "尹乃菁",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 3
+    },
+    {
+      "origin": "中华人民共和国",
+      "destination": "欢迎来到实力至上主义的教室",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 4
     },
     {
       "origin": "维基百科",
@@ -334,7 +224,17 @@
     },
     {
       "origin": "文化大革命",
-      "destination": "罗志祥",
+      "destination": "斯威士兰",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 2
+    },
+    {
+      "origin": "匈牙利",
+      "destination": "4月16日",
       "viewRange": [
         500000,
         100000000
@@ -343,14 +243,24 @@
       "dist": 3
     },
     {
-      "origin": "文化大革命",
-      "destination": "邓紫棋",
+      "origin": "薄熙来",
+      "destination": "杰基·鲁宾逊",
       "viewRange": [
         500000,
         100000000
       ],
       "difficulty": "easy",
-      "dist": 3
+      "dist": 4
+    },
+    {
+      "origin": "逐玉",
+      "destination": "李贞秀",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 4
     },
     {
       "origin": "溜掉的大鱼比不上自己钓到的鱼",
@@ -363,6 +273,216 @@
       "dist": 3
     },
     {
+      "origin": "习近平",
+      "destination": "何润东",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 3
+    },
+    {
+      "origin": "匈牙利",
+      "destination": "黄秋生",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 3
+    },
+    {
+      "origin": "文化大革命",
+      "destination": "妈祖",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 2
+    },
+    {
+      "origin": "中华人民共和国",
+      "destination": "钟汉良",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 3
+    },
+    {
+      "origin": "张又侠",
+      "destination": "约书亚乐团",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 4
+    },
+    {
+      "origin": "文化大革命",
+      "destination": "邓紫棋",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 3
+    },
+    {
+      "origin": "阿拉伯联合酋长国",
+      "destination": "迈克尔·杰克逊",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 3
+    },
+    {
+      "origin": "中华人民共和国",
+      "destination": "弗拉基米尔·列宁",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 2
+    },
+    {
+      "origin": "4月16日",
+      "destination": "ISO/IEC_8859",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 3
+    },
+    {
+      "origin": "许家印",
+      "destination": "白沙屯拱天宫",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 4
+    },
+    {
+      "origin": "逐玉",
+      "destination": "张凌赫",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 1
+    },
+    {
+      "origin": "中国共产党",
+      "destination": "统一码",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 3
+    },
+    {
+      "origin": "中华人民共和国",
+      "destination": "胡锦涛",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 1
+    },
+    {
+      "origin": "台湾",
+      "destination": "寒战",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 3
+    },
+    {
+      "origin": "朱珠",
+      "destination": "白沙屯拱天宫",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 4
+    },
+    {
+      "origin": "中华人民共和国",
+      "destination": "郑丽文",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 2
+    },
+    {
+      "origin": "曾沛慈",
+      "destination": "台湾民主基金会",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 4
+    },
+    {
+      "origin": "4月16日",
+      "destination": "钟汉良",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 3
+    },
+    {
+      "origin": "潘宏彬",
+      "destination": "柯震东",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 5
+    },
+    {
+      "origin": "文化大革命",
+      "destination": "六四事件",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 1
+    },
+    {
+      "origin": "侯明昊",
+      "destination": "高胤祯",
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "dist": 5
+    },
+    {
       "origin": "文化大革命",
       "destination": "赖清德",
       "viewRange": [
@@ -373,13 +493,73 @@
       "dist": 2
     },
     {
-      "origin": "文化大革命",
-      "destination": "妈祖",
+      "origin": "迈克尔·杰克逊",
+      "destination": "河智苑",
       "viewRange": [
         500000,
         100000000
       ],
       "difficulty": "easy",
+      "dist": 3
+    },
+    {
+      "origin": "荒川弘",
+      "destination": "霍尔木兹海峡",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 5
+    },
+    {
+      "origin": "梁朝伟",
+      "destination": "香港",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 2
+    },
+    {
+      "origin": "你好1983",
+      "destination": "Official髭男dism",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 3
+    },
+    {
+      "origin": "荒川弘",
+      "destination": "允禩",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 3
+    },
+    {
+      "origin": "维基百科",
+      "destination": "松隆子",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 4
+    },
+    {
+      "origin": "维基百科",
+      "destination": "日本",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
       "dist": 2
     },
     {
@@ -393,38 +573,68 @@
       "dist": 3
     },
     {
-      "origin": "拜仁慕尼黑足球俱乐部",
+      "origin": "赵紫阳",
       "destination": "李克强",
       "viewRange": [
         50000,
         500000
       ],
       "difficulty": "medium",
+      "dist": 1
+    },
+    {
+      "origin": "王俐人",
+      "destination": "埃隆·马斯克",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
       "dist": 3
     },
     {
-      "origin": "TWICE",
-      "destination": "任豪",
+      "origin": "林彪",
+      "destination": "黄道十二宫",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 3
+    },
+    {
+      "origin": "维基百科",
+      "destination": "木村拓哉",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 3
+    },
+    {
+      "origin": "Pornhub",
+      "destination": "如懿传",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 3
+    },
+    {
+      "origin": "林彪",
+      "destination": "简化字",
       "viewRange": [
         50000,
         500000
       ],
       "difficulty": "medium",
       "dist": 2
-    },
-    {
-      "origin": "邱礼涛",
-      "destination": "日本",
-      "viewRange": [
-        50000,
-        500000
-      ],
-      "difficulty": "medium",
-      "dist": 3
     },
     {
       "origin": "中国共产党",
-      "destination": "以色列",
+      "destination": "维基百科",
       "viewRange": [
         50000,
         500000
@@ -433,58 +643,8 @@
       "dist": 2
     },
     {
-      "origin": "陈晓",
-      "destination": "BLACKPINK",
-      "viewRange": [
-        50000,
-        500000
-      ],
-      "difficulty": "medium",
-      "dist": 3
-    },
-    {
-      "origin": "统一码",
-      "destination": "香港",
-      "viewRange": [
-        50000,
-        500000
-      ],
-      "difficulty": "medium",
-      "dist": 2
-    },
-    {
-      "origin": "维基百科",
-      "destination": "日本",
-      "viewRange": [
-        50000,
-        500000
-      ],
-      "difficulty": "medium",
-      "dist": 2
-    },
-    {
-      "origin": "阿拉伯联合酋长国",
-      "destination": "阿波罗登月计划阴谋论",
-      "viewRange": [
-        50000,
-        500000
-      ],
-      "difficulty": "medium",
-      "dist": 3
-    },
-    {
-      "origin": "维基百科",
-      "destination": "乾隆帝",
-      "viewRange": [
-        50000,
-        500000
-      ],
-      "difficulty": "medium",
-      "dist": 3
-    },
-    {
-      "origin": "荒川弘",
-      "destination": "霍尔木兹海峡",
+      "origin": "伊朗",
+      "destination": "黄道十二宫",
       "viewRange": [
         50000,
         500000
@@ -504,7 +664,7 @@
     },
     {
       "origin": "维基百科",
-      "destination": "木村拓哉",
+      "destination": "何润东",
       "viewRange": [
         50000,
         500000
@@ -513,8 +673,8 @@
       "dist": 4
     },
     {
-      "origin": "维基百科",
-      "destination": "松隆子",
+      "origin": "迈克尔·杰克逊",
+      "destination": "赖清德",
       "viewRange": [
         50000,
         500000
@@ -523,18 +683,18 @@
       "dist": 3
     },
     {
-      "origin": "赵紫阳",
-      "destination": "李克强",
+      "origin": "邱礼涛",
+      "destination": "日本",
       "viewRange": [
         50000,
         500000
       ],
       "difficulty": "medium",
-      "dist": 1
+      "dist": 3
     },
     {
       "origin": "日本",
-      "destination": "李现",
+      "destination": "白晓燕命案",
       "viewRange": [
         50000,
         500000
@@ -543,14 +703,24 @@
       "dist": 3
     },
     {
-      "origin": "匈牙利",
-      "destination": "中国国民党",
+      "origin": "统一码",
+      "destination": "香港",
       "viewRange": [
         50000,
         500000
       ],
       "difficulty": "medium",
       "dist": 2
+    },
+    {
+      "origin": "ISO/IEC_8859",
+      "destination": "台湾民主基金会",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 4
     },
     {
       "origin": "清朝",
@@ -563,8 +733,8 @@
       "dist": 1
     },
     {
-      "origin": "噬血芭蕾",
-      "destination": "金城武",
+      "origin": "TOMORROW_X_TOGETHER",
+      "destination": "咒术回战",
       "viewRange": [
         50000,
         500000
@@ -573,24 +743,34 @@
       "dist": 3
     },
     {
-      "origin": "维基百科",
-      "destination": "何润东",
+      "origin": "TWICE",
+      "destination": "任豪",
       "viewRange": [
         50000,
         500000
       ],
       "difficulty": "medium",
-      "dist": 4
+      "dist": 3
     },
     {
-      "origin": "林彪",
-      "destination": "简化字",
+      "origin": "中国共产党",
+      "destination": "林彪",
       "viewRange": [
         50000,
         500000
       ],
       "difficulty": "medium",
       "dist": 2
+    },
+    {
+      "origin": "李小冉",
+      "destination": "ISO/IEC_8859",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 3
     },
     {
       "origin": "中华人民共和国",
@@ -603,8 +783,8 @@
       "dist": 3
     },
     {
-      "origin": "周柯宇",
-      "destination": "周嘉洛",
+      "origin": "维基百科",
+      "destination": "乾隆帝",
       "viewRange": [
         50000,
         500000
@@ -613,18 +793,18 @@
       "dist": 3
     },
     {
-      "origin": "张献忠",
-      "destination": "松隆子",
+      "origin": "日本",
+      "destination": "李现",
       "viewRange": [
         50000,
         500000
       ],
       "difficulty": "medium",
-      "dist": 4
+      "dist": 3
     },
     {
-      "origin": "中国共产党",
-      "destination": "林彪",
+      "origin": "霍尔木兹海峡",
+      "destination": "香港",
       "viewRange": [
         50000,
         500000
@@ -643,8 +823,8 @@
       "dist": 2
     },
     {
-      "origin": "霍尔木兹海峡",
-      "destination": "香港",
+      "origin": "中国共产党",
+      "destination": "以色列",
       "viewRange": [
         50000,
         500000
@@ -653,8 +833,18 @@
       "dist": 2
     },
     {
-      "origin": "中国共产党",
-      "destination": "维基百科",
+      "origin": "阿拉伯联合酋长国",
+      "destination": "五味人生",
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "dist": 3
+    },
+    {
+      "origin": "匈牙利",
+      "destination": "台湾积体电路制造",
       "viewRange": [
         50000,
         500000
@@ -673,8 +863,8 @@
       "dist": 1
     },
     {
-      "origin": "荒川弘",
-      "destination": "允禩",
+      "origin": "陈晓",
+      "destination": "BLACKPINK",
       "viewRange": [
         50000,
         500000
@@ -683,18 +873,8 @@
       "dist": 3
     },
     {
-      "origin": "Pornhub",
-      "destination": "如懿传",
-      "viewRange": [
-        50000,
-        500000
-      ],
-      "difficulty": "medium",
-      "dist": 5
-    },
-    {
-      "origin": "阿拉伯联合酋长国",
-      "destination": "五味人生",
+      "origin": "周柯宇",
+      "destination": "周嘉洛",
       "viewRange": [
         50000,
         500000
@@ -703,8 +883,8 @@
       "dist": 3
     },
     {
-      "origin": "GB_18030",
-      "destination": "霍尔木兹海峡",
+      "origin": "紫峰大厦",
+      "destination": "武昌宫",
       "viewRange": [
         5000,
         50000
@@ -713,18 +893,18 @@
       "dist": 4
     },
     {
-      "origin": "珊瑚礁",
-      "destination": "PocketBook",
+      "origin": "浏阳市",
+      "destination": "林中小屋",
       "viewRange": [
         5000,
         50000
       ],
       "difficulty": "hard",
-      "dist": 2
+      "dist": 4
     },
     {
-      "origin": "王道南",
-      "destination": "米基·范德芬",
+      "origin": "一氧化碳中毒",
+      "destination": "第十二届全国人民代表大会代表名单",
       "viewRange": [
         5000,
         50000
@@ -733,8 +913,38 @@
       "dist": 5
     },
     {
-      "origin": "你好1983",
-      "destination": "Official髭男dism",
+      "origin": "中国音乐家协会",
+      "destination": "隐蔽行动",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 3
+    },
+    {
+      "origin": "4月16日",
+      "destination": "台湾民主基金会",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 4
+    },
+    {
+      "origin": "匈牙利",
+      "destination": "中国国民党",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 2
+    },
+    {
+      "origin": "习仲勋",
+      "destination": "谭耀文",
       "viewRange": [
         5000,
         50000
@@ -753,14 +963,74 @@
       "dist": 3
     },
     {
-      "origin": "安妮·海瑟薇",
-      "destination": "CORTIS",
+      "origin": "珊瑚礁",
+      "destination": "PocketBook",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 2
+    },
+    {
+      "origin": "五十音",
+      "destination": "我的幸福婚约",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 5
+    },
+    {
+      "origin": "暴走族",
+      "destination": "斯琴高娃",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 3
+    },
+    {
+      "origin": "王道南",
+      "destination": "米基·范德芬",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 5
+    },
+    {
+      "origin": "徐志焄",
+      "destination": "黄秋生",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 3
+    },
+    {
+      "origin": "统一资源标识符",
+      "destination": "驳二艺术特区",
       "viewRange": [
         5000,
         50000
       ],
       "difficulty": "hard",
       "dist": 4
+    },
+    {
+      "origin": "便秘",
+      "destination": "奇异冒险",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 5
     },
     {
       "origin": "平方数",
@@ -783,28 +1053,8 @@
       "dist": 4
     },
     {
-      "origin": "伊朗",
-      "destination": "黄道十二宫",
-      "viewRange": [
-        5000,
-        50000
-      ],
-      "difficulty": "hard",
-      "dist": 3
-    },
-    {
-      "origin": "暴走族",
-      "destination": "斯琴高娃",
-      "viewRange": [
-        5000,
-        50000
-      ],
-      "difficulty": "hard",
-      "dist": 3
-    },
-    {
-      "origin": "一氧化碳中毒",
-      "destination": "第十二届全国人民代表大会代表名单",
+      "origin": "立直",
+      "destination": "AlexNet",
       "viewRange": [
         5000,
         50000
@@ -813,8 +1063,8 @@
       "dist": 5
     },
     {
-      "origin": "习仲勋",
-      "destination": "谭耀文",
+      "origin": "拜仁慕尼黑足球俱乐部",
+      "destination": "李克强",
       "viewRange": [
         5000,
         50000
@@ -823,14 +1073,54 @@
       "dist": 3
     },
     {
-      "origin": "梁朝伟",
-      "destination": "香港",
+      "origin": "魔岩唱片",
+      "destination": "陆子玄",
       "viewRange": [
         5000,
         50000
       ],
       "difficulty": "hard",
-      "dist": 2
+      "dist": 5
+    },
+    {
+      "origin": "文化大革命",
+      "destination": "台南县",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 3
+    },
+    {
+      "origin": "张献忠",
+      "destination": "松隆子",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 4
+    },
+    {
+      "origin": "安妮·海瑟薇",
+      "destination": "CORTIS",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 3
+    },
+    {
+      "origin": "大王饶命",
+      "destination": "am730",
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "dist": 3
     },
     {
       "origin": "连环画",
@@ -843,48 +1133,48 @@
       "dist": 5
     },
     {
-      "origin": "中国音乐家协会",
-      "destination": "隐蔽行动",
+      "origin": "噬血芭蕾",
+      "destination": "金城武",
       "viewRange": [
-        5000,
-        50000
+        1000,
+        5000
       ],
-      "difficulty": "hard",
+      "difficulty": "expert",
+      "dist": 3
+    },
+    {
+      "origin": "中国国际广播电台",
+      "destination": "徐现宇",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 4
+    },
+    {
+      "origin": "鬼同你OT",
+      "destination": "功夫灌篮",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "dist": 4
+    },
+    {
+      "origin": "阿拉伯联合酋长国",
+      "destination": "阿波罗登月计划阴谋论",
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
       "dist": 3
     },
     {
       "origin": "霍尔木兹海峡",
       "destination": "五十音",
-      "viewRange": [
-        5000,
-        50000
-      ],
-      "difficulty": "hard",
-      "dist": 3
-    },
-    {
-      "origin": "王俐人",
-      "destination": "埃隆·马斯克",
-      "viewRange": [
-        1000,
-        5000
-      ],
-      "difficulty": "expert",
-      "dist": 3
-    },
-    {
-      "origin": "徐志焄",
-      "destination": "黄秋生",
-      "viewRange": [
-        1000,
-        5000
-      ],
-      "difficulty": "expert",
-      "dist": 3
-    },
-    {
-      "origin": "大王饶命",
-      "destination": "am730",
       "viewRange": [
         1000,
         5000
@@ -896,9 +1186,9 @@
   "triples": [
     {
       "targets": [
-        "维基百科",
-        "毛泽东",
-        "郭家麒"
+        "逐玉",
+        "李贞秀",
+        "张凌赫"
       ],
       "viewRange": [
         500000,
@@ -906,79 +1196,15 @@
       ],
       "difficulty": "easy",
       "distances": [
-        2,
-        4
-      ]
-    },
-    {
-      "targets": [
-        "欧洲冠军联赛",
-        "迈克尔·杰克逊",
-        "赖清德"
-      ],
-      "viewRange": [
-        500000,
-        100000000
-      ],
-      "difficulty": "easy",
-      "distances": [
-        2,
-        3
-      ]
-    },
-    {
-      "targets": [
-        "弗拉基米尔·列宁",
-        "周杰伦",
-        "钟汉良"
-      ],
-      "viewRange": [
-        500000,
-        100000000
-      ],
-      "difficulty": "easy",
-      "distances": [
-        2,
-        4
-      ]
-    },
-    {
-      "targets": [
-        "文化大革命",
-        "欧洲冠军联赛",
-        "4月16日"
-      ],
-      "viewRange": [
-        500000,
-        100000000
-      ],
-      "difficulty": "easy",
-      "distances": [
-        3,
-        3
-      ]
-    },
-    {
-      "targets": [
-        "中华人民共和国",
-        "毛泽东",
-        "邓小平"
-      ],
-      "viewRange": [
-        500000,
-        100000000
-      ],
-      "difficulty": "easy",
-      "distances": [
-        1,
+        4,
         1
       ]
     },
     {
       "targets": [
-        "美国",
-        "梁朝伟",
-        "习仲勋"
+        "文化大革命",
+        "ISO/IEC_8859",
+        "唐纳德·特朗普"
       ],
       "viewRange": [
         500000,
@@ -986,23 +1212,7 @@
       ],
       "difficulty": "easy",
       "distances": [
-        3,
-        2
-      ]
-    },
-    {
-      "targets": [
-        "4月16日",
-        "何润东",
-        "YouTube"
-      ],
-      "viewRange": [
-        500000,
-        100000000
-      ],
-      "difficulty": "easy",
-      "distances": [
-        3,
+        2,
         2
       ]
     },
@@ -1024,9 +1234,25 @@
     },
     {
       "targets": [
-        "文化大革命",
-        "大生意人",
-        "杰基·鲁宾逊"
+        "中华民国",
+        "YouTube",
+        "曾沛慈"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        3,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "维基百科",
+        "毛泽东",
+        "郭家麒"
       ],
       "viewRange": [
         500000,
@@ -1035,14 +1261,46 @@
       "difficulty": "easy",
       "distances": [
         2,
-        4
+        3
       ]
     },
     {
       "targets": [
-        "文化大革命",
-        "引号",
-        "松隆子"
+        "欧洲冠军联赛",
+        "赛琳娜·戈麦斯",
+        "贾斯汀·比伯"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        3,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "美国",
+        "梁朝伟",
+        "习仲勋"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        3,
+        2
+      ]
+    },
+    {
+      "targets": [
+        "台湾",
+        "六四事件",
+        "寒战"
       ],
       "viewRange": [
         500000,
@@ -1057,8 +1315,8 @@
     {
       "targets": [
         "文化大革命",
-        "ISO/IEC_8859",
-        "唐纳德·特朗普"
+        "欧洲冠军联赛",
+        "4月16日"
       ],
       "viewRange": [
         500000,
@@ -1066,8 +1324,24 @@
       ],
       "difficulty": "easy",
       "distances": [
-        2,
-        2
+        3,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "ISO/IEC_8859",
+        "白沙屯妈祖进香",
+        "朱珠"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        4,
+        4
       ]
     },
     {
@@ -1088,41 +1362,9 @@
     },
     {
       "targets": [
-        "中华人民共和国",
-        "佘诗曼",
-        "魏哲家"
-      ],
-      "viewRange": [
-        500000,
-        100000000
-      ],
-      "difficulty": "easy",
-      "distances": [
-        3,
-        3
-      ]
-    },
-    {
-      "targets": [
-        "欧洲冠军联赛",
-        "赛琳娜·戈麦斯",
-        "贾斯汀·比伯"
-      ],
-      "viewRange": [
-        500000,
-        100000000
-      ],
-      "difficulty": "easy",
-      "distances": [
-        3,
-        4
-      ]
-    },
-    {
-      "targets": [
-        "台湾",
-        "六四事件",
-        "寒战"
+        "文化大革命",
+        "引号",
+        "松隆子"
       ],
       "viewRange": [
         500000,
@@ -1152,8 +1394,168 @@
     },
     {
       "targets": [
-        "汪精卫",
-        "蒋经国",
+        "弗拉基米尔·列宁",
+        "周杰伦",
+        "钟汉良"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        2,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "欧洲冠军联赛",
+        "迈克尔·杰克逊",
+        "赖清德"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        2,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "文化大革命",
+        "大生意人",
+        "杰基·鲁宾逊"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        2,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "中华人民共和国",
+        "毛泽东",
+        "邓小平"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        1,
+        1
+      ]
+    },
+    {
+      "targets": [
+        "4月16日",
+        "杰基·鲁宾逊",
+        "颜庆章"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        3,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "薄熙来",
+        "迈克尔·杰克逊",
+        "恋爱世纪"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        3,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "越南",
+        "赵紫阳",
+        "台南县"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        2,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "4月16日",
+        "BIGBANG",
+        "颜庆章"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        2,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "中华人民共和国",
+        "佘诗曼",
+        "魏哲家"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        3,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "中华人民共和国",
+        "引号",
+        "九记牛腩"
+      ],
+      "viewRange": [
+        500000,
+        100000000
+      ],
+      "difficulty": "easy",
+      "distances": [
+        2,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "以色列",
+        "张德兰",
         "ONE_PIECE"
       ],
       "viewRange": [
@@ -1162,56 +1564,8 @@
       ],
       "difficulty": "medium",
       "distances": [
-        2,
-        3
-      ]
-    },
-    {
-      "targets": [
-        "中华民国",
-        "YouTube",
-        "曾沛慈"
-      ],
-      "viewRange": [
-        50000,
-        500000
-      ],
-      "difficulty": "medium",
-      "distances": [
-        3,
-        3
-      ]
-    },
-    {
-      "targets": [
-        "江青",
-        "黄道十二宫",
-        "五十音"
-      ],
-      "viewRange": [
-        50000,
-        500000
-      ],
-      "difficulty": "medium",
-      "distances": [
-        3,
-        3
-      ]
-    },
-    {
-      "targets": [
-        "越南",
-        "ONE_PIECE",
-        "黄道十二宫"
-      ],
-      "viewRange": [
-        50000,
-        500000
-      ],
-      "difficulty": "medium",
-      "distances": [
-        3,
-        3
+        4,
+        2
       ]
     },
     {
@@ -1232,38 +1586,6 @@
     },
     {
       "targets": [
-        "越南",
-        "ASCII",
-        "荒川弘"
-      ],
-      "viewRange": [
-        50000,
-        500000
-      ],
-      "difficulty": "medium",
-      "distances": [
-        2,
-        3
-      ]
-    },
-    {
-      "targets": [
-        "江泽民",
-        "阿道夫·希特勒",
-        "赵紫阳"
-      ],
-      "viewRange": [
-        50000,
-        500000
-      ],
-      "difficulty": "medium",
-      "distances": [
-        2,
-        1
-      ]
-    },
-    {
-      "targets": [
         "荒川弘",
         "高智能方程式",
         "许绍雄"
@@ -1280,9 +1602,9 @@
     },
     {
       "targets": [
-        "汪精卫",
-        "引号",
-        "舒淇"
+        "越南",
+        "ONE_PIECE",
+        "黄道十二宫"
       ],
       "viewRange": [
         50000,
@@ -1312,9 +1634,73 @@
     },
     {
       "targets": [
-        "清朝",
+        "日本",
+        "香港",
+        "艾尔·霍弗德"
+      ],
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "distances": [
+        1,
+        4
+      ]
+    },
+    {
+      "targets": [
         "汪精卫",
-        "何鸿燊"
+        "引号",
+        "舒淇"
+      ],
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "distances": [
+        3,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "田馥甄",
+        "新加坡",
+        "文瑾莹"
+      ],
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "distances": [
+        1,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "清朝",
+        "九记牛腩",
+        "萧蔷"
+      ],
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "distances": [
+        4,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "江泽民",
+        "阿道夫·希特勒",
+        "赵紫阳"
       ],
       "viewRange": [
         50000,
@@ -1323,7 +1709,23 @@
       "difficulty": "medium",
       "distances": [
         2,
-        2
+        1
+      ]
+    },
+    {
+      "targets": [
+        "江青",
+        "黄道十二宫",
+        "五十音"
+      ],
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "distances": [
+        3,
+        3
       ]
     },
     {
@@ -1344,9 +1746,57 @@
     },
     {
       "targets": [
-        "迈克尔·杰克逊",
-        "钟汉良",
-        "YouTube"
+        "以色列",
+        "台湾积体电路制造",
+        "高智能方程式"
+      ],
+      "viewRange": [
+        50000,
+        500000
+      ],
+      "difficulty": "medium",
+      "distances": [
+        2,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "一国党",
+        "神经科学",
+        "爱就宅一起"
+      ],
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "distances": [
+        5,
+        5
+      ]
+    },
+    {
+      "targets": [
+        "清朝",
+        "汪精卫",
+        "何鸿燊"
+      ],
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "distances": [
+        2,
+        2
+      ]
+    },
+    {
+      "targets": [
+        "7月11日",
+        "Live_CD",
+        "羊驼"
       ],
       "viewRange": [
         5000,
@@ -1355,7 +1805,7 @@
       "difficulty": "hard",
       "distances": [
         3,
-        2
+        3
       ]
     },
     {
@@ -1376,9 +1826,9 @@
     },
     {
       "targets": [
-        "五味人生",
-        "周嘉洛",
-        "李鹏"
+        "4月16日",
+        "何润东",
+        "YouTube"
       ],
       "viewRange": [
         5000,
@@ -1386,8 +1836,8 @@
       ],
       "difficulty": "hard",
       "distances": [
-        2,
-        5
+        3,
+        2
       ]
     },
     {
@@ -1408,6 +1858,70 @@
     },
     {
       "targets": [
+        "性别肯定激素治疗",
+        "2025年至2026年新竹御嵿攻城狮赛季",
+        "情逆三世缘"
+      ],
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "distances": [
+        5,
+        5
+      ]
+    },
+    {
+      "targets": [
+        "越南",
+        "ASCII",
+        "荒川弘"
+      ],
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "distances": [
+        2,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "六四事件",
+        "台湾民主基金会",
+        "白沙屯妈祖进香"
+      ],
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "distances": [
+        4,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "巨人网络",
+        "魔装学园H×H",
+        "贵霜帝国"
+      ],
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "distances": [
+        5,
+        3
+      ]
+    },
+    {
+      "targets": [
         "习近平",
         "郭家麒",
         "张又侠"
@@ -1420,6 +1934,22 @@
       "distances": [
         2,
         1
+      ]
+    },
+    {
+      "targets": [
+        "1964年夏季奥林匹克运动会",
+        "隋与高句丽战争",
+        "十六进制"
+      ],
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "distances": [
+        4,
+        3
       ]
     },
     {
@@ -1440,9 +1970,25 @@
     },
     {
       "targets": [
-        "7月11日",
-        "Live_CD",
-        "羊驼"
+        "汪精卫",
+        "蒋经国",
+        "ONE_PIECE"
+      ],
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "distances": [
+        2,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "2月4日",
+        "毕尔巴鄂古根海姆美术馆",
+        "威廉·亨利·苏厄德"
       ],
       "viewRange": [
         5000,
@@ -1452,6 +1998,150 @@
       "distances": [
         3,
         3
+      ]
+    },
+    {
+      "targets": [
+        "太平天国",
+        "黄道十二宫",
+        "吴慷仁"
+      ],
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "distances": [
+        3,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "中国共产主义青年团中央委员会",
+        "唐宫美人天下",
+        "欧乌鸫"
+      ],
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "distances": [
+        4,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "导盲犬小Q",
+        "鲁迪乌斯·格雷拉特",
+        "波特兰水泥"
+      ],
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "distances": [
+        5,
+        5
+      ]
+    },
+    {
+      "targets": [
+        "Γ函数",
+        "疾风战士",
+        "pop子和pipi美的日常"
+      ],
+      "viewRange": [
+        5000,
+        50000
+      ],
+      "difficulty": "hard",
+      "distances": [
+        4,
+        4
+      ]
+    },
+    {
+      "targets": [
+        "弧分和弧秒",
+        "恋尸",
+        "铁矿"
+      ],
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "distances": [
+        5,
+        3
+      ]
+    },
+    {
+      "targets": [
+        "六四事件",
+        "江图",
+        "习明泽"
+      ],
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "distances": [
+        4,
+        2
+      ]
+    },
+    {
+      "targets": [
+        "光学字符识别",
+        "纽约市立大学皇后学院",
+        "孙政"
+      ],
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "distances": [
+        5,
+        5
+      ]
+    },
+    {
+      "targets": [
+        "五味人生",
+        "周嘉洛",
+        "李鹏"
+      ],
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "distances": [
+        2,
+        5
+      ]
+    },
+    {
+      "targets": [
+        "迈克尔·杰克逊",
+        "钟汉良",
+        "YouTube"
+      ],
+      "viewRange": [
+        1000,
+        5000
+      ],
+      "difficulty": "expert",
+      "distances": [
+        3,
+        2
       ]
     }
   ]
