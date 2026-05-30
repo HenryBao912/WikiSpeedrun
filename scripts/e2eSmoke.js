@@ -9,6 +9,7 @@
 // Usage: node scripts/e2eSmoke.js [--port 3000]
 
 const http = require('http');
+const https = require('https');
 
 const PORT = (() => {
   const i = process.argv.indexOf('--port');
@@ -86,6 +87,26 @@ async function action(playerId, csrf, msg) {
   });
 }
 
+// Fetch real outgoing mainspace links for a title straight from Wikipedia.
+// The server now enforces move-legality (a navigate is only accepted if the
+// target is an actual link of the current page), so the smoke test must walk
+// real links rather than arbitrary article names.
+function wikiLinks(title, lang = 'en') {
+  return new Promise((resolve, reject) => {
+    const u = `https://${lang}.wikipedia.org/w/api.php?action=query&format=json&` +
+      `titles=${encodeURIComponent(title.replace(/ /g, '_'))}&prop=links&pllimit=100&plnamespace=0`;
+    https.get(u, { headers: { 'User-Agent': 'WikiSpeedrun-e2e/1.0' } }, res => {
+      let d = ''; res.on('data', c => d += c);
+      res.on('end', () => {
+        try {
+          const page = Object.values(JSON.parse(d).query.pages)[0];
+          resolve((page.links || []).map(l => l.title));
+        } catch (e) { reject(e); }
+      });
+    }).on('error', reject);
+  });
+}
+
 const pass = m => console.log(`  ✓ ${m}`);
 const fail = m => { console.log(`  ✗ ${m}`); process.exitCode = 1; };
 
@@ -126,25 +147,41 @@ const fail = m => { console.log(`  ✗ ${m}`); process.exitCode = 1; };
 
   console.log('\n[4] Verify pool-based puzzle came through (server should not hit wiki live)...');
   // These are from the pool, so the destination should be canonical (pool has
-  // resolveRedirect applied at gen time).
-  const destHasUnderscores = gameStart.destination.includes('_') || gameStart.destination.length < 30;
-  pass(`dest title looks canonical: "${gameStart.destination}"`);
+  // resolveRedirect applied at gen time). Canonical pool titles use underscores
+  // or are short single-word names.
+  const destLooksCanonical = gameStart.destination.includes('_') || gameStart.destination.length < 30;
+  if (!destLooksCanonical) fail(`dest title doesn't look canonical: "${gameStart.destination}"`);
+  else pass(`dest title looks canonical: "${gameStart.destination}"`);
 
-  console.log('\n[5] Send a sequence of navigates from origin, expect player_progress echoes...');
-  // Use the origin as start; "navigate" to a believable article. We don't
-  // actually need the destination — we just want to exercise the
-  // navigate+broadcast path. Any valid article title works for the nav log,
-  // but if it's not in the dest's alias set it won't trigger a win.
-  const testArticles = ['United_States', 'Earth', 'Wikipedia'];
-  for (const article of testArticles) {
-    const r = await action(playerId, csrf, { type: 'navigate', article });
+  console.log('\n[5] Navigate along REAL links from the origin, expect player_progress echoes...');
+  // The server enforces move-legality, so we must follow actual outgoing links.
+  // Fetch the origin's links, hop to one, then a link of that page.
+  let current = gameStart.origin;
+  let lastNavigated = null;
+  for (let hop = 0; hop < 2; hop++) {
+    const links = (await wikiLinks(current, gameStart.lang)).filter(t => !t.includes(':'));
+    if (links.length === 0) { pass(`"${current}" is a dead-end; stopping nav walk`); break; }
+    const next = links[0].replace(/ /g, '_');
+    const r = await action(playerId, csrf, { type: 'navigate', article: next });
     if (r.status !== 200 || !r.body.ok) {
-      fail(`navigate(${article}) failed: ${r.status} ${JSON.stringify(r.body)}`);
+      fail(`legal navigate(${next}) from ${current} rejected: ${r.status} ${JSON.stringify(r.body)}`);
       sse.close(); return;
     }
+    lastNavigated = next; current = next;
   }
-  const progress = await sse.waitFor(m => m.type === 'player_progress' && m.currentArticle === testArticles[testArticles.length - 1], 3000);
-  pass(`player_progress received for ${progress.currentArticle}, steps=${progress.steps}`);
+  if (lastNavigated) {
+    // Generous timeout: the server now validates each move by fetching the
+    // current page's outgoing links (anti-cheat), so a cold-cache navigate
+    // round-trip can take a few seconds against live Wikipedia.
+    const progress = await sse.waitFor(m => m.type === 'player_progress' && m.currentArticle === lastNavigated, 8000);
+    pass(`player_progress received for ${progress.currentArticle}, steps=${progress.steps}`);
+  }
+
+  console.log('\n[5b] Anti-cheat: an illegal navigate (not a link of the current page) must be rejected...');
+  const cheat = await action(playerId, csrf, { type: 'navigate', article: 'Zxqvwb_Not_A_Real_Linked_Article_98765' });
+  if (cheat.body.ok) fail(`illegal navigate was accepted (anti-cheat broken): ${JSON.stringify(cheat.body)}`);
+  else if (cheat.body.error !== 'illegal_move') fail(`illegal navigate rejected but wrong reason: ${JSON.stringify(cheat.body)}`);
+  else pass(`illegal navigate blocked with error=illegal_move`);
 
   console.log('\n[6] Give up (single player → immediate game_over)...');
   const r2 = await action(playerId, csrf, { type: 'give_up_vote' });
@@ -159,7 +196,7 @@ const fail = m => { console.log(`  ✗ ${m}`); process.exitCode = 1; };
   console.log('\n[7] Test Fix 5: invalid viewRange is rejected silently (no crash)...');
   // This is a room-difficulty change; we need a room. We already have one.
   const r3 = await action(playerId, csrf, {
-    type: 'change_difficulty',
+    type: 'set_difficulty',
     viewRange: [NaN, Infinity],
   });
   // Should succeed (returns ok) but internally reject → viewRange becomes null
