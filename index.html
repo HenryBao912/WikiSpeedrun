@@ -4432,6 +4432,46 @@
 </div>
 
 <script>
+// ─── Client error reporting → /clientlog ───
+// Surfaces uncaught JS errors + unhandled promise rejections to the server, so
+// client bugs land in the same Railway logs / Discord alerts as server crashes
+// (previously they were completely invisible). Registered first so it catches
+// errors during app init too. Dedupes per signature, caps per page load, and
+// drops browser/extension noise so it can't spam.
+(function () {
+  const sent = new Set();
+  let count = 0;
+  const MAX = 20;
+  function report(kind, info) {
+    try {
+      const msg = (info.message || '').slice(0, 300);
+      if (!msg || msg === 'Script error.' || /ResizeObserver loop/i.test(msg) || /-extension:\/\//i.test(msg)) return;
+      const sig = kind + '|' + msg + '|' + (info.source || '') + ':' + (info.lineno || '');
+      if (sent.has(sig) || count >= MAX) return;
+      sent.add(sig); count++;
+      const payload = JSON.stringify({ kind: kind, message: msg, source: info.source, lineno: info.lineno, stack: info.stack, url: location.pathname });
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon('/clientlog', new Blob([payload], { type: 'application/json' }));
+      } else {
+        fetch('/clientlog', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload, keepalive: true }).catch(function () {});
+      }
+    } catch (_) { /* reporting must never throw */ }
+  }
+  window.addEventListener('error', function (e) {
+    report('client_error', {
+      message: e.message, source: e.filename, lineno: e.lineno,
+      stack: e.error && e.error.stack ? String(e.error.stack).slice(0, 1000) : null,
+    });
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    const r = e.reason;
+    report('client_unhandledrejection', {
+      message: r && r.message ? r.message : String(r),
+      stack: r && r.stack ? String(r.stack).slice(0, 1000) : null,
+    });
+  });
+})();
+
 // ─── Floating Background Words ───
 const WIKI_WORDS = [
   'Philosophy','Cat','United States','Mathematics','Earth','Evolution','Sun',

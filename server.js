@@ -48,6 +48,39 @@ function allowAction(playerId) {
   return true;
 }
 
+// Per-IP token bucket for the public /clientlog error-reporting endpoint, so a
+// buggy loop or a malicious client can't flood logs/Discord. ~30 reports/min
+// sustained, burst of 10. Map is bounded (evict oldest) since there's no
+// disconnect event to clean it.
+const clientLogBuckets = new Map(); // ip -> { tokens, last }
+const CLIENTLOG_BUCKET_MAX = 10;
+const CLIENTLOG_REFILL_PER_SEC = 0.5;
+function allowClientLog(ip) {
+  const now = Date.now();
+  let b = clientLogBuckets.get(ip);
+  if (!b) {
+    if (clientLogBuckets.size > 5000) { const oldest = clientLogBuckets.keys().next().value; if (oldest !== undefined) clientLogBuckets.delete(oldest); }
+    b = { tokens: CLIENTLOG_BUCKET_MAX, last: now };
+    clientLogBuckets.set(ip, b);
+  }
+  const elapsed = Math.max(0, now - b.last);
+  b.tokens = Math.min(CLIENTLOG_BUCKET_MAX, b.tokens + (elapsed / 1000) * CLIENTLOG_REFILL_PER_SEC);
+  b.last = now;
+  if (b.tokens < 1) return false;
+  b.tokens -= 1;
+  return true;
+}
+
+// Browser/extension noise that isn't a real app bug — dropped on BOTH client and
+// server so it never logs or pings: cross-origin "Script error." (no detail),
+// the benign ResizeObserver loop warning, and errors originating in extensions.
+function isNoiseClientError(message) {
+  if (!message) return true;
+  return message === 'Script error.'
+    || /ResizeObserver loop/i.test(message)
+    || /-extension:\/\//i.test(message);
+}
+
 // Wikipedia hosts per language. Add a language here + ensure the random
 // article / bio-detection heuristics below know about it and it's available
 // to rooms. Client's toggle must stay in sync.
@@ -85,20 +118,19 @@ function shortStack(err) {
 const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL || '';
 const DISCORD_COOLDOWN_MS = 5 * 60 * 1000;
 const _discordSent = new Map(); // signature -> lastSentMs
-function notifyDiscordCrash(kind, err) {
+// Shared Discord poster: de-dupes by `sig` (5-min cooldown), bounds the map,
+// and is fire-and-forget + never-throw. Used for both server crashes and
+// client errors so a recurring issue pings once, not on every occurrence.
+function notifyDiscord(emoji, kind, sig, text) {
   if (!DISCORD_WEBHOOK_URL) return;
   try {
-    const msg = (err && err.message) ? err.message : String(err);
-    const frame = (err && err.stack ? String(err.stack).split('\n')[1] : '') || '';
-    const sig = `${kind}|${msg}|${frame.trim()}`;
     const now = Date.now();
     if (_discordSent.has(sig) && now - _discordSent.get(sig) < DISCORD_COOLDOWN_MS) return;
     _discordSent.set(sig, now);
-    if (_discordSent.size > 200) { // bound the map
+    if (_discordSent.size > 300) {
       for (const [k, t] of _discordSent) if (now - t > DISCORD_COOLDOWN_MS) _discordSent.delete(k);
     }
-    const text = `${msg}\n${shortStack(err) || ''}`.slice(0, 1800);
-    const body = JSON.stringify({ content: `🔴 **WikiSpeedrun** \`${kind}\`\n\`\`\`\n${text}\n\`\`\`` });
+    const body = JSON.stringify({ content: `${emoji} **WikiSpeedrun** \`${kind}\`\n\`\`\`\n${String(text).slice(0, 1800)}\n\`\`\`` });
     // Pass the URL straight to https.request so Node resolves host/port/path
     // (Discord is always :443, but this stays correct for any webhook URL).
     const req = https.request(DISCORD_WEBHOOK_URL, {
@@ -109,7 +141,12 @@ function notifyDiscordCrash(kind, err) {
     req.setTimeout(5000, () => req.destroy());
     req.write(body);
     req.end();
-  } catch (_) { /* alerting must never break the crash handler */ }
+  } catch (_) { /* alerting must never break anything */ }
+}
+function notifyDiscordCrash(kind, err) {
+  const msg = (err && err.message) ? err.message : String(err);
+  const frame = (err && err.stack ? String(err.stack).split('\n')[1] : '') || '';
+  notifyDiscord('🔴', kind, `${kind}|${msg}|${frame.trim()}`, `${msg}\n${shortStack(err) || ''}`);
 }
 
 let _uncaughtTimes = [];
@@ -3517,6 +3554,37 @@ const server = http.createServer(async (req, res) => {
       'Cache-Control': 'no-store',
     });
     res.end(JSON.stringify({ date, entries, count: entries.length }));
+    return;
+  }
+
+  // Client-side error reporting. The browser posts uncaught errors / unhandled
+  // rejections here so they land in the same structured Railway logs (and
+  // Discord) as server crashes — closing the previously-invisible client blind
+  // spot, dependency-free. Per-IP rate-limited, noise-filtered, size-capped, and
+  // it never errors back (a logging endpoint must not become a failure source).
+  if (parsed.pathname === '/clientlog' && req.method === 'POST') {
+    if (!allowClientLog(clientIpFromReq(req))) { res.writeHead(429); res.end(); return; }
+    try {
+      const data = JSON.parse(await readBody(req));
+      const message = String(data.message || '').slice(0, 300);
+      if (!isNoiseClientError(message)) {
+        const kind = data.kind === 'client_unhandledrejection' ? 'client_unhandledrejection' : 'client_error';
+        const info = {
+          message,
+          stack: data.stack ? String(data.stack).slice(0, 1200) : null,
+          source: data.source ? String(data.source).slice(0, 300) : null,
+          line: Number.isFinite(data.lineno) ? data.lineno : null,
+          path: data.url ? String(data.url).slice(0, 200) : null,
+          ua: (req.headers['user-agent'] || '').slice(0, 200),
+        };
+        logEvent(kind, info);
+        // Dedupe by message + source:line so one recurring client bug pings once.
+        notifyDiscord('🟠', kind, `${kind}|${info.message}|${info.source || ''}:${info.line || ''}`,
+          `${info.message}\n${info.stack || ''}\n@ ${info.path || '?'} · ${info.ua}`);
+      }
+    } catch (_) { /* malformed report — ignore, never error a logging endpoint */ }
+    res.writeHead(204);
+    res.end();
     return;
   }
 
