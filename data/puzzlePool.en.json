@@ -83,16 +83,6 @@
       "dist": 2
     },
     {
-      "origin": "Sue_Prado",
-      "destination": "Raindrop_cake",
-      "viewRange": [
-        500000,
-        100000000
-      ],
-      "difficulty": "easy",
-      "dist": 5
-    },
-    {
       "origin": "Sexual_intercourse",
       "destination": "Australia",
       "viewRange": [
@@ -234,16 +224,6 @@
     },
     {
       "origin": "Apollo_11",
-      "destination": "1win",
-      "viewRange": [
-        500000,
-        100000000
-      ],
-      "difficulty": "easy",
-      "dist": 4
-    },
-    {
-      "origin": "Apollo_11",
       "destination": "Earth",
       "viewRange": [
         500000,
@@ -315,16 +295,6 @@
     {
       "origin": "Anya_Taylor-Joy",
       "destination": "Confessions_II",
-      "viewRange": [
-        500000,
-        100000000
-      ],
-      "difficulty": "easy",
-      "dist": 4
-    },
-    {
-      "origin": "NBC_Sports",
-      "destination": "1win",
       "viewRange": [
         500000,
         100000000
@@ -575,16 +545,6 @@
     {
       "origin": "Meet_the_Parents",
       "destination": "Looksmaxxing",
-      "viewRange": [
-        50000,
-        500000
-      ],
-      "difficulty": "medium",
-      "dist": 3
-    },
-    {
-      "origin": "Enya",
-      "destination": "Suicide_methods",
       "viewRange": [
         50000,
         500000
@@ -943,16 +903,6 @@
       "dist": 3
     },
     {
-      "origin": "Meet_the_Parents",
-      "destination": "Raindrop_cake",
-      "viewRange": [
-        50000,
-        500000
-      ],
-      "difficulty": "medium",
-      "dist": 4
-    },
-    {
       "origin": "Strait_of_Hormuz",
       "destination": "Stephen_Curry",
       "viewRange": [
@@ -1181,16 +1131,6 @@
       ],
       "difficulty": "hard",
       "dist": 2
-    },
-    {
-      "origin": "Shooter's_Hill",
-      "destination": "Eurotophobia",
-      "viewRange": [
-        5000,
-        50000
-      ],
-      "difficulty": "hard",
-      "dist": 4
     },
     {
       "origin": "Artificial_intelligence",
@@ -1691,16 +1631,6 @@
       ],
       "difficulty": "expert",
       "dist": 3
-    },
-    {
-      "origin": "Nicotine_marketing",
-      "destination": "OWIS",
-      "viewRange": [
-        1000,
-        5000
-      ],
-      "difficulty": "expert",
-      "dist": 4
     },
     {
       "origin": "BBC_World_Service",
@@ -2716,38 +2646,6 @@
     },
     {
       "targets": [
-        "Monty_Hall_problem",
-        "Roger_Fairfax",
-        "Pornhub"
-      ],
-      "viewRange": [
-        5000,
-        50000
-      ],
-      "difficulty": "hard",
-      "distances": [
-        4,
-        3
-      ]
-    },
-    {
-      "targets": [
-        "Avenger-class_escort_carrier",
-        "Doug_McConnell",
-        "Ifakara"
-      ],
-      "viewRange": [
-        5000,
-        50000
-      ],
-      "difficulty": "hard",
-      "distances": [
-        4,
-        4
-      ]
-    },
-    {
-      "targets": [
         "Megalithic_art",
         "Meat_Puppets_II",
         "Illuyanka"
@@ -3084,22 +2982,6 @@
     },
     {
       "targets": [
-        "Profinet",
-        "Super_Aguri_F1",
-        "Bifid_nose"
-      ],
-      "viewRange": [
-        1000,
-        5000
-      ],
-      "difficulty": "expert",
-      "distances": [
-        3,
-        5
-      ]
-    },
-    {
-      "targets": [
         "Sun",
         "Paul_McCartney",
         "Focker-in-Law"
@@ -3111,38 +2993,6 @@
       "difficulty": "expert",
       "distances": [
         3,
-        4
-      ]
-    },
-    {
-      "targets": [
-        "Triller_TV",
-        "De_Boor's_algorithm",
-        "Dal_bati"
-      ],
-      "viewRange": [
-        1000,
-        5000
-      ],
-      "difficulty": "expert",
-      "distances": [
-        4,
-        4
-      ]
-    },
-    {
-      "targets": [
-        "Pat_Benatar",
-        "Vietnam_War",
-        "Pierre_Kompany"
-      ],
-      "viewRange": [
-        1000,
-        5000
-      ],
-      "difficulty": "expert",
-      "distances": [
-        2,
         4
       ]
     },

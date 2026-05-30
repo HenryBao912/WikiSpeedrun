@@ -3118,6 +3118,15 @@
     flex: 1;
     position: relative;
   }
+  /* Bug 3: type-time "destination too sparse" warning under the word box. */
+  .rw-dest-warn {
+    display: none;
+    margin: 2px 2px 6px;
+    font-size: 0.78rem;
+    line-height: 1.3;
+    color: var(--red, #e17055);
+  }
+  .rw-input.rw-input-warn { border-color: var(--red, #e17055); }
   .rw-input {
     width: 100%;
     padding: 10px 14px;
@@ -5542,6 +5551,8 @@ function renderSpRoundWords() {
       const id = e.target.id;
       if (id && id.startsWith('spRw')) {
         fetchAutocomplete(e.target.value, 'ac' + id.charAt(0).toUpperCase() + id.slice(1), id);
+        // Classic destination (and tri targets) get a type-time sparse warning.
+        if (id === 'spRwDest' || id === 'spRwTarget1' || id === 'spRwTarget3') validateDestInput(e.target);
       }
     });
     spRoundWordsDelegated = true;
@@ -5770,7 +5781,7 @@ function renderRoundWords() {
     `;
     if (isHost) {
       document.getElementById('rwOrigin')?.addEventListener('input', (e) => { if (e.isComposing) return; fetchAutocomplete(e.target.value, 'acRwOrigin', 'rwOrigin'); });
-      document.getElementById('rwDest')?.addEventListener('input', (e) => { if (e.isComposing) return; fetchAutocomplete(e.target.value, 'acRwDest', 'rwDest'); });
+      document.getElementById('rwDest')?.addEventListener('input', (e) => { if (e.isComposing) return; fetchAutocomplete(e.target.value, 'acRwDest', 'rwDest'); validateDestInput(e.target); });
     }
     applyInputPlaceholders();
   } else {
@@ -5894,6 +5905,51 @@ function broadcastWordUpdate() {
 // Wikipedia opensearch request, which floods under IME composition and
 // triggers rate limits on zh.
 const _acDebounce = new Map(); // listId -> timeout id
+// Bug 3: validate a typed destination's backlink count at type-time, so the
+// user learns it's too isolated BEFORE pressing Start (instead of a post-submit
+// rejection). Debounced + cached per title; the server's /validate-dest is
+// itself fail-open + rate-limited.
+const _destValidateCache = new Map();
+let _destValidateTimer = null;
+function ensureDestWarn(inputEl) {
+  const row = inputEl.closest('.rw-row') || inputEl.parentElement;
+  let warn = row.nextElementSibling;
+  if (!warn || !warn.classList || !warn.classList.contains('rw-dest-warn')) {
+    warn = document.createElement('div');
+    warn.className = 'rw-dest-warn';
+    warn.setAttribute('role', 'status');
+    row.parentElement.insertBefore(warn, row.nextSibling);
+  }
+  return warn;
+}
+function validateDestInput(inputEl) {
+  if (!inputEl) return;
+  const title = (inputEl.value || '').trim();
+  const warn = ensureDestWarn(inputEl);
+  clearTimeout(_destValidateTimer);
+  if (!title) { warn.style.display = 'none'; inputEl.classList.remove('rw-input-warn'); return; }
+  _destValidateTimer = setTimeout(async () => {
+    const norm = title.toLowerCase().replace(/ /g, '_');
+    let result = _destValidateCache.get(norm);
+    if (result === undefined) {
+      try {
+        const resp = await fetch(`/validate-dest?title=${encodeURIComponent(title.replace(/ /g, '_'))}&lang=${activeWikiLang()}`);
+        result = await resp.json();
+        if (result && result.ok) _destValidateCache.set(norm, result);
+      } catch { return; }
+    }
+    if ((inputEl.value || '').trim() !== title) return; // user kept typing — stale
+    if (result && result.ok && result.sparse) {
+      warn.textContent = 'Too few links to be a playable destination — try a more well-known article.';
+      warn.style.display = '';
+      inputEl.classList.add('rw-input-warn');
+    } else {
+      warn.style.display = 'none';
+      inputEl.classList.remove('rw-input-warn');
+    }
+  }, 350);
+}
+
 async function fetchAutocomplete(query, listId, inputId) {
   // Cancel any pending call for this list.
   const existing = _acDebounce.get(listId);

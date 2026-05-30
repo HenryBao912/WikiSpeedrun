@@ -953,6 +953,11 @@ function submitDailyToLeaderboard(room, gaveUp) {
 // below does not).
 const HARDCODED_DAILY_BLACKLIST = new Set([
   '1win',                 // 3 backlinks (caught 2026-05-19)
+  'Raindrop_cake',        // 6 backlinks (caught 2026-05-23, daily was unwinnable)
+  // Content unsuitable for a shareable daily/random puzzle target.
+  'Suicide_methods',
+  'Suicide',
+  'Self-harm',
 ]);
 
 // In-memory blacklist of destinations the runtime guardrail has rejected
@@ -1282,13 +1287,13 @@ function cacheGet(cache, key) {
   return entry.value;
 }
 
-function cacheSet(cache, key, value) {
+function cacheSet(cache, key, value, ttlMs = CACHE_TTL_MS) {
   if (cache.size >= CACHE_MAX) {
     // Evict oldest (first) key — Map iterates insertion order
     const firstKey = cache.keys().next().value;
     if (firstKey !== undefined) cache.delete(firstKey);
   }
-  cache.set(key, { value, expires: Date.now() + CACHE_TTL_MS });
+  cache.set(key, { value, expires: Date.now() + ttlMs });
 }
 
 // In-flight request coalescing. When N concurrent callers ask for the same
@@ -1331,8 +1336,47 @@ function parseRetryAfter(headerValue) {
   return null;
 }
 
+// Global cap on concurrent outbound Wikipedia/Wikimedia requests. A single
+// player navigating through uncached articles fans out many parallel
+// getPageLinks/getBacklinks (computeDistance's 2-hop neighborhood expansion,
+// the move-legality check, background destination caching) — which used to
+// burst past Wikipedia's anonymous rate limit and trip a wave of 429s. Excess
+// requests queue here; combined with the per-request retry/backoff that honors
+// Retry-After, this keeps us under the limit. 4 is conservative for anonymous
+// (origin=*) traffic.
+// Two limits, both enforced: a CONCURRENCY cap (≤ N requests in flight) AND a
+// minimum INTERVAL between request starts (a rate cap). Concurrency alone isn't
+// enough — N fast requests still produce N × (1/latency) req/s, which is what
+// tripped Wikipedia's per-IP 429s during a uncached-navigation burst. The
+// interval paces sustained bursts; the cap bounds parallelism.
+const WIKI_MAX_CONCURRENT = 4;
+const WIKI_MIN_INTERVAL_MS = 100; // ≥ this between starts → ~10 req/s ceiling
+let wikiInFlight = 0;
+let wikiLastStart = 0;
+let wikiPumpScheduled = false;
+const wikiWaiters = [];
+function acquireWikiSlot() {
+  return new Promise(resolve => { wikiWaiters.push(resolve); pumpWikiQueue(); });
+}
+function pumpWikiQueue() {
+  if (!wikiWaiters.length || wikiInFlight >= WIKI_MAX_CONCURRENT) return;
+  const wait = wikiLastStart + WIKI_MIN_INTERVAL_MS - Date.now();
+  if (wait > 0) {
+    if (!wikiPumpScheduled) { wikiPumpScheduled = true; setTimeout(() => { wikiPumpScheduled = false; pumpWikiQueue(); }, wait); }
+    return;
+  }
+  wikiLastStart = Date.now();
+  wikiInFlight++;
+  wikiWaiters.shift()();
+  if (wikiWaiters.length) pumpWikiQueue(); // let the interval gate the next one
+}
+function releaseWikiSlot() {
+  wikiInFlight--;
+  pumpWikiQueue();
+}
+
 function wikiAPIOnce(params, lang = DEFAULT_LANG) {
-  return new Promise((resolve, reject) => {
+  return acquireWikiSlot().then(() => new Promise((resolve, reject) => {
     const finalParams = { ...params, format: 'json', origin: '*' };
     if (WIKI_VARIANTS[lang]) finalParams.variant = WIKI_VARIANTS[lang];
     const qs = new URLSearchParams(finalParams);
@@ -1364,7 +1408,7 @@ function wikiAPIOnce(params, lang = DEFAULT_LANG) {
     req.setTimeout(WIKI_REQUEST_TIMEOUT_MS, () => {
       req.destroy(new Error('wiki request timeout'));
     });
-  });
+  }).finally(releaseWikiSlot));
 }
 
 // Retry transient failures with short exponential backoff. Critical: user-
@@ -1453,6 +1497,58 @@ async function getBacklinks(title, limit = 500, lang = DEFAULT_LANG) {
     if (completed) cacheSet(backlinkCache, key, links);
     return links;
   });
+}
+
+// Robust backlink-count estimate for the sparse-destination guardrail and the
+// word-box validation. Three things the old `getBacklinks(...).size` got wrong:
+//   1. It returned an empty Set on a 429/fetch error, which read as 0 backlinks
+//      — so a transient rate-limit wrongly rejected popular articles (Apple_Inc.,
+//      Leonardo_DiCaprio) as "too sparse". This returns null on failure so
+//      callers FAIL OPEN.
+//   2. It counted backlinks to the raw title, missing redirects (e.g. a redirect
+//      title has near-zero backlinks). This resolves the redirect first.
+//   3. It could paginate. We only need "is it >= threshold?": a full first page
+//      or a continue token already proves "not sparse" — one request, no walk.
+// Cached for 7 days (backlink counts barely move) to cut API load.
+const backlinkCountCache = new Map(); // lang|title -> { value: number, expires }
+const BACKLINK_COUNT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+async function countBacklinks(title, threshold, lang = DEFAULT_LANG) {
+  // Resolve to the page's CANONICAL stored title before counting. redirects=1
+  // follows redirects; converttitles=1 maps a variant title to the stored form.
+  // The latter is essential for zh: the pool stores Simplified titles (柯震东)
+  // but the page is stored Traditional (柯震東), and list=backlinks needs the
+  // EXACT stored title (it does not variant-convert) — without this every
+  // Simplified zh title counts as 0 backlinks and gets wrongly rejected as
+  // sparse. For en (no variant) converttitles is a harmless no-op.
+  let resolved = title;
+  try {
+    const data = await wikiAPI({ action: 'query', titles: title.replace(/ /g, '_'), redirects: '1', converttitles: '1' }, lang);
+    const page = Object.values(data.query?.pages || {})[0];
+    if (page && page.missing === undefined && page.title) resolved = page.title;
+  } catch (e) { /* fall back to the raw title */ }
+  const key = cacheKey(lang, resolved);
+  const cached = cacheGet(backlinkCountCache, key);
+  if (cached !== undefined) return cached;
+  try {
+    const data = await wikiAPI({
+      action: 'query', list: 'backlinks',
+      bltitle: resolved.replace(/ /g, '_'),
+      bllimit: String(Math.max(1, Math.min(threshold, 500))),
+      blnamespace: '0',
+    }, lang);
+    const page = data.query?.backlinks || [];
+    const hasMore = !!data.continue?.blcontinue;
+    // A full page or a continue token → at least `threshold` exist.
+    const count = (page.length >= threshold || hasMore) ? threshold : page.length;
+    if (process.env.DEBUG_BACKLINKS) {
+      logEvent('backlink_count', { title, resolved, lang, page: page.length, hasMore, count, threshold });
+    }
+    cacheSet(backlinkCountCache, key, count, BACKLINK_COUNT_TTL_MS);
+    return count;
+  } catch (e) {
+    console.error('countBacklinks failed for', title, '->', resolved, e.message);
+    return null; // fail open — don't reject an article because we couldn't count
+  }
 }
 
 // Fetch titles of all redirects that point AT the given page. Wikipedia's
@@ -2165,11 +2261,13 @@ async function startGameForRoom(room, roomCode) {
     if (manualDest) {
       const MIN_BACKLINKS = 15;
       try {
-        const backlinks = await getBacklinks(room.pair.destination, MIN_BACKLINKS, lang);
-        if (backlinks.size < MIN_BACKLINKS) {
+        // countBacklinks resolves redirects + returns null on fetch failure so
+        // a transient 429 can't get a popular destination wrongly rejected.
+        const backlinkCount = await countBacklinks(room.pair.destination, MIN_BACKLINKS, lang);
+        if (backlinkCount !== null && backlinkCount < MIN_BACKLINKS) {
           const dest = room.pair.destination;
           logEvent('start_rejected_sparse', {
-            roomCode, lang, destination: dest, backlinks: backlinks.size, threshold: MIN_BACKLINKS,
+            roomCode, lang, destination: dest, backlinks: backlinkCount, threshold: MIN_BACKLINKS,
             daily: !!room.daily, dailyDate: room.dailyMeta?.date || null,
           });
           // Self-heal: if this was a daily room, blacklist the destination AND
@@ -2189,13 +2287,13 @@ async function startGameForRoom(room, roomCode) {
             type: 'start_rejected',
             reason: 'destination_too_isolated',
             destination: dest,
-            backlinks: backlinks.size,
+            backlinks: backlinkCount,
             // Daily-specific message: hide the curation detail, frame as
             // recoverable. The client routes daily rejections to home where
             // the now-self-healed daily can be retried.
             message: room.daily
               ? "Today's daily had a snag — we picked a new one. Try again."
-              : `"${dest.replace(/_/g, ' ')}" is too isolated — only ${backlinks.size} articles link to it. Pick a more popular destination.`,
+              : `"${dest.replace(/_/g, ' ')}" has too few links to be a playable destination — try a more well-known article.`,
             daily: !!room.daily,
           });
           return;
@@ -3351,6 +3449,29 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Backlink validation for the destination word-box (Bug 3): lets the client
+  // warn at type-time that an article is too isolated to be a playable target,
+  // instead of only finding out after pressing Start. Backed by the same
+  // countBacklinks the runtime guardrail uses (redirect/variant-resolving,
+  // 7-day cached, fail-open). Outbound load is bounded by the global request
+  // limiter; results are cached so repeated checks are cheap.
+  if (parsed.pathname === '/validate-dest' && req.method === 'GET') {
+    const title = parsed.query.title;
+    const lang = normalizeLang(parsed.query.lang);
+    if (!title || !isValidArticle(title)) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'invalid_title' }));
+      return;
+    }
+    const MIN = 15;
+    const count = await countBacklinks(title, MIN, lang);
+    // null = couldn't determine → not sparse (fail open; never block on our hiccup).
+    const sparse = count !== null && count < MIN;
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify({ ok: true, sparse, count, threshold: MIN }));
+    return;
+  }
+
   // Today's daily challenge as JSON. Used by the home screen to show the
   // "Daily Challenge #N: A → B" preview without forcing the client to also
   // know the puzzle pool. Cached for 5 min — same puzzle for 24h, but a
@@ -3675,6 +3796,14 @@ module.exports = {
   resolveRedirect,
   toVariantTitle,
   normalizeArticle,
+  // Backlink helpers — generatePool.js's sparse-destination guardrail imports
+  // getBacklinks; without these exports the require returned undefined and the
+  // guardrail silently no-op'd, letting sparse articles (1win, Raindrop_cake)
+  // into the pool.
+  getBacklinks,
+  countBacklinks,
+  getDailyChallenge,
+  HARDCODED_DAILY_BLACKLIST,
   WIKI_HOSTS,
   DEFAULT_LANG,
   // Marathon scoring (pure — safe to unit test)
