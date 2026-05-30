@@ -62,6 +62,38 @@ function logEvent(event, data = {}) {
   }
 }
 
+// ─── Last-resort crash safety ───
+// Without these, a single stray throw or unhandled promise rejection takes down
+// the whole process — and with it every in-memory game + open SSE connection
+// (Node ≥15 exits on an unhandled rejection by default). We log full context and
+// KEEP RUNNING: for a real-time game, surviving a localized bug beats dropping
+// everyone. A crash-loop guard still exits cleanly if errors cascade, so a truly
+// wedged process restarts (Railway) instead of spewing forever. The handlers
+// themselves must never throw.
+function shortStack(err) {
+  const s = err && err.stack ? String(err.stack) : null;
+  return s ? s.split('\n').slice(0, 8).join('\n') : null;
+}
+let _uncaughtTimes = [];
+function recordFatal(kind, err) {
+  try {
+    logEvent(kind, {
+      message: (err && err.message) ? err.message : String(err),
+      name: (err && err.name) || null,
+      stack: shortStack(err),
+    });
+  } catch (_) { /* logging must never re-throw */ }
+  const now = Date.now();
+  _uncaughtTimes = _uncaughtTimes.filter(t => now - t < 10000);
+  _uncaughtTimes.push(now);
+  if (_uncaughtTimes.length > 50) {
+    try { logEvent('crash_loop_exit', { count: _uncaughtTimes.length, windowMs: 10000 }); } catch (_) {}
+    process.exit(1); // cascading failures — let the platform restart clean
+  }
+}
+process.on('uncaughtException', (err) => recordFatal('uncaught_exception', err));
+process.on('unhandledRejection', (reason) => recordFatal('unhandled_rejection', reason));
+
 const WIKI_HOSTS = {
   en: 'en.wikipedia.org',
   zh: 'zh.wikipedia.org',
