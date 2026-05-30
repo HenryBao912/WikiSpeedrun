@@ -74,6 +74,44 @@ function shortStack(err) {
   const s = err && err.stack ? String(err.stack) : null;
   return s ? s.split('\n').slice(0, 8).join('\n') : null;
 }
+
+// Optional Discord crash alert. Set DISCORD_WEBHOOK_URL in the environment and a
+// GENUINE crash (uncaught_exception / unhandled_rejection) pings the channel.
+// Expected/handled errors (429s, illegal_move, start_rejected_sparse) never
+// reach recordFatal, so this is signal-only. De-duped per error signature with a
+// 5-minute cooldown, so a repeating bug — or a crash loop — can't flood the
+// channel or trip Discord's own webhook rate limit. Fire-and-forget; the alert
+// path must never throw or block the crash handler.
+const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL || '';
+const DISCORD_COOLDOWN_MS = 5 * 60 * 1000;
+const _discordSent = new Map(); // signature -> lastSentMs
+function notifyDiscordCrash(kind, err) {
+  if (!DISCORD_WEBHOOK_URL) return;
+  try {
+    const msg = (err && err.message) ? err.message : String(err);
+    const frame = (err && err.stack ? String(err.stack).split('\n')[1] : '') || '';
+    const sig = `${kind}|${msg}|${frame.trim()}`;
+    const now = Date.now();
+    if (_discordSent.has(sig) && now - _discordSent.get(sig) < DISCORD_COOLDOWN_MS) return;
+    _discordSent.set(sig, now);
+    if (_discordSent.size > 200) { // bound the map
+      for (const [k, t] of _discordSent) if (now - t > DISCORD_COOLDOWN_MS) _discordSent.delete(k);
+    }
+    const text = `${msg}\n${shortStack(err) || ''}`.slice(0, 1800);
+    const body = JSON.stringify({ content: `🔴 **WikiSpeedrun** \`${kind}\`\n\`\`\`\n${text}\n\`\`\`` });
+    // Pass the URL straight to https.request so Node resolves host/port/path
+    // (Discord is always :443, but this stays correct for any webhook URL).
+    const req = https.request(DISCORD_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+    });
+    req.on('error', () => {});            // never surface an alert failure
+    req.setTimeout(5000, () => req.destroy());
+    req.write(body);
+    req.end();
+  } catch (_) { /* alerting must never break the crash handler */ }
+}
+
 let _uncaughtTimes = [];
 function recordFatal(kind, err) {
   try {
@@ -83,6 +121,7 @@ function recordFatal(kind, err) {
       stack: shortStack(err),
     });
   } catch (_) { /* logging must never re-throw */ }
+  notifyDiscordCrash(kind, err);
   const now = Date.now();
   _uncaughtTimes = _uncaughtTimes.filter(t => now - t < 10000);
   _uncaughtTimes.push(now);
