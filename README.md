@@ -22,7 +22,7 @@ npm start
 # open http://localhost:3000
 ```
 
-Requires Node 18+. No external services; Wikipedia is called directly.
+Requires Node 20+. No external services; Wikipedia is called directly.
 
 ## How it works
 
@@ -30,6 +30,18 @@ Requires Node 18+. No external services; Wikipedia is called directly.
 - **Client**: single HTML file. Fetches Wikipedia HTML via `action=parse` and strips navboxes/references/editsections before rendering.
 - **Puzzle pool**: pre-generated from Wikipedia's pageview API. Start/target articles are well-known enough to be solvable but not trivially one-hop connected.
 - **Distance cache**: at game start, the server pre-computes the 1/2/3-hop neighborhood of the destination so the "distance to target" badge updates without a round-trip per click.
+
+## Configuration
+
+Environment variables (all optional):
+
+- `PORT` — HTTP port (default `3000`).
+- `ENFORCE_MOVE_LEGALITY` — server-side anti-cheat. Each navigation is only
+  accepted if the target is a real outgoing link of the player's current page
+  (fails *open* on any Wikipedia error so a real click is never wrongly
+  blocked). Enabled by default. Set to `false` for **shadow mode**: would-be
+  rejections are logged (`navigate_rejected` with `enforced:false`) but not
+  blocked — useful for monitoring on live traffic before/while enforcing.
 
 ## Pool generation
 

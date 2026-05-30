@@ -15,3 +15,7 @@ Thumbs.db
 # Pool-generation logs (regenerate, don't commit)
 data/genpool.log
 data/*.log
+
+# Backups written by the pool fix/audit scripts
+data/*.bak
+*.bak

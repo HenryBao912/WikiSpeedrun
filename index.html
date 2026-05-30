@@ -47,8 +47,10 @@
 </script>
 
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-<!-- DOMPurify: sanitize Wikipedia HTML before injecting via innerHTML -->
-<script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js" crossorigin="anonymous"></script>
+<!-- DOMPurify: sanitizes Wikipedia HTML before injecting via innerHTML.
+     Self-hosted (not a CDN) so it can't be tampered with upstream and isn't
+     blocked where jsDelivr is (e.g. mainland China — the zh.wikipedia audience). -->
+<script src="/purify.min.js"></script>
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-XJHZTSVGM5"></script>
 <script>
@@ -4506,12 +4508,39 @@ function scheduleHeroRoll(el) {
   }, delay);
 }
 
-document.addEventListener('DOMContentLoaded', () => { initBgWords(); initHeroLinks(); renderSpRoundWords(); updateLangDropdowns(); });
+// The mode pickers, language-dropdown triggers, and room-code copy box are
+// <div onclick> controls — not keyboard-reachable or operable on their own.
+// Make them focusable, give them a button role/name, and activate on
+// Enter/Space, so the whole setup flow works without a pointing device.
+function enhanceClickableControls() {
+  const activate = (e) => {
+    if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+      e.preventDefault();
+      e.currentTarget.click();
+    }
+  };
+  document.querySelectorAll('.mode-btn, .lang-dropdown-trigger, .room-code-display').forEach(el => {
+    if (el._a11yEnhanced) return;
+    if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '0');
+    if (!el.hasAttribute('role')) el.setAttribute('role', 'button');
+    if (el.classList.contains('room-code-display') && !el.hasAttribute('aria-label')) {
+      el.setAttribute('aria-label', 'Copy room code');
+    }
+    el.addEventListener('keydown', activate);
+    el._a11yEnhanced = true;
+  });
+}
+
+document.addEventListener('DOMContentLoaded', () => { initBgWords(); initHeroLinks(); renderSpRoundWords(); updateLangDropdowns(); enhanceClickableControls(); });
 
 // ─── Global State ───
 let eventSource = null;
 let myPlayerId = null;
 let myCsrfToken = null;
+// Secret proving we own this session on SSE reconnect. playerId is broadcast to
+// every room member, so it can't double as the reconnect credential — without a
+// separate secret an opponent could rebind our session and steal the CSRF token.
+let myReconnectToken = null;
 let currentRoomCode = null;
 let isHost = false;
 let currentGameMode = 'classic';
@@ -4594,6 +4623,10 @@ function applyInputPlaceholders() {
 // boot, on pickLang(), and when a room locks a different language.
 function updateLangDropdowns() {
   const shownLang = currentGameLang || wikiLangChoice;
+  // Keep the document language in sync so screen readers pick the right voice
+  // for CJK content and browsers don't offer to "translate to Chinese" a page
+  // already in Chinese. <html lang> is otherwise hardcoded "en".
+  document.documentElement.lang = shownLang === 'zh' ? 'zh-Hans' : 'en';
   document.querySelectorAll('[data-lang-dropdown]').forEach(dd => {
     const label = dd.querySelector('.lang-dropdown-label');
     if (label) label.textContent = LANG_LABELS[shownLang] || LANG_LABELS.en;
@@ -4733,7 +4766,10 @@ function connectSSE(forceNew = false) {
     // immediately to free the slot.
     const oldSource = forceNew ? eventSource : null;
     if (!forceNew && eventSource) eventSource.close();
-    const url = myPlayerId ? `/events?playerId=${myPlayerId}` : '/events';
+    const url = myPlayerId
+      ? `/events?playerId=${encodeURIComponent(myPlayerId)}` +
+        (myReconnectToken ? `&rt=${encodeURIComponent(myReconnectToken)}` : '')
+      : '/events';
     const newSource = new EventSource(url);
     eventSource = newSource;
 
@@ -4752,6 +4788,7 @@ function connectSSE(forceNew = false) {
         if (msg.type === 'connected') {
           myPlayerId = msg.playerId;
           myCsrfToken = msg.csrfToken || null;
+          if (msg.reconnectToken) myReconnectToken = msg.reconnectToken;
           ready = true;
           // Server has rebound — safe to close the old EventSource. Any
           // server-side broadcasts already use the new res handle.
@@ -4789,7 +4826,11 @@ function connectSSE(forceNew = false) {
       // Don't show "Connection lost" — the OLD source is still alive serving
       // the user. Just abandon the recycle attempt.
       if (!oldSource) {
-        showError('mpError', 'Connection lost. Please refresh.');
+        // Use the screen-independent global toast: #mpError lives on the
+        // mp-setup screen, so mid-game (game/results/home) the old code left a
+        // dropped player with no visible feedback while their clicks silently
+        // failed.
+        showGlobalToast('Connection lost — try refreshing the page.', 8000);
       }
       // If recycle failed, restore the old source as the active one.
       if (oldSource && oldSource.readyState !== 2) {
@@ -4815,13 +4856,17 @@ async function send(msg) {
       body: JSON.stringify(msg),
     });
     const result = await resp.json();
-    if (!result.ok && result.error) {
+    // These rejection codes have their own user-facing feedback (move_rejected
+    // toast / navigateTo rollback / session_lost screen), so don't also dump the
+    // raw machine string into the #mpError slot.
+    const SILENT = new Set(['illegal_move', 'rate_limited', 'session_lost', 'finished', 'not_participant', 'no_room']);
+    if (!result.ok && result.error && !SILENT.has(result.error)) {
       showError('mpError', result.error);
     }
     return result;
   } catch(e) {
     console.error('[HTTP] Send error:', e);
-    showError('mpError', 'Failed to send action. Is the server running?');
+    showGlobalToast('Couldn’t reach the server — check your connection.', 6000);
     // Always return a structured failure so callers doing `if (!result.ok)`
     // don't NPE on undefined. Mirrors the error shape of server responses.
     return { ok: false, error: 'network' };
@@ -5035,6 +5080,7 @@ async function startDailyFromHome(btn) {
     } else {
       currentRoomCode = result.code;
       isHost = true;
+      armStartWatchdog();
       // Pre-fetch /daily so we know the puzzle date locally for streak math.
       try { cachedDaily = await fetch('/daily', { cache: 'no-store' }).then(r => r.json()); } catch {}
     }
@@ -5367,6 +5413,7 @@ async function quickPlay(btn) {
     if (result.ok) {
       currentRoomCode = result.code;
       isHost = true;
+      armStartWatchdog();
     } else {
       setBtnLoading(btn, false);
     }
@@ -5634,6 +5681,7 @@ async function startSinglePlayer(btn) {
     if (result.ok) {
       currentRoomCode = result.code;
       isHost = true;
+      armStartWatchdog();
     } else {
       setBtnLoading(btn, false);
     }
@@ -5954,6 +6002,8 @@ function backToMultiplayerSetup() {
   }
   myPlayerId = null;
   myCsrfToken = null;
+  myReconnectToken = null;
+  clearStartWatchdog(); // a spinning Start handshake we're abandoning shouldn't toast later
   currentRoomCode = null;
   isHost = false;
   currentGameLang = null;
@@ -5965,10 +6015,26 @@ function backToMultiplayerSetup() {
 }
 
 function copyCode() {
-  navigator.clipboard?.writeText(currentRoomCode);
   const hint = document.querySelector('.copy-hint');
-  hint.textContent = 'copied!';
-  setTimeout(() => hint.textContent = 'click to copy', 1500);
+  const ok = () => { if (hint) { hint.textContent = 'copied!'; setTimeout(() => hint.textContent = 'click to copy', 1500); } };
+  const fail = () => { if (hint) { hint.textContent = 'press Ctrl/⌘+C'; setTimeout(() => hint.textContent = 'click to copy', 2500); } };
+  // Only claim success when the write actually happened. In insecure contexts
+  // (http origins, some in-app webviews) navigator.clipboard is undefined or
+  // rejects — previously we showed "copied!" regardless, so the room code (the
+  // entire multiplayer-invite path) silently wasn't on the clipboard.
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(currentRoomCode).then(ok).catch(() => copyCodeFallback(ok, fail));
+  } else {
+    copyCodeFallback(ok, fail);
+  }
+}
+function copyCodeFallback(ok, fail) {
+  const ta = document.createElement('textarea');
+  ta.value = currentRoomCode; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy') ? ok() : fail(); }
+  catch { fail(); }
+  document.body.removeChild(ta);
 }
 
 function startMultiplayerGame(btn) {
@@ -5976,8 +6042,10 @@ function startMultiplayerGame(btn) {
   // Marathon is server-generated — nothing to validate from the lobby.
   if (mpCurrentMode === 'marathon') {
     setBtnLoading(btn, true);
+    armStartWatchdog();
     send({ type: 'start_game', duration: marathonDurationKey })
-      .catch(() => setBtnLoading(btn, false));
+      .then(r => { if (!r || !r.ok) { clearStartWatchdog(); setBtnLoading(btn, false); const friendly = (r && r.error && r.error !== 'network' && r.error !== 'rate_limited') ? r.error : null; if (friendly) showGlobalToast(friendly, 4000); } }) // server said no (e.g. <2 players) — un-stick now + tell the host (skip raw network/rate_limited tokens, handled elsewhere)
+      .catch(() => { clearStartWatchdog(); setBtnLoading(btn, false); });
     return;
   }
   // Gather words from the input fields
@@ -5997,8 +6065,10 @@ function startMultiplayerGame(btn) {
       return;
     }
     setBtnLoading(btn, true);
+    armStartWatchdog();
     send({ type: 'start_game', origin, destination: dest })
-      .catch(() => setBtnLoading(btn, false));
+      .then(r => { if (!r || !r.ok) { clearStartWatchdog(); setBtnLoading(btn, false); const friendly = (r && r.error && r.error !== 'network' && r.error !== 'rate_limited') ? r.error : null; if (friendly) showGlobalToast(friendly, 4000); } }) // server said no (e.g. <2 players) — un-stick now + tell the host (skip raw network/rate_limited tokens, handled elsewhere)
+      .catch(() => { clearStartWatchdog(); setBtnLoading(btn, false); });
   } else {
     const els = [1, 2, 3].map(n => document.getElementById(`rwTarget${n}`));
     const targets = els.map(el => el?.value.trim());
@@ -6014,8 +6084,10 @@ function startMultiplayerGame(btn) {
       return;
     }
     setBtnLoading(btn, true);
+    armStartWatchdog();
     send({ type: 'start_game', targets: [targets[1], targets[0], targets[2]] })
-      .catch(() => setBtnLoading(btn, false));
+      .then(r => { if (!r || !r.ok) { clearStartWatchdog(); setBtnLoading(btn, false); const friendly = (r && r.error && r.error !== 'network' && r.error !== 'rate_limited') ? r.error : null; if (friendly) showGlobalToast(friendly, 4000); } }) // server said no (e.g. <2 players) — un-stick now + tell the host (skip raw network/rate_limited tokens, handled elsewhere)
+      .catch(() => { clearStartWatchdog(); setBtnLoading(btn, false); });
   }
 }
 
@@ -6026,6 +6098,36 @@ function setBtnLoading(btn, isLoading) {
   if (!btn) return;
   btn.classList.toggle('btn-loading', !!isLoading);
 }
+
+// Watchdog for the "start" → game_start handshake. Every start path puts its
+// button into a spinner and relies on the server's game_start SSE to clear it
+// (via showScreen). If that message never arrives (server hiccup, dropped
+// frame), the button would spin forever and the user is stranded. Arm a
+// timeout on a successful start; game_start clears it, otherwise it un-sticks
+// the spinner and surfaces a retry hint.
+let _startWatchdogTimer = null;
+function armStartWatchdog() {
+  clearStartWatchdog();
+  _startWatchdogTimer = setTimeout(() => {
+    _startWatchdogTimer = null;
+    document.querySelectorAll('.btn-loading').forEach(b => b.classList.remove('btn-loading'));
+    showGlobalToast("The game didn't start — please try again.", 6000);
+  }, 15000);
+}
+function clearStartWatchdog() {
+  if (_startWatchdogTimer) { clearTimeout(_startWatchdogTimer); _startWatchdogTimer = null; }
+}
+
+// Guard against losing an in-progress run to an accidental refresh, pull-to-
+// refresh, browser-back, or tab close. Only prompts while actually mid-game
+// (on the game screen, in a room) so it never nags on the home/setup screens.
+window.addEventListener('beforeunload', (e) => {
+  const gameScreen = document.getElementById('game');
+  if (currentRoomCode && gameScreen && gameScreen.classList.contains('active')) {
+    e.preventDefault();
+    e.returnValue = ''; // required for the native confirmation prompt
+  }
+});
 
 // ─── Game ───
 function sendGiveUpVote() {
@@ -6107,11 +6209,32 @@ function handleServerMessage(msg) {
       // Cancel any pending recycle — we're tearing down state and a recycle
       // would otherwise reopen SSE for a player record we just nuked.
       if (sseRecycleTimer) { clearTimeout(sseRecycleTimer); sseRecycleTimer = null; }
+      clearStartWatchdog();
       try { eventSource?.close(); } catch (_) {}
       eventSource = null;
       myPlayerId = null;
       myCsrfToken = null;
+      myReconnectToken = null;
       setTimeout(() => showScreen('home'), 200);
+      break;
+    }
+
+    case 'move_rejected': {
+      // Server refused the navigation because the target isn't actually an
+      // outgoing link of the page we were on (anti-cheat). The normal client
+      // only navigates via real link clicks, so this is rare — but if it fires
+      // we must undo the optimistic local navigation, otherwise our path
+      // desyncs from the server's and every later move gets rejected too.
+      if (myPath.length && myPath[myPath.length - 1] === msg.article) {
+        _forwardNavTitle = null; // server already declined the move — no undo to send
+        myPath.pop();
+        const prev = myPath[myPath.length - 1] || msg.from;
+        if (prev) {
+          currentArticle = prev;
+          loadArticle(prev);
+        }
+      }
+      showGlobalToast("That link couldn't be followed — pick another.", 3500);
       break;
     }
 
@@ -6139,16 +6262,7 @@ function handleServerMessage(msg) {
       if (isSinglePlayer) {
         // Single player: start immediately
       } else {
-        document.getElementById('mpModeSelector').style.opacity = '1';
-        document.getElementById('mpModeSelector').style.pointerEvents = 'auto';
-        document.getElementById('mpDiffSection').style.opacity = '1';
-        document.getElementById('mpDiffSection').style.pointerEvents = 'auto';
-        // Host CAN change room language in lobby — unlock the dropdown in
-        // case a previous room_joined left it dimmed.
-        document.querySelectorAll('#roundWordsSection .lang-dropdown').forEach(dd => {
-          dd.style.opacity = '';
-          dd.style.pointerEvents = '';
-        });
+        applyHostLobbyControls(true);
         renderRoundWords();
         showScreen('lobby');
       }
@@ -6162,16 +6276,7 @@ function handleServerMessage(msg) {
       // toggle — otherwise they'd fetch articles from the wrong Wikipedia.
       if (msg.lang) { currentGameLang = msg.lang; updateWikiLangToggleUI(); }
       document.getElementById('codeText').textContent = msg.code;
-      document.getElementById('mpModeSelector').style.opacity = '0.5';
-      document.getElementById('mpModeSelector').style.pointerEvents = 'none';
-      document.getElementById('mpDiffSection').style.opacity = '0.5';
-      document.getElementById('mpDiffSection').style.pointerEvents = 'none';
-      // Non-host can't change room language — visually lock the dropdown so
-      // they don't waste taps.
-      document.querySelectorAll('#roundWordsSection .lang-dropdown').forEach(dd => {
-        dd.style.opacity = '0.5';
-        dd.style.pointerEvents = 'none';
-      });
+      applyHostLobbyControls(false);
       renderRoundWords();
       showScreen('lobby');
       break;
@@ -6261,6 +6366,7 @@ function handleServerMessage(msg) {
     }
 
     case 'game_start':
+      clearStartWatchdog(); // handshake completed — cancel the stuck-spinner timeout
       // Lock the game language so the toggle can't retarget mid-play.
       if (msg.lang) { currentGameLang = msg.lang; updateWikiLangToggleUI(); }
       startGameUI(msg);
@@ -6379,6 +6485,23 @@ function handleServerMessage(msg) {
   }
 }
 
+// Lock (guest) or unlock (host) the lobby's host-only setup controls: the mode
+// selector, the difficulty section, and the room-language dropdown. Extracted
+// so the host path (room_created), the guest path (room_joined), AND host
+// promotion (renderPlayerList, when the original host leaves) stay in sync —
+// previously a promoted guest was left with a greyed-out, unusable setup and a
+// Start button that failed validation, bricking the room.
+function applyHostLobbyControls(host) {
+  const sel = document.getElementById('mpModeSelector');
+  const diff = document.getElementById('mpDiffSection');
+  if (sel) { sel.style.opacity = host ? '1' : '0.5'; sel.style.pointerEvents = host ? 'auto' : 'none'; }
+  if (diff) { diff.style.opacity = host ? '1' : '0.5'; diff.style.pointerEvents = host ? 'auto' : 'none'; }
+  document.querySelectorAll('#roundWordsSection .lang-dropdown').forEach(dd => {
+    dd.style.opacity = host ? '' : '0.5';
+    dd.style.pointerEvents = host ? '' : 'none';
+  });
+}
+
 function renderPlayerList(players, hostId) {
   // Store colors from server
   for (const p of players) {
@@ -6388,7 +6511,13 @@ function renderPlayerList(players, hostId) {
   // server. Without this, when the original host disconnects and the server
   // promotes the next player, that player's client wouldn't unlock the host
   // controls (Start button, mode selector, language toggle).
+  const wasHost = isHost;
   if (hostId && myPlayerId) isHost = (hostId === myPlayerId);
+  // Keep the host-only setup controls in sync with the (possibly just-changed)
+  // host status. Re-render the word inputs only on an actual host transition so
+  // a routine join/leave update doesn't wipe text the host already typed.
+  applyHostLobbyControls(isHost);
+  if (isHost !== wasHost) renderRoundWords();
   const ul = document.getElementById('playerList');
   // Build with DOM APIs so name/color stay in attribute space, not HTML.
   ul.replaceChildren(...players.map(p => {
@@ -6770,8 +6899,47 @@ document.addEventListener('click', (e) => {
   }
 });
 
+// Known Wikipedia namespace prefixes (English canonical + Simplified-Chinese
+// localized). A link whose title begins "<one of these>:" points at chrome
+// (File:, Category:, Talk:, 分类:, …), not an article, so we render it as a
+// dead link. Matching the explicit set — rather than the old positional
+// "colon before index 15" heuristic — keeps legitimate titles with an early
+// colon clickable (e.g. "Mission: Impossible", "Spider-Man: Homecoming").
+const WIKI_NAMESPACES = new Set([
+  'special', 'media', 'wikipedia', 'wikipedia talk', 'wp', 'project',
+  'user', 'user talk', 'file', 'file talk', 'image', 'help', 'help talk',
+  'talk', 'template', 'template talk', 'category', 'category talk',
+  'portal', 'portal talk', 'module', 'module talk', 'draft', 'draft talk',
+  'mediawiki', 'mediawiki talk', 'timedtext', 'book',
+  // Simplified-Chinese localized namespaces
+  '维基百科', '维基百科讨论', '帮助', '帮助讨论', '分类', '分类讨论',
+  '模板', '模板讨论', '模块', '模块讨论', '门户', '门户讨论',
+  '文件', '文件讨论', '用户', '用户讨论', '草稿', '草稿讨论',
+  '话题', '讨论',
+]);
+function isNamespaceLink(target) {
+  // Strip a single leading ':' (the forced-link form, e.g. ":Category:Foo")
+  // so the namespace prefix is still recognized.
+  const t = target.startsWith(':') ? target.slice(1) : target;
+  const colon = t.indexOf(':');
+  if (colon <= 0) return false;
+  const prefix = t.slice(0, colon).replace(/_/g, ' ').trim().toLowerCase();
+  return WIKI_NAMESPACES.has(prefix);
+}
+
 // ─── Wikipedia Article Loading ─── (simplified, kept from original)
+// Monotonic load token: a newer loadArticle (rapid navigation, or a
+// move_rejected / rate-limit rollback reloading the previous page) supersedes
+// any in-flight one. A superseded load must NOT render stale HTML or mutate
+// myPath in its catch — otherwise it double-pops the path and desyncs from the
+// server's rp.path (every later move then validates against the wrong "from").
+let _loadArticleSeq = 0;
+// Title of the article a forward navigation is currently loading (set by
+// navigateTo). Used so a failed load can undo the move server-side only when it
+// was a genuine forward move, not a reload of an existing path node.
+let _forwardNavTitle = null;
 async function loadArticle(title) {
+  const seq = ++_loadArticleSeq;
   const container = document.getElementById('wikiContainer');
   const loading = document.getElementById('wikiLoading');
   const content = document.getElementById('wikiContent');
@@ -6859,24 +7027,23 @@ async function loadArticle(title) {
       }
     });
 
-    // Process links: only keep Wikipedia internal article links
+    // Process links: only keep Wikipedia internal article links. Namespace
+    // links and external/anchor links are rendered as dead grey text.
     doc.querySelectorAll('a').forEach(a => {
       const href = a.getAttribute('href') || '';
       const wikiMatch = href.match(/^\.\/([^#?]+)/) || href.match(/^\/wiki\/([^#?]+)/);
-      if (wikiMatch) {
-        const target = decodeURIComponent(wikiMatch[1]);
-        if (target.includes(':') && !target.startsWith('The_') && target.indexOf(':') < 15) {
-          a.removeAttribute('href');
-          a.style.color = '#666';
-          a.style.cursor = 'default';
-          return;
-        }
-        a.removeAttribute('href');
+      const target = wikiMatch ? decodeURIComponent(wikiMatch[1]) : null;
+      a.removeAttribute('href');
+      if (target && !isNamespaceLink(target)) {
         a.setAttribute('data-article', target);
+        // The href is gone, so without an explicit tabindex+role the link is
+        // no longer focusable — keyboard and screen-reader users literally
+        // can't play. Make every navigable link a proper, operable control.
+        a.setAttribute('tabindex', '0');
+        a.setAttribute('role', 'link');
         a.style.cursor = 'pointer';
         a.style.color = '#3366cc';
       } else {
-        a.removeAttribute('href');
         a.style.color = '#666';
         a.style.cursor = 'default';
       }
@@ -6900,38 +7067,54 @@ async function loadArticle(title) {
     }
 
     const titleHtml = `<h1 class="wiki-page-title">${esc(title.replace(/_/g, ' '))}</h1>`;
-    // Sanitize wiki HTML before injection. data-article (our internal link marker)
-    // must be explicitly allowed since DOMPurify strips unknown data-* attrs with
-    // default config on some versions. Fall back to raw if DOMPurify failed to load.
-    const wikiBody = (typeof DOMPurify !== 'undefined')
-      ? DOMPurify.sanitize(doc.body.innerHTML, { ADD_ATTR: ['data-article'] })
-      : doc.body.innerHTML;
+    // Sanitize wiki HTML before injection. data-article (our internal link
+    // marker) must be explicitly allowed since DOMPurify strips unknown data-*
+    // attrs with the default config. FAIL CLOSED: if the sanitizer somehow
+    // isn't available, throw rather than inject unsanitized remote HTML —
+    // Wikipedia content is user-editable, so raw injection would be stored XSS.
+    if (typeof DOMPurify === 'undefined' || !DOMPurify.sanitize) {
+      throw new Error('sanitizer unavailable');
+    }
+    const wikiBody = DOMPurify.sanitize(doc.body.innerHTML, { ADD_ATTR: ['data-article', 'tabindex', 'role'] });
+    if (seq !== _loadArticleSeq) return; // a newer load superseded us — don't render stale content
+    if (title === _forwardNavTitle) _forwardNavTitle = null; // forward move loaded fine — nothing to undo
     content.innerHTML = titleHtml + tocHtml + wikiBody;
     content.style.display = 'block';
     loading.style.display = 'none';
 
-    // Attach click handlers to wiki links
-    content.querySelectorAll('a[data-article]').forEach(a => {
-      a.addEventListener('click', (e) => {
-        e.preventDefault();
-        const article = a.getAttribute('data-article');
-        navigateTo(article);
-      });
-    });
-
-    // TOC smooth scroll within wiki container
-    content.querySelectorAll('.wiki-toc-item').forEach(a => {
-      a.addEventListener('click', (e) => {
-        e.preventDefault();
-        const targetId = a.getAttribute('href').slice(1);
-        const target = document.getElementById(targetId);
-        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      });
-    });
+    // One delegated handler for the whole content region, bound ONCE (the
+    // container element persists across navigations even as innerHTML is
+    // replaced, so per-render binding would leak listeners). Handles both
+    // mouse click and keyboard activation (Enter/Space) for article links and
+    // TOC items, making the core navigation mechanic fully keyboard-operable.
+    if (!content._wssActivateBound) {
+      const onActivate = (e) => {
+        if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+        const link = e.target.closest('a[data-article]');
+        if (link) {
+          e.preventDefault();
+          navigateTo(link.getAttribute('data-article'));
+          return;
+        }
+        const toc = e.target.closest('.wiki-toc-item');
+        if (toc) {
+          e.preventDefault();
+          const target = document.getElementById(toc.getAttribute('href').slice(1));
+          if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      };
+      content.addEventListener('click', onActivate);
+      content.addEventListener('keydown', onActivate);
+      content._wssActivateBound = true;
+    }
 
     updateBreadcrumbs();
 
   } catch (err) {
+    // A newer load (rapid nav, or a move_rejected/rollback reload) has taken
+    // over — don't pop myPath or render an error for this stale load, or we'd
+    // double-pop and desync the path from the server.
+    if (seq !== _loadArticleSeq) return;
     // Undo the navigation — go back to previous article.
     // Build with DOM APIs: article titles are user-influenced via the URL/link
     // click and must never be concatenated into HTML strings.
@@ -6945,9 +7128,18 @@ async function loadArticle(title) {
     p.textContent = `Could not load "${failedTitle}". This article may not exist on ${wikiName}.`;
     content.appendChild(p);
     if (myPath.length > 1) {
+      // If this was a FORWARD navigation, the server may have accepted the move
+      // (the move was legal; only the client's article fetch failed). Tell the
+      // server to undo it so rp.path stays aligned with the client path —
+      // otherwise, under move-legality enforcement, every later click is
+      // validated against an article the player never actually saw and gets
+      // wrongly rejected. The server only undoes if its tail still matches.
+      const wasForwardNav = (title === _forwardNavTitle);
+      _forwardNavTitle = null;
       myPath.pop();
       const prevArticle = myPath[myPath.length - 1];
       currentArticle = prevArticle;
+      if (wasForwardNav) send({ type: 'navigate_undo', article: title });
       const btn = document.createElement('button');
       btn.textContent = `← Go Back to ${prevArticle.replace(/_/g, ' ')}`;
       btn.style.cssText = 'margin-top:16px;padding:10px 24px;background:var(--accent);color:white;border:none;border-radius:8px;cursor:pointer;font-size:1rem;';
@@ -6962,8 +7154,25 @@ async function loadArticle(title) {
 function navigateTo(article) {
   currentArticle = article;
   myPath.push(article);
-  send({ type: 'navigate', article });
+  // Mark this as the in-flight forward navigation so loadArticle can tell a
+  // failed forward move (server may have accepted it) from a reload of an
+  // existing node — see the load-failure handling in loadArticle's catch.
+  _forwardNavTitle = article;
+  // Optimistically load the article in parallel with the server round-trip.
   loadArticle(article);
+  // If the server rejects the move (rate_limited has no SSE; illegal_move also
+  // sends move_rejected but the tail-equality guard below makes the two
+  // rollbacks idempotent), undo the optimistic push so the client path stays in
+  // sync — otherwise every later move is validated against the wrong "from".
+  send({ type: 'navigate', article }).then(result => {
+    if (result && !result.ok && myPath[myPath.length - 1] === article) {
+      _forwardNavTitle = null; // server declined — no undo to send
+      myPath.pop();
+      const prev = myPath[myPath.length - 1];
+      if (prev) { currentArticle = prev; loadArticle(prev); }
+      if (result.error === 'rate_limited') showGlobalToast('Slow down a moment — try again.', 2500);
+    }
+  });
 }
 
 function updateBreadcrumbs() {
@@ -7712,6 +7921,7 @@ function showMarathonResults(msg) {
   const isNonHost = !isSinglePlayer && !isHost;
   const playAgainBtn = document.getElementById('playAgainBtn');
   const backBtn = document.getElementById('backToHomeBtn');
+  if (backBtn) backBtn.onclick = backToHome; // reset any prior per-result override (e.g. daily's "New game")
   const waitingEl = document.getElementById('waitingForHost');
   if (playAgainBtn) {
     playAgainBtn.style.display = isNonHost ? 'none' : '';
@@ -7965,14 +8175,7 @@ function showMarathonSoloResults(msg) {
   card.querySelector('[data-action="save"]').onclick = async () => {
     const blob = await buildShareImage(myResult, msg);
     if (!blob) { showInlineToast(S.copyFail); return; }
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    const steps = Math.max(0, path.length - 1);
-    a.download = `wikispeedrun-${steps}steps.png`;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-    showInlineToast(S.saved);
+    if (await saveOrShareImage(blob, `wikispeedrun-marathon-${total}pts.png`)) showInlineToast(S.saved);
   };
 
   showScreen('results');
@@ -7980,6 +8183,7 @@ function showMarathonSoloResults(msg) {
   const playAgainBtn = document.getElementById('playAgainBtn');
   if (playAgainBtn) { playAgainBtn.style.display = ''; playAgainBtn.textContent = 'Play again'; }
   const backBtn = document.getElementById('backToHomeBtn');
+  if (backBtn) backBtn.onclick = backToHome; // reset any prior per-result override (e.g. daily's "New game")
   if (backBtn) { backBtn.style.display = ''; backBtn.textContent = 'Back to home'; }
 
   // ── Reveal cascade (absolute ms from this call):
@@ -8104,7 +8308,7 @@ function showClassicSoloResults(msg) {
     : `<strong>${steps} step${steps === 1 ? '' : 's'}</strong>${time ? ' · ' + esc(formatTime(time)) : ''}`;
 
   // Closest-you-got chip — only on surrender, only when we actually have
-  // distance data. distances[i] is the hop count after step i+1.
+  // distance data. distances[i] is the hop count of path[i] (aligned 1:1).
   let closestHtml = '';
   if (isSurrender) {
     const numericDistances = distances.filter(d => d != null && Number.isFinite(d));
@@ -8156,9 +8360,9 @@ function showClassicSoloResults(msg) {
     // last article they visited is just a regular node.
     const nodeCls = isStart ? 'start' : ((!isSurrender && isEnd) ? 'end' : '');
     let distBadge = '';
-    if (!isStart && !isEnd && distances[i - 1] != null) {
-      const d = distances[i - 1];
-      const prev = i >= 2 ? distances[i - 2] : null;
+    if (!isStart && !isEnd && distances[i] != null) {
+      const d = distances[i];
+      const prev = distances[i - 1];
       let arrow = '';
       if (prev != null) {
         if (d < prev) arrow = '<span class="path-dir closer">▲</span>';
@@ -8220,13 +8424,7 @@ function showClassicSoloResults(msg) {
     card.querySelector('[data-action="save"]').onclick = async () => {
       const blob = await buildShareImage(myResult, msg);
       if (!blob) { showToast(S.copyFail); return; }
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `wikispeedrun-${steps}steps.png`;
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-      showToast(S.saved);
+      if (await saveOrShareImage(blob, `wikispeedrun-${steps}steps.png`)) showToast(S.saved);
     };
   }
 
@@ -8237,6 +8435,7 @@ function showClassicSoloResults(msg) {
   //   SURRENDER:  Try again        /  Pick new articles → playAgain() / backToHome()
   const playAgainBtn = document.getElementById('playAgainBtn');
   const backBtn = document.getElementById('backToHomeBtn');
+  if (backBtn) backBtn.onclick = backToHome; // reset any prior per-result override (e.g. daily's "New game")
   if (playAgainBtn) {
     playAgainBtn.style.display = '';
     playAgainBtn.textContent = isSurrender ? 'Try again' : 'Play again';
@@ -8468,9 +8667,9 @@ function showClassicMpResults(msg) {
       // the "you reached the target" visual.
       const nodeCls = isStart ? 'start' : ((isEnd && isCardWin) ? 'end' : '');
       let distBadge = '';
-      if (!isStart && !isEnd && dists[idx - 1] !== undefined && dists[idx - 1] !== null) {
-        const d = dists[idx - 1];
-        const prev = idx >= 2 ? dists[idx - 2] : null;
+      if (!isStart && !isEnd && dists[idx] !== undefined && dists[idx] !== null) {
+        const d = dists[idx];
+        const prev = dists[idx - 1];
         const distCls = distColorClass(d);
         let arrow = '';
         if (prev !== null && prev !== undefined) {
@@ -8513,6 +8712,7 @@ function showClassicMpResults(msg) {
   // visibility toggles + label swaps for the abandoned variant.
   const playAgainBtn = document.getElementById('playAgainBtn');
   const backBtn      = document.getElementById('backToHomeBtn');
+  if (backBtn) backBtn.onclick = backToHome; // reset any prior per-result override (e.g. daily's "New game")
   const waitEl       = document.getElementById('waitingForHost');
   if (playAgainBtn) {
     playAgainBtn.style.display = isHost ? '' : 'none';
@@ -8569,16 +8769,7 @@ function showClassicMpResults(msg) {
             showToast(S.copied || 'Copied!');
           } else if (action === 'save') {
             const blob = await buildShareImage(r, msg);
-            const a = document.createElement('a');
-            const url = URL.createObjectURL(blob);
-            a.href = url;
-            a.download = `wikispeedrun-${Date.now()}.png`;
-            document.body.appendChild(a); a.click(); a.remove();
-            // Defer revoke — synchronous revocation can invalidate the URL
-            // before the browser actually starts the download (varies per
-            // browser; matches the cs-share / mk-solo-share handlers).
-            setTimeout(() => URL.revokeObjectURL(url), 1000);
-            showToast(S.saved || 'Saved!');
+            if (blob && await saveOrShareImage(blob, `wikispeedrun-${Math.max(0, (r.path?.length || 1) - 1)}steps.png`)) showToast(S.saved || 'Saved!');
           }
         } catch (e) {
           showToast(S.copyFail || 'Copy failed');
@@ -8915,9 +9106,9 @@ function showTriResults(msg) {
       const isTriDest = triDestsLower.includes(normA(p));
       const nodeCls = isStart ? 'start' : (isTriDest ? 'end' : ((isEnd && isCardWin) ? 'end' : ''));
       let distBadge = '';
-      if (!isStart && !isEnd && !isTriDest && dists[idx - 1] !== undefined && dists[idx - 1] !== null) {
-        const d = dists[idx - 1];
-        const prev = idx >= 2 ? dists[idx - 2] : null;
+      if (!isStart && !isEnd && !isTriDest && dists[idx] !== undefined && dists[idx] !== null) {
+        const d = dists[idx];
+        const prev = dists[idx - 1];
         const distCls = distColorClass(d);
         let arrow = '';
         if (prev !== null && prev !== undefined) {
@@ -8986,6 +9177,7 @@ function showTriResults(msg) {
   // guest gets the waiting-host pulse.
   const playAgainBtn = document.getElementById('playAgainBtn');
   const backBtn      = document.getElementById('backToHomeBtn');
+  if (backBtn) backBtn.onclick = backToHome; // reset any prior per-result override (e.g. daily's "New game")
   const waitEl       = document.getElementById('waitingForHost');
   const isSurrenderSolo = isSinglePlayer && (isAbandoned || myReached < 2);
   if (playAgainBtn) {
@@ -9042,13 +9234,7 @@ function showTriResults(msg) {
             showToast(S.copied || 'Copied!');
           } else if (action === 'save') {
             const blob = await buildShareImage(r, msg);
-            const a = document.createElement('a');
-            const url = URL.createObjectURL(blob);
-            a.href = url;
-            a.download = `wikispeedrun-${Date.now()}.png`;
-            document.body.appendChild(a); a.click(); a.remove();
-            setTimeout(() => URL.revokeObjectURL(url), 1000);
-            showToast(S.saved || 'Saved!');
+            if (blob && await saveOrShareImage(blob, `wikispeedrun-${Math.max(0, (r.path?.length || 1) - 1)}steps.png`)) showToast(S.saved || 'Saved!');
           }
         } catch (e) {
           showToast(S.copyFail || 'Copy failed');
@@ -9221,9 +9407,9 @@ function showResults(msg) {
       const isTriDest = triDests.some(t => normA(t) === normA(p));
       const nodeCls = isStart ? 'start' : (isTriDest ? 'end' : ((isEnd && r.isWinner) ? 'end' : ''));
       let distBadge = '';
-      if (!isStart && !isEnd && dists[i - 1] !== undefined && dists[i - 1] !== null) {
-        const d = dists[i - 1];
-        const prev = i >= 2 ? dists[i - 2] : null;
+      if (!isStart && !isEnd && dists[i] !== undefined && dists[i] !== null) {
+        const d = dists[i];
+        const prev = dists[i - 1];
         const cls = distColorClass(d);
         let arrow = '';
         if (prev !== null && prev !== undefined) {
@@ -9267,6 +9453,7 @@ function showResults(msg) {
 
   document.getElementById('playAgainBtn').style.display = isHost ? '' : 'none';
   const backBtn = document.getElementById('backToHomeBtn');
+  if (backBtn) backBtn.onclick = backToHome; // reset any prior per-result override (e.g. daily's "New game")
   backBtn.style.display = (isSinglePlayer || isHost) ? '' : 'none';
   // Nudge Quick Play finishers toward other modes; everyone else sees the
   // neutral "Back to Home" they'd expect.
@@ -9325,6 +9512,7 @@ const SHARE_STRINGS = {
   en: {
     steps: 'steps', start: 'Start:', yourTurn: 'your turn →',
     triSuffix: ' (Tri)', triTargets: '3 targets',
+    marathonSuffix: ' (Marathon)', pts: 'pts', targets: 'targets', min: 'min',
     cardTitle: 'Your run', copy: 'Copy share', save: 'Save image',
     showCard: 'Share your run', hideCard: 'Hide share',
     copied: 'Copied!', saved: 'Saved!', copyFail: 'Copy failed',
@@ -9332,6 +9520,7 @@ const SHARE_STRINGS = {
   zh: {
     steps: '步', start: '起点:', yourTurn: '轮到你了 →',
     triSuffix: '(三叉)', triTargets: '3 个目标',
+    marathonSuffix: '(马拉松)', pts: '分', targets: '个目标', min: '分钟',
     cardTitle: '你的成绩', copy: '复制分享', save: '保存图片',
     showCard: '分享成绩', hideCard: '隐藏分享',
     copied: '已复制!', saved: '已保存!', copyFail: '复制失败',
@@ -9344,6 +9533,15 @@ function shareStr() {
 
 function buildShareText(r, msg) {
   const S = shareStr();
+  // Marathon has no A→B/time framing — it's a time-boxed, multi-target run.
+  // Surface the stats players actually care about: total score + targets hit.
+  if (msg.mode === 'marathon') {
+    const durMin = String(msg.durationKey || '').replace(/m$/i, '');
+    const statLine = `🏁 ${r.total || 0} ${S.pts}  ·  ${r.completed || 0} ${S.targets}` +
+      (durMin ? `  ·  ${durMin} ${S.min}` : '');
+    const pathLine = compactPath(r.path || [], 6).join(' → ');
+    return `🧩 WikiSpeedrun${S.marathonSuffix}\n${statLine}\n\n${pathLine}\n\n${S.yourTurn} wikispeedrun.io`;
+  }
   const steps = Math.max(0, r.path.length - 1);
   const timeStr = r.time ? formatTime(r.time) : null;
   const statLine = timeStr
@@ -9412,7 +9610,9 @@ async function buildShareImage(r, msg) {
   ctx.fillStyle = '#f0f0f5';
   ctx.font = '700 72px "Linux Libertine", Georgia, serif';
   let headline;
-  if (msg.mode === 'tri') {
+  if (msg.mode === 'marathon') {
+    headline = `${r.total || 0} ${S.pts}`;
+  } else if (msg.mode === 'tri') {
     headline = `${titleize(msg.targets?.[0] || r.path[0])} → ${S.triTargets}`;
   } else {
     const origin = titleize(r.path[0]);
@@ -9429,9 +9629,16 @@ async function buildShareImage(r, msg) {
   // Stats row.
   ctx.fillStyle = '#a29bfe';
   ctx.font = '600 36px system-ui, sans-serif';
-  const steps = Math.max(0, r.path.length - 1);
-  const timeStr = r.time ? formatTime(r.time) : '—';
-  ctx.fillText(`⚡ ${steps} ${S.steps}   ·   ⏱ ${timeStr}`, 64, 280);
+  let statsRow;
+  if (msg.mode === 'marathon') {
+    const durMin = String(msg.durationKey || '').replace(/m$/i, '');
+    statsRow = `🏁 ${r.completed || 0} ${S.targets}` + (durMin ? `   ·   ${durMin} ${S.min}` : '');
+  } else {
+    const steps = Math.max(0, r.path.length - 1);
+    const timeStr = r.time ? formatTime(r.time) : '—';
+    statsRow = `⚡ ${steps} ${S.steps}   ·   ⏱ ${timeStr}`;
+  }
+  ctx.fillText(statsRow, 64, 280);
 
   // Path nodes (compact, wrapped).
   ctx.fillStyle = '#9090a8';
@@ -9470,6 +9677,33 @@ async function buildShareImage(r, msg) {
   ctx.fillText(' wikispeedrun.io', 64 + ytW, H - 80);
 
   return new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+}
+
+// Save a generated PNG. iOS Safari ignores <a download> for blob URLs — it
+// opens the image in a new tab and never saves — so where the Web Share file
+// API exists (mobile) we hand the file to the native share sheet, which
+// includes "Save Image", and fall back to the anchor download elsewhere.
+// Returns false only when the user dismisses the share sheet, so callers can
+// avoid toasting a false "Saved!".
+async function saveOrShareImage(blob, filename) {
+  try {
+    if (navigator.canShare) {
+      const file = new File([blob], filename, { type: 'image/png' });
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file] });
+        return true;
+      }
+    }
+  } catch (e) {
+    if (e && e.name === 'AbortError') return false; // user cancelled the sheet
+    // any other failure → fall through to the download path below
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return true;
 }
 
 // Deprecated duplicate removed — see showShareToast(text, kind) above
@@ -9586,13 +9820,7 @@ function populateShareCard(msg) {
   saveBtn.onclick = async () => {
     const blob = await buildShareImage(r, msg);
     if (!blob) { showShareToast(S.copyFail, 'fail'); return; }
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `wikispeedrun-${steps}steps.png`;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-    showShareToast(S.saved);
+    if (await saveOrShareImage(blob, `wikispeedrun-${Math.max(0, (r.path?.length || 1) - 1)}steps.png`)) showShareToast(S.saved);
   };
 }
 
@@ -9627,6 +9855,8 @@ function backToHome() {
   }
   myPlayerId = null;
   myCsrfToken = null;
+  myReconnectToken = null;
+  clearStartWatchdog();
   clearInterval(timerInterval);
   resultsAnimationTimeouts.forEach(t => clearTimeout(t));
   resultsAnimationTimeouts = [];

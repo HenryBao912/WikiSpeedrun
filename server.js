@@ -19,6 +19,35 @@ const players = new Map(); // playerId -> { res (SSE), roomCode, name }
 const DISCONNECT_GRACE_MS = 30_000;
 const pendingDisconnects = new Map(); // playerId -> timeoutId
 
+// Per-player token bucket for /action. Handlers fan out to Wikipedia (navigate
+// → getPageLinks/computeDistance; marathon target picks) and grow in-memory
+// state (rooms, recentPicks), so an authenticated client without a cap could
+// amplify load on Wikipedia (risking our User-Agent getting rate-limited) or
+// exhaust memory. Generous burst for legit play (humans click a few/sec);
+// sustained spam is throttled. Buckets are dropped in handleDisconnect.
+const actionBuckets = new Map(); // playerId -> { tokens, last }
+const ACTION_BUCKET_MAX = 30;
+const ACTION_REFILL_PER_SEC = 10;
+// Global ceiling on concurrent SSE sessions. A backstop against the players Map
+// (and its sockets) growing without bound under a connection flood. Generous —
+// real load is nowhere near this — and reconnects are always allowed through so
+// a live player is never bounced when we're near the cap.
+const MAX_SSE_CONNECTIONS = 5000;
+function allowAction(playerId) {
+  const now = Date.now();
+  let b = actionBuckets.get(playerId);
+  if (!b) { b = { tokens: ACTION_BUCKET_MAX, last: now }; actionBuckets.set(playerId, b); }
+  // Clamp elapsed to >= 0: Date.now() is wall-clock and can step backwards
+  // (NTP correction, VM migration), which would otherwise SUBTRACT tokens and
+  // spuriously 429 a legit player.
+  const elapsed = Math.max(0, now - b.last);
+  b.tokens = Math.min(ACTION_BUCKET_MAX, b.tokens + (elapsed / 1000) * ACTION_REFILL_PER_SEC);
+  b.last = now;
+  if (b.tokens < 1) return false;
+  b.tokens -= 1;
+  return true;
+}
+
 // Wikipedia hosts per language. Add a language here + ensure the random
 // article / bio-detection heuristics below know about it and it's available
 // to rooms. Client's toggle must stay in sync.
@@ -44,6 +73,12 @@ const DEFAULT_LANG = 'en';
 // so all wiki-touching helpers (pageviews, top-articles, query API) share
 // the same identifier.
 const WIKI_USER_AGENT = 'WikiSpeedrun/1.0 (https://wikispeedrun.io; mailto:hello@wikispeedrun.io)';
+// Hard ceiling for any single outbound Wikipedia/Wikimedia request. Node's
+// https.get has no default timeout and 'error' does NOT fire on a socket that
+// connects then stalls, so without this a stalled upstream would hang the
+// awaiting request (and the user-facing navigate) forever. Generous enough to
+// cover paginated link fetches on huge articles; only a true stall trips it.
+const WIKI_REQUEST_TIMEOUT_MS = 8000;
 
 // ─── Pre-compressed static assets ───
 // index.html is ~265KB inlined HTML+CSS+JS. We compute gzip + brotli + ETag
@@ -64,6 +99,20 @@ function loadIndexHtml() {
   indexHtmlEtag = '"' + crypto.createHash('sha1').update(indexHtmlRaw).digest('hex').slice(0, 16) + '"';
 }
 loadIndexHtml();
+
+// DOMPurify is the sanitizer guarding all Wikipedia-HTML injection. It's served
+// from our own origin (vendored at build time) rather than a CDN: a CDN is a
+// supply-chain + availability risk — jsDelivr in particular is frequently
+// blocked in mainland China, exactly the audience for the zh.wikipedia mode —
+// and a missing sanitizer used to fall back to injecting raw HTML.
+const PURIFY_PATH = path.join(__dirname, 'purify.min.js');
+let purifyRaw, purifyGz, purifyEtag;
+function loadPurify() {
+  purifyRaw = fs.readFileSync(PURIFY_PATH);
+  purifyGz = zlib.gzipSync(purifyRaw, { level: 9 });
+  purifyEtag = '"' + crypto.createHash('sha1').update(purifyRaw).digest('hex').slice(0, 16) + '"';
+}
+loadPurify();
 function normalizeLang(lang) {
   return (lang && WIKI_HOSTS[lang]) ? lang : DEFAULT_LANG;
 }
@@ -260,7 +309,7 @@ function getPageViews(titles, lang = DEFAULT_LANG) {
     const encodedTitle = encodeURIComponent(title.replace(/ /g, '_'));
     const apiUrl = `https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/${project}/all-access/all-agents/${encodedTitle}/daily/${startDate}/${endDate}`;
     return new Promise((resolve) => {
-      https.get(apiUrl, { headers: { 'User-Agent': WIKI_USER_AGENT } }, (res) => {
+      const req = https.get(apiUrl, { headers: { 'User-Agent': WIKI_USER_AGENT } }, (res) => {
         let data = '';
         res.on('data', chunk => data += chunk);
         res.on('end', () => {
@@ -270,7 +319,9 @@ function getPageViews(titles, lang = DEFAULT_LANG) {
             resolve({ title, views: total });
           } catch (e) { resolve({ title, views: 0 }); }
         });
-      }).on('error', () => resolve({ title, views: 0 }));
+      });
+      req.on('error', () => resolve({ title, views: 0 }));
+      req.setTimeout(WIKI_REQUEST_TIMEOUT_MS, () => req.destroy(new Error('pageviews timeout')));
     });
   });
   return Promise.all(promises);
@@ -303,13 +354,15 @@ async function getTopViewedArticles(lang = DEFAULT_LANG) {
 
       try {
         const result = await new Promise((resolve, reject) => {
-          https.get(apiUrl, { headers: { 'User-Agent': WIKI_USER_AGENT } }, (res) => {
+          const req = https.get(apiUrl, { headers: { 'User-Agent': WIKI_USER_AGENT } }, (res) => {
             let data = '';
             res.on('data', chunk => data += chunk);
             res.on('end', () => {
               try { resolve(JSON.parse(data)); } catch (e) { reject(e); }
             });
-          }).on('error', reject);
+          });
+          req.on('error', reject);
+          req.setTimeout(WIKI_REQUEST_TIMEOUT_MS, () => req.destroy(new Error('top-articles timeout')));
         });
 
         const dayArticles = (result.items?.[0]?.articles || []);
@@ -840,6 +893,11 @@ function sortLeaderboard(arr) {
 // to keep the board lively from day one. The total never exceeds the
 // target — a real entry below the cap displaces the worst-ranked fake.
 function getLeaderboard(date, limit = LEADERBOARD_TARGET_SIZE) {
+  // Prune on the READ path too. pruneOldLeaderboards otherwise only fires on a
+  // submission (addLeaderboardEntry), so a read-heavy server — or a scraper
+  // cycling ?date= values — would grow dailyChallengeCache/dailyLeaderboards
+  // without bound. Cheap (O(dates)) and keeps every cache within retention.
+  pruneOldLeaderboards();
   const real = (dailyLeaderboards.get(date) || []).filter(e => !e.fake);
   const dailyForDate = (date === utcDateStr()) ? getDailyChallenge() : getDailyChallenge(new Date(date + 'T00:00:00Z'));
   const fakes = generateFakeLeaderboard(date, dailyForDate);
@@ -964,6 +1022,12 @@ function getDailyChallenge(date = new Date()) {
   if (dailyChallengeCache.has(ymd)) return dailyChallengeCache.get(ymd);
   const targetMs = Date.parse(ymd + 'T00:00:00Z');
   if (isNaN(targetMs) || targetMs < DAILY_LAUNCH_MS) return null;
+  // Reject future dates. The forward-walk below runs from launch to the target
+  // one day at a time; a crafted far-future date (e.g. ?date=9999-12-31) would
+  // otherwise spin millions of iterations — each a sha256 + full-pool filter —
+  // and cache an entry per day: an unauthenticated CPU/memory DoS. There is no
+  // daily for a day that hasn't started yet.
+  if (targetMs > Date.parse(utcDateStr() + 'T00:00:00Z')) return null;
   const usedOrigins = new Set();
   const usedDestinations = new Set();
   let result = null;
@@ -1274,7 +1338,7 @@ function wikiAPIOnce(params, lang = DEFAULT_LANG) {
     const qs = new URLSearchParams(finalParams);
     const host = WIKI_HOSTS[lang] || WIKI_HOSTS[DEFAULT_LANG];
     const reqUrl = `https://${host}/w/api.php?${qs}`;
-    https.get(reqUrl, { headers: { 'User-Agent': WIKI_USER_AGENT } }, (res) => {
+    const req = https.get(reqUrl, { headers: { 'User-Agent': WIKI_USER_AGENT } }, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
@@ -1291,7 +1355,15 @@ function wikiAPIOnce(params, lang = DEFAULT_LANG) {
         try { resolve(JSON.parse(data)); }
         catch (e) { reject(new Error('wiki non-json response')); }
       });
-    }).on('error', reject);
+    });
+    req.on('error', reject);
+    // A socket that connects then stalls (no FIN, no data) never fires 'error',
+    // so without this the Promise — and the user-facing navigate awaiting it —
+    // hangs forever and the wikiAPI retry loop never engages. Destroying the
+    // request surfaces an error so the retry/backoff loop can re-issue.
+    req.setTimeout(WIKI_REQUEST_TIMEOUT_MS, () => {
+      req.destroy(new Error('wiki request timeout'));
+    });
   });
 }
 
@@ -1723,9 +1795,13 @@ async function startMarathonForRoom(room, roomCode) {
     const n = normalizeArticle(pair.destination);
     if (!seen.has(n)) { seen.add(n); candidateTitles.push(pair.destination); }
   }
-  // 20 candidates is plenty even for 12-minute rounds at ~25s/target.
+  // Scale the candidate pool with round length: every shown target (hit OR
+  // skipped) is consumed, and a fast/skip-happy player on a long round can
+  // burn through 20. If the pool is still depleted, pickMarathonTarget's
+  // exhaustion guard recycles it rather than dead-ending.
   candidateTitles.sort(() => Math.random() - 0.5);
-  const candidates = candidateTitles.slice(0, 20);
+  const candidateCap = { '3m': 16, '5m': 22, '8m': 30, '12m': 40 }[durKey] || 22;
+  const candidates = candidateTitles.slice(0, candidateCap);
 
   const marathon = {
     startArticle,
@@ -1857,18 +1933,38 @@ async function pickMarathonTarget(room, rp, currentArticle) {
   // sitting later in the candidates Map and skew picks toward higher hops.
   // computeDistance hits the in-process cache after the warm pass, so the
   // full scan stays sub-millisecond per call.
-  const sampled = [];
-  for (const [key, entry] of room.marathon.candidates) {
-    if (usedTitles.has(key)) continue;
-    if (!entry.data) continue;
-    if (key === currentNorm) continue;
+  const scan = async () => {
+    const out = [];
+    for (const [key, entry] of room.marathon.candidates) {
+      if (usedTitles.has(key)) continue;
+      if (!entry.data) continue;
+      if (key === currentNorm) continue;
 
-    const hops = await computeDistance(currentArticle, entry.title, entry.data, lang);
-    if (hops < 2) continue; // 1-hop filtered per design: forces strategy
+      const hops = await computeDistance(currentArticle, entry.title, entry.data, lang);
+      if (hops < 2) continue; // 1-hop filtered per design: forces strategy
 
-    sampled.push({ key, entry, hops });
-    // Short-circuit on a 2-hop find — can't get any closer than the floor.
-    if (hops === 2) break;
+      out.push({ key, entry, hops });
+      // Short-circuit on a 2-hop find — can't get any closer than the floor.
+      if (hops === 2) break;
+    }
+    return out;
+  };
+
+  let sampled = await scan();
+  if (!sampled.length) {
+    // Exhaustion guard: if every WARMED candidate has already been shown to
+    // this player (all consumed by prior hits/skips), recycle the used-set so
+    // the round continues with repeats instead of dead-ending into a permanent
+    // "warming up…" while the clock keeps running. Only when there's actually a
+    // warmed pool to recycle — otherwise this is a transient "still warming"
+    // null and the client should keep polling.
+    const warmed = [...room.marathon.candidates.values()].filter(e => e.data);
+    const everyWarmedUsed = warmed.length > 0 &&
+      warmed.every(e => usedTitles.has(normalizeArticle(e.title)) || normalizeArticle(e.title) === currentNorm);
+    if (everyWarmedUsed) {
+      usedTitles.clear();
+      sampled = await scan();
+    }
   }
   if (!sampled.length) return null;
 
@@ -2139,7 +2235,11 @@ async function startGameForRoom(room, roomCode) {
         // set_lang can detect stale data and recompute.
         room.destDataLang = lang;
         const dist = await computeDistance(room.pair.origin, room.pair.destination, destData, lang);
-        for (const [, p] of room.players) p.distances.push(dist);
+        // Origin is path[0], so its distance belongs at index 0. Assign by
+        // index, not push: this .then can resolve AFTER a fast player's first
+        // navigate already wrote distances[1], and a push would then land the
+        // origin distance at the wrong slot. distances[i] === hop of path[i].
+        for (const [, p] of room.players) p.distances[0] = dist;
         broadcastToRoom(roomCode, { type: 'distance_update', distances: getDistanceMap(room) });
       })
       .catch(e => console.error('Classic distance-cache error:', e.message));
@@ -2230,6 +2330,56 @@ function getDistanceMap(room) {
     map[pid] = entry;
   }
   return map;
+}
+
+// Enforce the core game rule server-side: a player may only move to an article
+// that is actually an outgoing link of the page they're currently on. The
+// navigate handler otherwise trusts only that a title is well-formed
+// (isValidArticle), so a scripted client could POST {type:'navigate',
+// article:<destination>} and win in a single hop — and because rp.path,
+// rp.finishTime and rp.distances all derive from navigate events, the public
+// Daily leaderboard would be fully forgeable.
+//
+// Fails OPEN on any infrastructure failure (Wikipedia fetch error, incomplete
+// link pagination, unexpected throw). A real player clicking a legitimate link
+// must NEVER be rejected because of a transient upstream hiccup; letting a
+// cheater through on a rare error is the lesser harm than wedging a real game.
+//
+// Kill-switch: enforcement is ON by default but can be dropped to LOG-ONLY
+// (shadow mode) at runtime by setting ENFORCE_MOVE_LEGALITY=false in the
+// environment — every would-be rejection is still logged (navigate_rejected
+// with enforced:false), so a false-reject on live traffic can be disabled
+// instantly via a config change instead of a code rollback.
+const ENFORCE_MOVE_LEGALITY = process.env.ENFORCE_MOVE_LEGALITY !== 'false';
+async function isLegalMove(from, target, lang = DEFAULT_LANG) {
+  try {
+    const targetNorm = normalizeArticle(target);
+    // A self-link (page linking to itself) is a harmless no-op move — never
+    // worth a false rejection.
+    if (normalizeArticle(from) === targetNorm) return true;
+
+    const outLinks = await getPageLinks(from, lang);
+    // getPageLinks only CACHES complete sets. If `from` isn't cached after the
+    // call, the fetch errored mid-pagination and the returned set may be
+    // missing the clicked link — fail open rather than reject a real move.
+    if (cacheGet(linkCache, cacheKey(lang, from)) === undefined) return true;
+    if (outLinks.size === 0) return true; // dead-end or empty fetch — fail open
+
+    if (outLinks.has(targetNorm)) return true;
+
+    // The clicked link may go through a redirect, or (zh) a Traditional↔
+    // Simplified variant, so the raw title differs from what prop=links stored.
+    // Mirror checkWin's resolve→variant fallback ladder before rejecting.
+    const resolved = normalizeArticle(await resolveRedirect(target, lang));
+    if (resolved !== targetNorm && outLinks.has(resolved)) return true;
+    if (WIKI_VARIANTS[lang]) {
+      const variant = normalizeArticle((await toVariantTitle(target, lang)) || '');
+      if (variant && variant !== targetNorm && outLinks.has(variant)) return true;
+    }
+    return false;
+  } catch (e) {
+    return true; // never block a move on an unexpected error
+  }
 }
 
 function checkWin(room, rp, article) {
@@ -2428,7 +2578,31 @@ async function handleAction(playerId, msg, req = null) {
 
       const article = msg.article;
       if (!isValidArticle(article)) return { ok: false, error: 'Invalid article' };
+
+      // Core anti-cheat: the move is only legal if `article` is actually linked
+      // from the page the player is on. Without this the path (and the Daily
+      // leaderboard built from it) is forgeable via direct navigate POSTs.
+      const fromArticle = rp.path[rp.path.length - 1];
+      if (fromArticle && !(await isLegalMove(fromArticle, article, room.lang || DEFAULT_LANG))) {
+        // Log every would-be rejection (so enforcement can be monitored, and
+        // shadow mode observed) — but only actually block when enforcement is on.
+        logEvent('navigate_rejected', {
+          playerId, roomCode: player.roomCode, article,
+          from: fromArticle, reason: 'illegal_move', enforced: ENFORCE_MOVE_LEGALITY,
+        });
+        if (ENFORCE_MOVE_LEGALITY) {
+          sendSSE(playerId, { type: 'move_rejected', article, from: fromArticle });
+          return { ok: false, error: 'illegal_move' };
+        }
+      }
+
       rp.path.push(article);
+      // Bind this navigation's distance slot NOW, synchronously, before any
+      // await. Capturing rp.path.length-1 later (inside the async distance
+      // .then, which runs after the win-check awaits) would race a concurrent
+      // same-player navigate that grew rp.path in the meantime, writing this
+      // article's distance into the wrong slot. distances[i] === hop of path[i].
+      const navStepIndex = rp.path.length - 1;
       logEvent('navigate', {
         roomCode: player.roomCode, playerId, name: rp.name,
         article, step: rp.path.length - 1, mode: room.mode,
@@ -2577,11 +2751,21 @@ async function handleAction(playerId, msg, req = null) {
         }
       }
 
-      // Compute distance async (classic mode only, don't block response)
+      // Compute distance async (classic mode only, don't block response).
+      // Write the result at the step's OWN index rather than push()ing: two
+      // rapid navigates resolve out of order otherwise, so distances[k] could
+      // hold path[k+1]'s hop count — corrupting the closer/further arrows and
+      // the results-screen replay. distances[i] === hop count of path[i].
       if (room.mode === 'classic' && !won && room.destData) {
         const rc = player.roomCode;
         computeDistance(article, room.pair.destination, room.destData, roomLang).then(dist => {
-          rp.distances.push(dist);
+          // Only write if this step is STILL the live article at navStepIndex.
+          // A navigate_undo can pop the step, or a play_again can reset the path,
+          // while this multi-second Wikipedia round-trip is in flight — writing
+          // unconditionally would re-grow rp.distances past path length (stale
+          // trailing value → wrong live HUD distance) or pollute the next round.
+          if (navStepIndex >= rp.path.length || normalizeArticle(rp.path[navStepIndex]) !== normalizeArticle(article)) return;
+          rp.distances[navStepIndex] = dist;
           const currentRoom = rooms.get(rc);
           if (currentRoom && currentRoom.started && currentRoom.players.has(playerId)) {
             broadcastToRoom(rc, { type: 'distance_update', distances: getDistanceMap(currentRoom) });
@@ -2589,6 +2773,47 @@ async function handleAction(playerId, msg, req = null) {
         }).catch(e => console.error('Distance calc error:', e.message));
       }
 
+      return { ok: true };
+    }
+
+    case 'navigate_undo': {
+      // The client optimistically navigated to an article that then failed to
+      // LOAD on their end (transient fetch error / sanitizer unavailable). The
+      // server may have already accepted that move, so undo it here to keep
+      // rp.path aligned with what the player actually sees — otherwise the next
+      // move is validated against an article they never reached.
+      const player = players.get(playerId);
+      if (!player) return { ok: false, error: 'session_lost' };
+      const room = rooms.get(player.roomCode);
+      if (!room || !room.started) return { ok: false, error: 'no_room' };
+      const rp = room.players.get(playerId);
+      if (!rp || rp.finished) return { ok: false, error: 'not_participant' };
+      const article = msg.article;
+      // No-op unless the tail still matches — if the move was already rejected
+      // (illegal) or superseded, there's nothing of this article's to remove.
+      if (rp.path.length > 1 && normalizeArticle(rp.path[rp.path.length - 1]) === normalizeArticle(article)) {
+        const undone = rp.path.pop();
+        // Keep distances index-aligned with the (now shorter) path.
+        if (rp.distances.length > rp.path.length) rp.distances.length = rp.path.length;
+        // Tri: un-visit the undone article ONLY if this was the player's sole
+        // visit to it. If the same target still appears earlier in the remaining
+        // path, they legitimately reached it before (a re-visit was undone) and
+        // must keep the checkpoint they earned.
+        if (room.mode === 'tri') {
+          const undoneNorm = normalizeArticle(undone);
+          const stillReached = rp.path.some(a => normalizeArticle(a) === undoneNorm);
+          if (!stillReached) {
+            const vi = rp.visited.findIndex(v => normalizeArticle(v) === undoneNorm);
+            if (vi !== -1) rp.visited.splice(vi, 1);
+          }
+        }
+        broadcastToRoom(player.roomCode, {
+          type: 'player_progress',
+          playerId, name: rp.name, color: rp.color,
+          steps: rp.path.length, currentArticle: rp.path[rp.path.length - 1],
+          visited: rp.visited.length, mode: room.mode,
+        });
+      }
       return { ok: true };
     }
 
@@ -3029,8 +3254,9 @@ function handleDisconnect(playerId) {
   if (!player) return;
   const roomCode = player.roomCode;
   players.delete(playerId);
-  // Release their recent-picks memory so the map doesn't grow forever.
+  // Release their recent-picks + rate-limit memory so the maps don't grow forever.
   recentPicks.delete(playerId);
+  actionBuckets.delete(playerId);
 
   if (!roomCode) return;
   const room = rooms.get(roomCode);
@@ -3107,9 +3333,15 @@ const server = http.createServer(async (req, res) => {
   // capped at 25 entries. Cache-Control: no-store so each result-screen view
   // gets the freshest standings.
   if (parsed.pathname === '/daily/leaderboard' && req.method === 'GET') {
-    const date = (parsed.query.date && /^\d{4}-\d{2}-\d{2}$/.test(parsed.query.date))
+    let date = (parsed.query.date && /^\d{4}-\d{2}-\d{2}$/.test(parsed.query.date))
       ? parsed.query.date
       : utcDateStr();
+    // Clamp to [launch, today]. Fixed-width YYYY-MM-DD compares lexically, so
+    // this is a safe string clamp — and it stops out-of-range dates (no board
+    // exists for the future or before launch) from reaching the day-walk.
+    const today = utcDateStr();
+    if (date > today) date = today;
+    else if (date < DAILY_LAUNCH_DATE) date = DAILY_LAUNCH_DATE;
     const entries = getLeaderboard(date);
     res.writeHead(200, {
       'Content-Type': 'application/json',
@@ -3194,9 +3426,36 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Self-hosted DOMPurify (see loadPurify). Served from memory with gzip
+  // negotiation + ETag, mirroring the index route.
+  if (parsed.pathname === '/purify.min.js') {
+    if (req.headers['if-none-match'] === purifyEtag) {
+      res.writeHead(304, { 'ETag': purifyEtag, 'Cache-Control': 'public, max-age=86400' });
+      res.end();
+      return;
+    }
+    const useGz = (req.headers['accept-encoding'] || '').toLowerCase().includes('gzip');
+    const body = useGz ? purifyGz : purifyRaw;
+    const headers = {
+      'Content-Type': 'application/javascript; charset=utf-8',
+      'Content-Length': body.length,
+      'ETag': purifyEtag,
+      'Cache-Control': 'public, max-age=86400',
+      'Vary': 'Accept-Encoding',
+    };
+    if (useGz) headers['Content-Encoding'] = 'gzip';
+    res.writeHead(200, headers);
+    res.end(body);
+    return;
+  }
+
   if (parsed.pathname === '/favicon.svg') {
     res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=86400' });
-    fs.createReadStream(path.join(__dirname, 'favicon.svg')).pipe(res);
+    // Guard the stream: an unhandled 'error' on a piped Readable (missing file,
+    // permission flip mid-deploy) would otherwise throw and crash the process.
+    fs.createReadStream(path.join(__dirname, 'favicon.svg'))
+      .on('error', () => { if (!res.headersSent) res.writeHead(500); res.end(); })
+      .pipe(res);
     return;
   }
 
@@ -3206,7 +3465,9 @@ const server = http.createServer(async (req, res) => {
   // crawler-friendly — no /static/ prefix to remember.
   if (parsed.pathname === '/preview.png') {
     res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400' });
-    fs.createReadStream(path.join(__dirname, 'preview.png')).pipe(res);
+    fs.createReadStream(path.join(__dirname, 'preview.png'))
+      .on('error', () => { if (!res.headersSent) res.writeHead(500); res.end(); })
+      .pipe(res);
     return;
   }
 
@@ -3244,6 +3505,30 @@ const server = http.createServer(async (req, res) => {
 
   if (parsed.pathname === '/events' && req.method === 'GET') {
     let playerId = parsed.query.playerId;
+    // A GENUINE reconnect proves ownership of an existing session with the
+    // matching reconnect token — NOT just the playerId, which is broadcast to
+    // every room member via player_list/progress and so is public. Rebinding
+    // and the capacity bypass both hinge on this: an opponent who only knows
+    // your playerId must not be able to take over your SSE handle (and be
+    // handed your CSRF token), nor slip past the connection cap.
+    let existing = players.get(playerId);
+    const isGenuineReconnect = !!(existing && parsed.query.rt && parsed.query.rt === existing.reconnectToken);
+
+    // Capacity cap: any request that will create a NEW players record — a fresh
+    // connect OR a known id replayed WITHOUT the right token — counts against
+    // the ceiling. Only genuine reconnects bypass it, so a flood replaying
+    // known ids can't grow the Map (and its sockets) past the limit.
+    if (!isGenuineReconnect && players.size >= MAX_SSE_CONNECTIONS) {
+      res.writeHead(503, { 'Content-Type': 'text/plain', 'Retry-After': '10' });
+      res.end('Server at capacity — please try again shortly.');
+      return;
+    }
+    if (!isGenuineReconnect && existing) {
+      // Known playerId without the matching secret — do NOT touch the real
+      // owner's record. Start a brand-new session instead.
+      playerId = generatePlayerId();
+      existing = undefined;
+    }
     if (!playerId) {
       playerId = generatePlayerId();
     }
@@ -3260,6 +3545,7 @@ const server = http.createServer(async (req, res) => {
     // on another origin can't read the EventSource body from the victim's tab,
     // so they cannot forge actions even if they guess a playerId.
     const newCsrfToken = crypto.randomBytes(16).toString('hex');
+    const newReconnectToken = crypto.randomBytes(16).toString('hex');
     const connectedAt = Date.now();
 
     // Reconnect path. Two scenarios both rebind to preserve room state:
@@ -3273,8 +3559,8 @@ const server = http.createServer(async (req, res) => {
     // Either way, swap the res handle on the existing player record instead
     // of allocating a fresh one with roomCode=null.
     const pendingTid = pendingDisconnects.get(playerId);
-    const existing = players.get(playerId);
     let activeCsrf = newCsrfToken;
+    let activeReconnect = newReconnectToken;
     if (existing) {
       if (pendingTid) {
         clearTimeout(pendingTid);
@@ -3284,22 +3570,22 @@ const server = http.createServer(async (req, res) => {
       // fire but our guard below skips cleanup since cur.res !== oldRes.
       try { existing.res?.end?.(); } catch (_) {}
       existing.res = res;
-      // KEEP the existing CSRF token, don't rotate. During proactive recycle
-      // the client may have action requests in flight signed with the old
-      // token between opening the new SSE and processing 'connected'. Rotating
-      // would 403 those (subtle "lost click" bug). The token is still per-
-      // session; rotation buys nothing if the client can't atomically swap.
+      // KEEP the existing CSRF + reconnect tokens, don't rotate. During
+      // proactive recycle the client may have action requests in flight signed
+      // with the old token between opening the new SSE and processing
+      // 'connected'. Rotating would 403 those (subtle "lost click" bug).
       activeCsrf = existing.csrfToken;
+      activeReconnect = existing.reconnectToken;
       existing.connectedAt = connectedAt;
       console.log(`SSE reconnected: ${playerId.slice(0, 8)} (room: ${existing.roomCode || 'none'}, mode: ${pendingTid ? 'grace' : 'proactive'})`);
       logEvent('sse_reconnect', { playerId, roomCode: existing.roomCode || null, mode: pendingTid ? 'grace' : 'proactive', totalConnected: players.size });
     } else {
-      players.set(playerId, { res, roomCode: null, name: null, csrfToken: newCsrfToken, connectedAt });
+      players.set(playerId, { res, roomCode: null, name: null, csrfToken: newCsrfToken, reconnectToken: newReconnectToken, connectedAt });
       console.log(`SSE connected: ${playerId.slice(0, 8)} (total: ${players.size})`);
       logEvent('sse_connect', { playerId, totalConnected: players.size });
     }
 
-    sendSSE(playerId, { type: 'connected', playerId, csrfToken: activeCsrf });
+    sendSSE(playerId, { type: 'connected', playerId, csrfToken: activeCsrf, reconnectToken: activeReconnect });
 
     const keepalive = setInterval(() => {
       if (!res.writableEnded) {
@@ -3345,13 +3631,20 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ ok: false, error: 'Invalid CSRF token' }));
         return;
       }
+      if (!allowAction(playerId)) {
+        res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '1' });
+        res.end(JSON.stringify({ ok: false, error: 'rate_limited' }));
+        return;
+      }
       const result = await handleAction(playerId, msg, req);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(result || { ok: true }));
     } catch (e) {
+      // Log the full error server-side, but don't leak exception/parse details
+      // (which can reveal internals) to the client.
       console.error('Action error:', e);
       res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: false, error: e.message }));
+      res.end(JSON.stringify({ ok: false, error: 'bad_request' }));
     }
     return;
   }
