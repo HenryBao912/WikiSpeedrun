@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node server.js",
     "generate-pool": "node scripts/generatePool.js",
-    "generate-pool:fast": "node scripts/generatePool.js --fast"
+    "generate-pool:fast": "node scripts/generatePool.js --fast",
+    "clean-pool": "node scripts/cleanPool.js",
+    "test:backlinks": "node scripts/testBacklinks.js"
   },
   "engines": {
     "node": ">=20.0.0"

@@ -33,16 +33,6 @@
       "dist": 5
     },
     {
-      "origin": "匈牙利",
-      "destination": "颜慧欣",
-      "viewRange": [
-        500000,
-        100000000
-      ],
-      "difficulty": "easy",
-      "dist": 4
-    },
-    {
       "origin": "文化大革命",
       "destination": "杰基·鲁宾逊",
       "viewRange": [
@@ -311,16 +301,6 @@
       ],
       "difficulty": "easy",
       "dist": 3
-    },
-    {
-      "origin": "张又侠",
-      "destination": "约书亚乐团",
-      "viewRange": [
-        500000,
-        100000000
-      ],
-      "difficulty": "easy",
-      "dist": 4
     },
     {
       "origin": "文化大革命",
@@ -1053,16 +1033,6 @@
       "dist": 4
     },
     {
-      "origin": "立直",
-      "destination": "AlexNet",
-      "viewRange": [
-        5000,
-        50000
-      ],
-      "difficulty": "hard",
-      "dist": 5
-    },
-    {
       "origin": "拜仁慕尼黑足球俱乐部",
       "destination": "李克强",
       "viewRange": [
@@ -1071,16 +1041,6 @@
       ],
       "difficulty": "hard",
       "dist": 3
-    },
-    {
-      "origin": "魔岩唱片",
-      "destination": "陆子玄",
-      "viewRange": [
-        5000,
-        50000
-      ],
-      "difficulty": "hard",
-      "dist": 5
     },
     {
       "origin": "文化大革命",
@@ -1538,22 +1498,6 @@
     },
     {
       "targets": [
-        "中华人民共和国",
-        "引号",
-        "九记牛腩"
-      ],
-      "viewRange": [
-        500000,
-        100000000
-      ],
-      "difficulty": "easy",
-      "distances": [
-        2,
-        4
-      ]
-    },
-    {
-      "targets": [
         "以色列",
         "张德兰",
         "ONE_PIECE"
@@ -1634,22 +1578,6 @@
     },
     {
       "targets": [
-        "日本",
-        "香港",
-        "艾尔·霍弗德"
-      ],
-      "viewRange": [
-        50000,
-        500000
-      ],
-      "difficulty": "medium",
-      "distances": [
-        1,
-        4
-      ]
-    },
-    {
-      "targets": [
         "汪精卫",
         "引号",
         "舒淇"
@@ -1678,22 +1606,6 @@
       "distances": [
         1,
         4
-      ]
-    },
-    {
-      "targets": [
-        "清朝",
-        "九记牛腩",
-        "萧蔷"
-      ],
-      "viewRange": [
-        50000,
-        500000
-      ],
-      "difficulty": "medium",
-      "distances": [
-        4,
-        3
       ]
     },
     {
@@ -2014,38 +1926,6 @@
       "distances": [
         3,
         4
-      ]
-    },
-    {
-      "targets": [
-        "中国共产主义青年团中央委员会",
-        "唐宫美人天下",
-        "欧乌鸫"
-      ],
-      "viewRange": [
-        5000,
-        50000
-      ],
-      "difficulty": "hard",
-      "distances": [
-        4,
-        4
-      ]
-    },
-    {
-      "targets": [
-        "导盲犬小Q",
-        "鲁迪乌斯·格雷拉特",
-        "波特兰水泥"
-      ],
-      "viewRange": [
-        5000,
-        50000
-      ],
-      "difficulty": "hard",
-      "distances": [
-        5,
-        5
       ]
     },
     {
