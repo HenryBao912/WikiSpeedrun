@@ -8,7 +8,7 @@ const zlib = require('zlib');
 
 // ─── Game State ───
 const rooms = new Map();
-const players = new Map(); // playerId -> { res (SSE), roomCode, name }
+const players = new Map(); // playerId -> { res (SSE), roomCode, name, visitorId }
 
 // Disconnect grace: when an SSE drops we don't tear down the player + room
 // immediately. EventSource auto-reconnects on transient network blips, tab
@@ -118,19 +118,51 @@ function shortStack(err) {
 const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL || '';
 const DISCORD_COOLDOWN_MS = 5 * 60 * 1000;
 const _discordSent = new Map(); // signature -> lastSentMs
-// Shared Discord poster: de-dupes by `sig` (5-min cooldown), bounds the map,
-// and is fire-and-forget + never-throw. Used for both server crashes and
-// client errors so a recurring issue pings once, not on every occurrence.
+// Global outbound token bucket. The per-signature cooldown collapses *repeats*,
+// but a flood of *distinct* signatures (e.g. an abusive client POSTing varied
+// messages to the public /clientlog) would each pass it. This caps total webhook
+// POSTs to ~12/min regardless of signature, keeping us well under Discord's own
+// ~30/min webhook limit so the alert channel can never be flooded. Genuine
+// distinct crashes are rare, so legitimate alerts are unaffected.
+const _webhook = { tokens: 12, last: 0, MAX: 12, refillPerSec: 0.2 };
+function allowWebhook() {
+  const now = Date.now();
+  if (!_webhook.last) _webhook.last = now;
+  _webhook.tokens = Math.min(_webhook.MAX, _webhook.tokens + (Math.max(0, now - _webhook.last) / 1000) * _webhook.refillPerSec);
+  _webhook.last = now;
+  if (_webhook.tokens < 1) return false;
+  _webhook.tokens -= 1;
+  return true;
+}
+// Shared Discord poster: de-dupes by `sig` (5-min cooldown), globally rate-caps,
+// bounds the map, and is fire-and-forget + never-throw. Used for both server
+// crashes and client errors so a recurring issue pings once, not every time.
 function notifyDiscord(emoji, kind, sig, text) {
   if (!DISCORD_WEBHOOK_URL) return;
   try {
     const now = Date.now();
     if (_discordSent.has(sig) && now - _discordSent.get(sig) < DISCORD_COOLDOWN_MS) return;
+    if (!allowWebhook()) return; // global flood cap — don't mark sent, so it can fire later
     _discordSent.set(sig, now);
     if (_discordSent.size > 300) {
       for (const [k, t] of _discordSent) if (now - t > DISCORD_COOLDOWN_MS) _discordSent.delete(k);
+      // Backstop: a burst of unique sigs can outrun cooldown-based eviction, so
+      // hard-cap by dropping oldest (insertion-order) entries.
+      while (_discordSent.size > 300) {
+        const oldest = _discordSent.keys().next().value;
+        if (oldest === undefined) break;
+        _discordSent.delete(oldest);
+      }
     }
-    const body = JSON.stringify({ content: `${emoji} **WikiSpeedrun** \`${kind}\`\n\`\`\`\n${String(text).slice(0, 1800)}\n\`\`\`` });
+    // `text` can contain attacker-supplied client-error fields (/clientlog is a
+    // public POST). Neutralize backtick runs so it can't escape the ``` code
+    // fence, and set allowed_mentions:{parse:[]} so an "@everyone" in the body
+    // can never ping the channel. `kind` is always a fixed internal constant.
+    const safe = String(text).slice(0, 1800).replace(/`/g, 'ˋ');
+    const body = JSON.stringify({
+      content: `${emoji} **WikiSpeedrun** \`${kind}\`\n\`\`\`\n${safe}\n\`\`\``,
+      allowed_mentions: { parse: [] },
+    });
     // Pass the URL straight to https.request so Node resolves host/port/path
     // (Discord is always :443, but this stays correct for any webhook URL).
     const req = https.request(DISCORD_WEBHOOK_URL, {
@@ -169,6 +201,204 @@ function recordFatal(kind, err) {
 }
 process.on('uncaughtException', (err) => recordFatal('uncaught_exception', err));
 process.on('unhandledRejection', (reason) => recordFatal('unhandled_rejection', reason));
+
+// ─── Real-user analytics: Postgres event store + GA4 Measurement Protocol ───
+// Three IDs: visitorId (persistent per browser, minted client-side) identifies a
+// human over time and is the Postgres source-of-truth key; gaClientId (GA's own
+// cookie id when gtag wasn't blocked, else the visitorId) is the GA4 client_id so
+// non-blocked users stitch to their existing GA identity instead of double-
+// counting; playerId (per SSE session) is one game session. Key events are
+// written to Postgres (unblockable) AND mirrored to GA4 via the Measurement
+// Protocol so ad-blocked users — who never load the GA tag — still count. The
+// server-side mirror tags hits delivery:'server' (it fires for EVERYONE); the
+// client gtag tags delivery:'client'. EVERYTHING here is best-effort: a DB or GA
+// failure is logged and swallowed, never thrown into the request/gameplay path.
+// Secrets come from env only.
+const DATABASE_URL = process.env.DATABASE_URL || '';
+const GA_MEASUREMENT_ID = process.env.GA_MEASUREMENT_ID || '';
+const GA_API_SECRET = process.env.GA_API_SECRET || '';
+const GA_ENABLED = !!(GA_MEASUREMENT_ID && GA_API_SECRET);
+
+let pgPool = null;
+function pgSslConfig(connStr) {
+  if (process.env.PGSSL === 'disable') return false;
+  if (process.env.PGSSL === 'require') return { rejectUnauthorized: false };
+  // Internal/loopback hosts (Railway private network, localhost) don't use TLS;
+  // managed/public endpoints do but often present a self-signed chain.
+  if (/localhost|127\.0\.0\.1|\.railway\.internal/.test(connStr)) return false;
+  return { rejectUnauthorized: false };
+}
+if (DATABASE_URL) {
+  try {
+    const { Pool } = require('pg');
+    pgPool = new Pool({
+      connectionString: DATABASE_URL,
+      ssl: pgSslConfig(DATABASE_URL),
+      max: 5,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 5000,
+    });
+    // A pool 'error' (idle client dropped by the server) is emitted on the pool,
+    // not a query — without this listener it would crash the process.
+    pgPool.on('error', (e) => logEvent('analytics_pool_error', { message: e.message }));
+    initEventsTable();
+  } catch (e) {
+    console.error('Analytics: pg init failed — DB logging disabled:', e.message);
+    logEvent('analytics_init_failed', { message: e.message });
+    pgPool = null;
+  }
+} else {
+  console.log('Analytics: DATABASE_URL not set — Postgres event logging disabled.');
+}
+
+async function initEventsTable() {
+  if (!pgPool) return;
+  try {
+    await pgPool.query(`
+      create table if not exists events (
+        id bigserial primary key,
+        visitor_id text not null,
+        player_id text,
+        event text not null,
+        lang text, mode text, room_code text,
+        meta jsonb,
+        ts timestamptz not null default now()
+      )`);
+    await pgPool.query(`create index if not exists events_vid_ts on events (visitor_id, ts)`);
+    await pgPool.query(`create index if not exists events_event_ts on events (event, ts)`);
+    logEvent('analytics_ready', {});
+  } catch (e) {
+    console.error('Analytics: events table init failed:', e.message);
+    logEvent('analytics_table_init_failed', { message: e.message });
+  }
+}
+
+// visitorId is opaque and client-supplied, so validate before it ever touches a
+// query parameter or a GA payload. UUIDs are 36 chars; cap at 64 to bound abuse.
+function sanitizeVid(v) {
+  if (typeof v !== 'string') return null;
+  const s = v.trim();
+  return /^[A-Za-z0-9_-]{8,64}$/.test(s) ? s : null;
+}
+
+// GA4 client ids look like "1234567890.1234567890" (the _ga cookie's last two
+// fields). Validate that exact shape before trusting a client-supplied value.
+function sanitizeGaClientId(v) {
+  if (typeof v !== 'string') return null;
+  const s = v.trim();
+  return /^\d{1,20}\.\d{1,20}$/.test(s) ? s : null;
+}
+
+// Crawlers / link-preview fetchers / headless browsers that execute enough JS to
+// fire our beacons but aren't real humans. We skip them from analytics so they
+// don't inflate user counts. Deliberately conservative — better to keep a
+// borderline human than to under-report. (Most non-JS bots never reach here.)
+// Tightened to avoid catching humans in in-app browsers (e.g. plain "discord"
+// or "preview" could appear in a webview UA) — match specific bot tokens instead.
+const BOT_UA_RE = /bot\b|crawler|spider|crawl|slurp|headless|phantomjs|puppeteer|playwright|lighthouse|pingdom|uptimerobot|gtmetrix|facebookexternalhit|facebot|whatsapp|telegrambot|discordbot|slackbot|twitterbot|linkedinbot|embedly|bingpreview|redditbot|applebot|googlebot|bingbot|yandexbot|duckduckbot|baiduspider|petalbot|ahrefsbot|semrushbot|mj12bot|dotbot|prerender|python-requests|curl\/|wget|axios|node-fetch|go-http/i;
+function isBotUA(ua) {
+  return !!ua && BOT_UA_RE.test(ua);
+}
+
+// Resolve a visitorId from the live player record (bound at SSE connect).
+function visitorIdForPlayer(playerId) {
+  const p = playerId ? players.get(playerId) : null;
+  return (p && p.visitorId) || null;
+}
+
+// Resolve the GA4 client id for a player: their GA cookie id if we captured it
+// (so non-blocked users stitch to their existing GA identity), else the vid.
+function gaClientIdForPlayer(playerId) {
+  const p = playerId ? players.get(playerId) : null;
+  return (p && (p.gaClientId || p.visitorId)) || null;
+}
+
+// Fire-and-forget Postgres insert. Never awaited by callers, never throws into
+// them. A row needs a visitor_id (NOT NULL); if we can't resolve one we skip the
+// row rather than fail — gameplay always wins over analytics.
+function recordEvent(event, { visitorId, playerId = null, lang = null, mode = null, roomCode = null, meta = null } = {}) {
+  if (!pgPool) return;
+  try {
+    const vid = visitorId || visitorIdForPlayer(playerId);
+    if (!vid) return;
+    // JSON.stringify can throw (circular/BigInt) — keep it inside the guard so a
+    // bad meta can never throw synchronously into the gameplay path.
+    const metaJson = meta ? JSON.stringify(meta) : null;
+    pgPool.query(
+      `insert into events (visitor_id, player_id, event, lang, mode, room_code, meta)
+       values ($1, $2, $3, $4, $5, $6, $7)`,
+      [vid, playerId, event, lang, mode, roomCode, metaJson],
+    ).catch((e) => logEvent('analytics_insert_failed', { event, message: e.message }));
+  } catch (e) {
+    logEvent('analytics_insert_failed', { event, message: e && e.message });
+  }
+}
+
+// Record a room-level event once PER participant: a Postgres row keyed by that
+// player's visitorId, and (when mirror) a GA4 hit keyed by their GA client id —
+// so multiplayer games count every distinct human and GA4 sees one event/user.
+function recordRoomEvent(room, roomCode, event, { mirror = false, lang = null, mode = null, meta = null, winnerId = null } = {}) {
+  if ((!pgPool && !GA_ENABLED) || !room || !room.players) return;
+  try {
+    for (const [pid] of room.players) {
+      recordEvent(event, { playerId: pid, roomCode, lang, mode, meta });
+      if (mirror) {
+        const clientId = gaClientIdForPlayer(pid);
+        if (!clientId) continue;
+        const params = { session_id: pid };
+        if (mode) params.mode = mode;
+        if (lang) params.lang = lang;
+        // Number, not boolean — GA4 MP may drop boolean param values.
+        if (event === 'game_over') params.won = (winnerId != null && pid === winnerId) ? 1 : 0;
+        sendGA4({ clientId, name: event, params });
+      }
+    }
+  } catch (e) {
+    logEvent('analytics_room_event_failed', { event, message: e && e.message });
+  }
+}
+
+// Per-IP rate limit for the public /pageview beacon — normally one per page
+// load, but a hostile client could spam it into DB rows / GA hits. Burst 15,
+// ~0.5/s sustained. Map is bounded (evict oldest) since there's no close event.
+const pageviewBuckets = new Map();
+function allowPageview(ip) {
+  const now = Date.now();
+  let b = pageviewBuckets.get(ip);
+  if (!b) {
+    if (pageviewBuckets.size > 5000) { const o = pageviewBuckets.keys().next().value; if (o !== undefined) pageviewBuckets.delete(o); }
+    b = { tokens: 15, last: now };
+    pageviewBuckets.set(ip, b);
+  }
+  b.tokens = Math.min(15, b.tokens + ((now - b.last) / 1000) * 0.5);
+  b.last = now;
+  if (b.tokens < 1) return false;
+  b.tokens -= 1;
+  return true;
+}
+
+// Server-side GA4 Measurement Protocol — fires for EVERYONE, including users
+// whose ad blocker kills the client gtag, so GA4 stops undercounting. clientId
+// MUST be stable per browser (GA's own client id when we have it, else the
+// persistent vid); a fresh id per call would re-fragment the very users we're
+// recovering. engagement_time_msec is REQUIRED or GA4 won't count the event
+// toward Users; delivery:'server' lets reports separate these from client hits.
+// Fire-and-forget: not awaited, never throws into the request path.
+function sendGA4({ clientId, name, params = {} }) {
+  if (!GA_ENABLED || !clientId) return;
+  try {
+    const url = `https://www.google-analytics.com/mp/collect?measurement_id=${encodeURIComponent(GA_MEASUREMENT_ID)}&api_secret=${encodeURIComponent(GA_API_SECRET)}`;
+    const body = JSON.stringify({
+      client_id: clientId,
+      events: [{ name, params: { engagement_time_msec: 100, delivery: 'server', ...params } }],
+    });
+    // global fetch (Node 18+; this app requires >=20). Intentionally not awaited.
+    fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })
+      .catch((e) => logEvent('analytics_ga4_failed', { name, message: e && e.message }));
+  } catch (e) {
+    logEvent('analytics_ga4_failed', { name, message: e && e.message });
+  }
+}
 
 const WIKI_HOSTS = {
   en: 'en.wikipedia.org',
@@ -405,6 +635,22 @@ async function validateArticles(titles, lang = DEFAULT_LANG) {
 // ─── Page views & difficulty filtering ───
 
 // Fetch individual article view counts (for mid-range filtering)
+// Run an async fn over items with bounded concurrency, preserving input order.
+// Used for direct-to-Wikimedia REST fan-outs (pageviews) that bypass the action-
+// API slot limiter, so they don't burst the shared per-IP 429 budget all at once.
+async function mapLimit(items, limit, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i], i);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, worker));
+  return results;
+}
+
 function getPageViews(titles, lang = DEFAULT_LANG) {
   const today = new Date();
   const endDate = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
@@ -413,7 +659,7 @@ function getPageViews(titles, lang = DEFAULT_LANG) {
   const startDate = `${start.getFullYear()}${String(start.getMonth() + 1).padStart(2, '0')}${String(start.getDate()).padStart(2, '0')}`;
 
   const project = `${lang}.wikipedia`;
-  const promises = titles.map(title => {
+  const fetchOne = (title) => {
     const encodedTitle = encodeURIComponent(title.replace(/ /g, '_'));
     const apiUrl = `https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/${project}/all-access/all-agents/${encodedTitle}/daily/${startDate}/${endDate}`;
     return new Promise((resolve) => {
@@ -431,8 +677,11 @@ function getPageViews(titles, lang = DEFAULT_LANG) {
       req.on('error', () => resolve({ title, views: 0 }));
       req.setTimeout(WIKI_REQUEST_TIMEOUT_MS, () => req.destroy(new Error('pageviews timeout')));
     });
-  });
-  return Promise.all(promises);
+  };
+  // This hits the Wikimedia REST host directly, outside the action-API slot
+  // limiter. Firing all ~20 titles at once is an uncounted burst against the
+  // same per-IP 429 budget, so cap concurrency to ~4 in flight.
+  return mapLimit(titles, 4, fetchOne);
 }
 
 // Fetch top viewed articles from Wikimedia (for easy/popular range)
@@ -1923,6 +2172,10 @@ const MARATHON_COMPLETION_BONUSES = [
 ];
 // Round durations (ms) the client may request.
 const MARATHON_DURATIONS_MS = { '3m': 180000, '5m': 300000, '8m': 480000, '12m': 720000 };
+// Hard cap on how long the round clock may be deferred while the first target
+// warms (degraded 429 path, see startMarathonClock). Past this the clock starts
+// regardless, so a room can never hang waiting on a candidate that never warms.
+const MARATHON_WARM_HARD_CAP_MS = 30000;
 
 function marathonBasePoints(hops) {
   // Clamp hops into the tier table: anything 4+ maps to the 4-tier reward.
@@ -1976,7 +2229,40 @@ function computeMarathonScore(events) {
 //   usedTitles     Set<normalized> titles this player has already been shown
 //                  (so no repeats even in a 12-minute round)
 
+// Clear both marathon timers: the end-of-round timer and (if armed) the
+// deferred-clock fallback. Used everywhere a marathon is torn down so a pending
+// fallback can't fire against a finished or deleted room.
+function clearMarathonTimers(marathon) {
+  if (!marathon) return;
+  if (marathon.timerId) { clearTimeout(marathon.timerId); marathon.timerId = null; }
+  if (marathon.clockFallbackId) { clearTimeout(marathon.clockFallbackId); marathon.clockFallbackId = null; }
+}
+
+// Start the marathon round clock exactly once and arm the end-of-round timer.
+// Common path: called at game_start with the deadline already in marathon.endsAt.
+// Deferred path (warming outran the pre-warm cap): called when the first real
+// target is delivered (or the hard-cap fallback fires) with reanchor:true to set
+// a full-duration deadline from now, and broadcast:true to correct the clients
+// that started on a frozen placeholder.
+function startMarathonClock(room, roomCode, { reanchor = false, broadcast = false } = {}) {
+  const m = room.marathon;
+  if (!m || m.timerStarted) return;
+  m.timerStarted = true;
+  if (m.clockFallbackId) { clearTimeout(m.clockFallbackId); m.clockFallbackId = null; }
+  if (reanchor) m.endsAt = Date.now() + m.duration;
+  const remaining = Math.max(0, m.endsAt - Date.now());
+  m.timerId = setTimeout(() => {
+    endMarathonForRoom(room, roomCode).catch(e =>
+      console.error('Marathon end error:', e.message));
+  }, remaining);
+  if (broadcast) broadcastToRoom(roomCode, { type: 'marathon_clock_start', endsAt: m.endsAt });
+}
+
 async function startMarathonForRoom(room, roomCode) {
+  // A fresh round replaces room.marathon below — clear any timers still armed
+  // from a prior round (incl. a deferred-clock fallback) so an orphaned timer
+  // can't fire against and hijack the new round.
+  clearMarathonTimers(room.marathon);
   const lang = room.lang || DEFAULT_LANG;
   const durKey = room.marathonDurationKey || '5m';
   const duration = MARATHON_DURATIONS_MS[durKey] || MARATHON_DURATIONS_MS['5m'];
@@ -2014,6 +2300,8 @@ async function startMarathonForRoom(room, roomCode) {
     endsAt: Date.now() + duration,
     candidates: new Map(),
     timerId: null,
+    timerStarted: false,   // round clock not yet armed (see startMarathonClock)
+    clockFallbackId: null, // hard-cap timer for the deferred-clock path
   };
   for (const c of candidates) {
     marathon.candidates.set(normalizeArticle(c), { title: c, data: null });
@@ -2055,12 +2343,22 @@ async function startMarathonForRoom(room, roomCode) {
     new Promise(resolve => setTimeout(resolve, 4000)),
   ]);
 
+  // Anchor the round deadline now — AFTER the pre-warm wait. If a candidate
+  // actually warmed during the race, the first target lands on arrival, so start
+  // the clock at game_start as before. If none warmed in time (a 429 storm outran
+  // the 4s cap), DEFER the clock until the first real target is delivered —
+  // otherwise warming burns round time with the player stuck on "warming up…".
+  // clockPending tells the client to show a full, frozen clock until then.
+  const warmReady = [...marathon.candidates.values()].some(e => e.data);
+  marathon.endsAt = Date.now() + duration;
+
   broadcastToRoom(roomCode, {
     type: 'game_start',
     mode: 'marathon',
     origin: startArticle,
     duration,
     endsAt: marathon.endsAt,
+    clockPending: !warmReady,
     lang,
   });
   logEvent('game_started', {
@@ -2070,14 +2368,18 @@ async function startMarathonForRoom(room, roomCode) {
     durationKey: durKey,
     origin: startArticle,
   });
+  recordRoomEvent(room, roomCode, 'game_started', { mirror: true, lang, mode: 'marathon', meta: { durationKey: durKey } });
 
-  // Kick the end-of-round timer only AFTER the player is actually playing,
-  // so slow warming doesn't eat into the round time.
-  marathon.endsAt = Date.now() + duration;
-  marathon.timerId = setTimeout(() => {
-    endMarathonForRoom(room, roomCode).catch(e =>
-      console.error('Marathon end error:', e.message));
-  }, duration);
+  if (warmReady) {
+    startMarathonClock(room, roomCode); // common path — identical timing to before
+  } else {
+    // Degraded path: arm a hard fallback so the round still starts/ends even if
+    // no candidate ever warms; the first delivered target starts it sooner.
+    marathon.clockFallbackId = setTimeout(
+      () => startMarathonClock(room, roomCode, { reanchor: true, broadcast: true }),
+      MARATHON_WARM_HARD_CAP_MS,
+    );
+  }
 
   // Seed every player's initial state with a player_progress broadcast so
   // peers can render the pill bar from the moment the game opens, before
@@ -2235,7 +2537,7 @@ async function handleMarathonNavigate(room, rp, playerId, article, lang) {
 
 async function endMarathonForRoom(room, roomCode) {
   if (!room.marathon) return;
-  room.marathon.timerId = null;
+  clearMarathonTimers(room.marathon);
   room.started = false;
 
   const results = [];
@@ -2269,6 +2571,7 @@ async function endMarathonForRoom(room, roomCode) {
     topScore: results[0]?.total || 0,
     playerCount: results.length,
   });
+  recordRoomEvent(room, roomCode, 'game_over', { mirror: true, mode: 'marathon', meta: { gaveUp: false, durationKey: room.marathon.durationKey } });
 }
 
 // ─── Game Logic ───
@@ -2431,6 +2734,7 @@ async function startGameForRoom(room, roomCode) {
       destination: room.pair.destination,
       manual: !!room.manualArticles,
     });
+    recordRoomEvent(room, roomCode, 'game_started', { mirror: true, lang, mode: 'classic' });
     // Cache destination backlinks async (don't block game start). Catch
     // errors so a Wikipedia hiccup doesn't produce an unhandled rejection;
     // the player just plays without an initial-distance badge, which is fine.
@@ -2482,6 +2786,7 @@ async function startGameForRoom(room, roomCode) {
       targets: room.triple.targets,
       manual: !!room.manualArticles,
     });
+    recordRoomEvent(room, roomCode, 'game_started', { mirror: true, lang, mode: 'tri' });
     // Cache destination data for unvisited tri targets (targets[1] and targets[2])
     room.triDestData = {};
     for (const t of room.triple.targets.slice(1)) {
@@ -2763,6 +3068,7 @@ async function handleAction(playerId, msg, req = null) {
           article: msg.article,
           reason,
         });
+        recordEvent('navigate_rejected', { playerId, roomCode: player.roomCode, meta: { article: msg.article, reason } });
         // Tell the client its game state is stale so it can show a message
         // and reset back to home — otherwise the user keeps clicking links
         // that are silently dropped (the bug we saw in prod logs).
@@ -2778,6 +3084,7 @@ async function handleAction(playerId, msg, req = null) {
           article: msg.article,
           reason,
         });
+        recordEvent('navigate_rejected', { playerId, roomCode: player.roomCode, meta: { article: msg.article, reason } });
         if (!rp) sendSSE(playerId, { type: 'session_lost', reason });
         return { ok: false, error: reason };
       }
@@ -2796,6 +3103,7 @@ async function handleAction(playerId, msg, req = null) {
           playerId, roomCode: player.roomCode, article,
           from: fromArticle, reason: 'illegal_move', enforced: ENFORCE_MOVE_LEGALITY,
         });
+        recordEvent('navigate_rejected', { playerId, roomCode: player.roomCode, mode: room.mode, meta: { article, from: fromArticle, reason: 'illegal_move', enforced: ENFORCE_MOVE_LEGALITY } });
         if (ENFORCE_MOVE_LEGALITY) {
           sendSSE(playerId, { type: 'move_rejected', article, from: fromArticle });
           return { ok: false, error: 'illegal_move' };
@@ -2812,6 +3120,10 @@ async function handleAction(playerId, msg, req = null) {
       logEvent('navigate', {
         roomCode: player.roomCode, playerId, name: rp.name,
         article, step: rp.path.length - 1, mode: room.mode,
+      });
+      recordEvent('navigate', {
+        playerId, roomCode: player.roomCode, mode: room.mode, lang: room.lang || DEFAULT_LANG,
+        meta: { article, step: rp.path.length - 1 },
       });
 
       // For tri mode, include visited count in progress. For marathon, also
@@ -2898,6 +3210,7 @@ async function handleAction(playerId, msg, req = null) {
             daily: !!room.daily,
             dailyMeta: room.dailyMeta || null,
           });
+          recordRoomEvent(room, player.roomCode, 'game_over', { mirror: true, mode: room.mode, lang: room.lang || DEFAULT_LANG, winnerId: room.winner, meta: { gaveUp: false, winnerId: room.winner } });
           logEvent('game_over', {
             roomCode: player.roomCode,
             mode: room.mode,
@@ -3057,6 +3370,12 @@ async function handleAction(playerId, msg, req = null) {
       };
       rp.marathonState.currentTarget = target;
       rp.marathonState.usedTitles.add(normalizeArticle(pick.title));
+      // First real target delivered. If the round clock was deferred while the
+      // candidate pool warmed (degraded 429 path), start it now and broadcast the
+      // corrected deadline so warming didn't cost the player any round time.
+      if (room.marathon && !room.marathon.timerStarted) {
+        startMarathonClock(room, player.roomCode, { reanchor: true, broadcast: true });
+      }
       sendSSE(playerId, {
         type: 'marathon_next_target',
         target,
@@ -3144,10 +3463,7 @@ async function handleAction(playerId, msg, req = null) {
       // Cancel any leftover marathon end-of-round timer from the prior round.
       // Without this, the SP path below overwrites room.marathon and the
       // stale timer fires later, broadcasting a game_over for the WRONG round.
-      if (room.marathon?.timerId) {
-        clearTimeout(room.marathon.timerId);
-        room.marathon.timerId = null;
-      }
+      clearMarathonTimers(room.marathon);
       room.marathon = null;
       for (const [, p] of room.players) p.marathonState = null;
       if (room.singlePlayer) {
@@ -3391,10 +3707,7 @@ async function handleAction(playerId, msg, req = null) {
       room.destData = null;
       // Cancel the marathon end-of-round timer if it was scheduled — otherwise
       // it fires later and broadcasts a stale `game_over` to the lobby.
-      if (room.marathon?.timerId) {
-        clearTimeout(room.marathon.timerId);
-        room.marathon.timerId = null;
-      }
+      clearMarathonTimers(room.marathon);
       room.marathon = null;
       for (const [, p] of room.players) {
         Object.assign(p, { path: [], finished: false, finishTime: null, visited: [], distances: [] });
@@ -3440,6 +3753,7 @@ function finalizeGiveUp(room, roomCode) {
     daily: !!room.daily,
     dailyMeta: room.dailyMeta || null,
   });
+  recordRoomEvent(room, roomCode, 'game_over', { mirror: true, mode: room.mode, lang: room.lang || DEFAULT_LANG, meta: { gaveUp: true } });
   logEvent('game_over', {
     roomCode,
     mode: room.mode,
@@ -3453,6 +3767,10 @@ function finalizeGiveUp(room, roomCode) {
     })),
   });
   room.started = false;
+  // Defensive: keep the "every teardown clears marathon timers" invariant so a
+  // deferred-clock fallback can't outlive the round (no-op for non-marathon and
+  // currently unreachable for marathon, but cheap insurance if that changes).
+  clearMarathonTimers(room.marathon);
 }
 
 function handleDisconnect(playerId) {
@@ -3476,10 +3794,7 @@ function handleDisconnect(playerId) {
   if (room.players.size === 0) {
     // Drop any live marathon timer before GC so it doesn't fire against a
     // deleted room (noop in practice but keeps the process clean under load).
-    if (room.marathon?.timerId) {
-      clearTimeout(room.marathon.timerId);
-      room.marathon.timerId = null;
-    }
+    clearMarathonTimers(room.marathon);
     rooms.delete(roomCode);
     console.log(`Room ${roomCode} deleted (empty)`);
     logEvent('room_deleted', { roomCode });
@@ -3512,8 +3827,17 @@ function handleDisconnect(playerId) {
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let body = '';
-    req.on('data', chunk => { body += chunk; if (body.length > 1e6) reject(new Error('Too large')); });
-    req.on('end', () => resolve(body));
+    let done = false;
+    req.on('data', chunk => {
+      if (done) return;
+      body += chunk;
+      if (body.length > 1e6) {     // ~1MB cap; tear down so we stop buffering a
+        done = true;               // hostile/slow stream after the limit is hit
+        req.destroy();
+        reject(new Error('Too large'));
+      }
+    });
+    req.on('end', () => { if (!done) resolve(body); });
     req.on('error', reject);
   });
 }
@@ -3583,6 +3907,29 @@ const server = http.createServer(async (req, res) => {
           `${info.message}\n${info.stack || ''}\n@ ${info.path || '?'} · ${info.ua}`);
       }
     } catch (_) { /* malformed report — ignore, never error a logging endpoint */ }
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
+  // Page-view beacon. Fired client-side on every page load (first-party, so ad
+  // blockers don't touch it), this counts EVERY visitor server-side — including
+  // bouncers who never start a game and so never open an SSE stream / fire a
+  // 'visit'. Public + unauthenticated: per-IP rate-limited, validated, and it
+  // never errors back (a logging endpoint must not become a failure source).
+  if (parsed.pathname === '/pageview' && req.method === 'POST') {
+    if (!allowPageview(clientIpFromReq(req))) { res.writeHead(429); res.end(); return; }
+    // Accept the beacon but don't record bots — keeps the headcount human.
+    if (isBotUA(req.headers['user-agent'])) { res.writeHead(204); res.end(); return; }
+    try {
+      const data = JSON.parse(await readBody(req));
+      const visitorId = sanitizeVid(data.vid);
+      const gaClientId = sanitizeGaClientId(data.gacid) || visitorId;
+      const page = typeof data.page === 'string' ? data.page.slice(0, 200) : null;
+      // Each self-gates on its own id; recordEvent needs a vid, sendGA4 a clientId.
+      recordEvent('page_view', { visitorId, meta: page ? { page } : null });
+      sendGA4({ clientId: gaClientId, name: 'page_view', params: {} });
+    } catch (_) { /* malformed — ignore, never error a logging endpoint */ }
     res.writeHead(204);
     res.end();
     return;
@@ -3765,6 +4112,14 @@ const server = http.createServer(async (req, res) => {
 
   if (parsed.pathname === '/events' && req.method === 'GET') {
     let playerId = parsed.query.playerId;
+    // Persistent per-browser visitor id (see analytics section). Validated;
+    // null if absent/malformed. Bound to the player record below so every
+    // server-side event can resolve the human behind a session.
+    const visitorId = sanitizeVid(parsed.query.vid);
+    // GA's own client id, captured client-side only when gtag wasn't blocked.
+    // Preferred as the GA4 client_id so non-blocked users stitch to their
+    // existing GA identity; falls back to the vid for blocked users.
+    const gaClientId = sanitizeGaClientId(parsed.query.gacid) || visitorId;
     // A GENUINE reconnect proves ownership of an existing session with the
     // matching reconnect token — NOT just the playerId, which is broadcast to
     // every room member via player_list/progress and so is public. Rebinding
@@ -3837,12 +4192,26 @@ const server = http.createServer(async (req, res) => {
       activeCsrf = existing.csrfToken;
       activeReconnect = existing.reconnectToken;
       existing.connectedAt = connectedAt;
+      // Fill the id bindings only if MISSING — never change an id mid-session, or
+      // this browser's events would split across two ids and double-count the
+      // human. And do NOT record a 'visit': reconnects (incl. the 10-min
+      // proactive recycle) are the same human, not a new one.
+      if (visitorId && !existing.visitorId) existing.visitorId = visitorId;
+      if (gaClientId && !existing.gaClientId) existing.gaClientId = gaClientId;
       console.log(`SSE reconnected: ${playerId.slice(0, 8)} (room: ${existing.roomCode || 'none'}, mode: ${pendingTid ? 'grace' : 'proactive'})`);
       logEvent('sse_reconnect', { playerId, roomCode: existing.roomCode || null, mode: pendingTid ? 'grace' : 'proactive', totalConnected: players.size });
     } else {
-      players.set(playerId, { res, roomCode: null, name: null, csrfToken: newCsrfToken, reconnectToken: newReconnectToken, connectedAt });
+      players.set(playerId, { res, roomCode: null, name: null, csrfToken: newCsrfToken, reconnectToken: newReconnectToken, connectedAt, visitorId, gaClientId });
       console.log(`SSE connected: ${playerId.slice(0, 8)} (total: ${players.size})`);
       logEvent('sse_connect', { playerId, totalConnected: players.size });
+      // A fresh player record = a new session = one 'visit'. Source of truth in
+      // Postgres (keyed by vid); mirrored to GA4 (keyed by gaClientId) so ad-
+      // blocked users still register. Each call self-gates on its own id. Skip
+      // bots so they don't inflate the headcount.
+      if (!isBotUA(req.headers['user-agent'])) {
+        recordEvent('visit', { visitorId, playerId });
+        sendGA4({ clientId: gaClientId, name: 'visit', params: {} });
+      }
     }
 
     sendSSE(playerId, { type: 'connected', playerId, csrfToken: activeCsrf, reconnectToken: activeReconnect });
@@ -3866,8 +4235,14 @@ const server = http.createServer(async (req, res) => {
       // Defer cleanup so a quick auto-reconnect can reattach. If they don't
       // come back in time, run the original teardown.
       const tid = setTimeout(() => {
-        pendingDisconnects.delete(playerId);
-        handleDisconnect(playerId);
+        // Detached timer: a throw here has no caller to catch it and would route
+        // through uncaughtException → 🔴 crash alert. Log it as handled instead.
+        try {
+          pendingDisconnects.delete(playerId);
+          handleDisconnect(playerId);
+        } catch (e) {
+          logEvent('disconnect_cleanup_error', { playerId, message: e && e.message });
+        }
       }, DISCONNECT_GRACE_MS);
       pendingDisconnects.set(playerId, tid);
     });
@@ -3890,6 +4265,13 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(403, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: false, error: 'Invalid CSRF token' }));
         return;
+      }
+      // Late-bind the visitor id from the action body if the SSE connect didn't
+      // carry one (e.g. a session opened before this shipped). Connect-time
+      // binding stays authoritative; this only fills a gap.
+      if (!player.visitorId && msg && msg.vid) {
+        const v = sanitizeVid(msg.vid);
+        if (v) player.visitorId = v;
       }
       if (!allowAction(playerId)) {
         res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '1' });

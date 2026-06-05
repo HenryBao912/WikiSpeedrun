@@ -54,10 +54,13 @@
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-XJHZTSVGM5"></script>
 <script>
+  window.GA_MEASUREMENT_ID = 'G-XJHZTSVGM5';
   window.dataLayer = window.dataLayer || [];
   function gtag(){dataLayer.push(arguments);}
   gtag('js', new Date());
-  gtag('config', 'G-XJHZTSVGM5');
+  // transport_type:'beacon' flushes pending hits on tab close (sendBeacon),
+  // so a fast 5-second visit isn't dropped before its events are delivered.
+  gtag('config', window.GA_MEASUREMENT_ID, { transport_type: 'beacon' });
 </script>
 <style>
   :root {
@@ -4446,6 +4449,9 @@
     try {
       const msg = (info.message || '').slice(0, 300);
       if (!msg || msg === 'Script error.' || /ResizeObserver loop/i.test(msg) || /-extension:\/\//i.test(msg)) return;
+      // Extensions that re-run our inline scripts do so from an about:blank
+      // sandbox — those stack frames never come from real page execution.
+      if (/about:blank/.test(info.stack || '') || /-extension:\/\//i.test(info.stack || '')) return;
       const sig = kind + '|' + msg + '|' + (info.source || '') + ':' + (info.lineno || '');
       if (sent.has(sig) || count >= MAX) return;
       sent.add(sig); count++;
@@ -4581,6 +4587,86 @@ function enhanceClickableControls() {
 }
 
 document.addEventListener('DOMContentLoaded', () => { initBgWords(); initHeroLinks(); renderSpRoundWords(); updateLangDropdowns(); enhanceClickableControls(); });
+
+// ─── Real-user tracking IDs ───
+// myVisitorId: persistent per browser (localStorage), identifies one human over
+// time — sent to the server on SSE connect + in action bodies so server-side
+// events (the unblockable source of truth) attribute to a real person.
+// myGaClientId: GA's own client id, resolved only if gtag wasn't blocked, so the
+// server-side GA4 Measurement Protocol can stitch non-blocked users to their
+// existing GA identity instead of double-counting them.
+let myVisitorId = null;
+let myGaClientId = '';
+(function initVisitorId() {
+  try {
+    let vid = localStorage.getItem('wsr_vid');
+    if (!vid) { vid = genVisitorId(); localStorage.setItem('wsr_vid', vid); }
+    myVisitorId = vid;
+  } catch (e) {
+    // Private mode / storage disabled: fall back to an in-memory id so this
+    // session is still attributable (just not persistent across reloads).
+    myVisitorId = genVisitorId();
+  }
+})();
+function genVisitorId() {
+  try { if (window.crypto && crypto.randomUUID) return crypto.randomUUID(); } catch (e) {}
+  try {
+    const b = new Uint8Array(16); crypto.getRandomValues(b);
+    b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80;
+    const h = [...b].map(x => x.toString(16).padStart(2, '0')).join('');
+    return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;
+  } catch (e) {}
+  return 'v-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+}
+// Best-effort grab of GA's client id. Resolves to a string, or '' if gtag is
+// blocked / slow (we then fall back to the vid server-side). Never rejects.
+function getGaClientId(measurementId, timeoutMs = 800) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (v) => { if (!done) { done = true; resolve(v || ''); } };
+    try {
+      if (typeof gtag === 'function') gtag('get', measurementId, 'client_id', (id) => finish(id));
+    } catch (e) {}
+    // Fallback (and timeout guard): read GA's _ga cookie directly — format
+    // GA1.1.<a>.<b>, where "<a>.<b>" is the client id.
+    setTimeout(() => {
+      let m = null;
+      try { m = document.cookie.match(/_ga=GA\d\.\d\.(\d+\.\d+)/); } catch (e) {}
+      finish(m ? m[1] : '');
+    }, timeoutMs);
+  });
+}
+// Resolve GA's client id once, early, so it's ready before the first SSE connect
+// and the page-view beacon. If it isn't ready in time the server falls back to
+// the vid — no blocking.
+let gaClientIdReady = Promise.resolve('');
+try {
+  gaClientIdReady = getGaClientId(window.GA_MEASUREMENT_ID).then((id) => { myGaClientId = id || ''; return myGaClientId; });
+} catch (e) {}
+
+// Page-view beacon: counts EVERY page load server-side (the unblockable source
+// of truth), including users who bounce before ever starting a game — which the
+// SSE-connect 'visit' never sees. First-party POST to our own origin, so ad
+// blockers don't touch it. Fires exactly once, after GA's id resolves (so non-
+// blocked users send gacid), with a pagehide safety net for sub-800ms bounces.
+let _pageViewSent = false;
+function sendPageView() {
+  if (_pageViewSent) return;
+  _pageViewSent = true;
+  if (!myGaClientId) {
+    try { const m = document.cookie.match(/_ga=GA\d\.\d\.(\d+\.\d+)/); if (m) myGaClientId = m[1]; } catch (e) {}
+  }
+  try {
+    const payload = JSON.stringify({ vid: myVisitorId, gacid: myGaClientId || '', page: location.pathname });
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon('/pageview', new Blob([payload], { type: 'application/json' }));
+    } else {
+      fetch('/pageview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload, keepalive: true }).catch(() => {});
+    }
+  } catch (e) { /* analytics must never break the page */ }
+}
+gaClientIdReady.then(sendPageView);
+window.addEventListener('pagehide', sendPageView, { once: true });
 
 // ─── Global State ───
 let eventSource = null;
@@ -4815,10 +4901,25 @@ function connectSSE(forceNew = false) {
     // immediately to free the slot.
     const oldSource = forceNew ? eventSource : null;
     if (!forceNew && eventSource) eventSource.close();
-    const url = myPlayerId
+    // GA's _ga cookie is almost always set by now (connect is user-triggered,
+    // well after page load) even if the 800ms async resolver hadn't fired —
+    // read it synchronously so the FIRST connect carries gacid, keeping this
+    // browser on one GA id instead of a vid-then-gacid split.
+    if (!myGaClientId) {
+      try { const m = document.cookie.match(/_ga=GA\d\.\d\.(\d+\.\d+)/); if (m) myGaClientId = m[1]; } catch (e) {}
+    }
+    // Attach tracking ids so the server can attribute this session to a real
+    // human (vid) and stitch to GA where possible (gacid). Both optional.
+    const trackQs = [];
+    if (myVisitorId) trackQs.push('vid=' + encodeURIComponent(myVisitorId));
+    if (myGaClientId) trackQs.push('gacid=' + encodeURIComponent(myGaClientId));
+    const base = myPlayerId
       ? `/events?playerId=${encodeURIComponent(myPlayerId)}` +
         (myReconnectToken ? `&rt=${encodeURIComponent(myReconnectToken)}` : '')
       : '/events';
+    const url = trackQs.length
+      ? base + (base.includes('?') ? '&' : '?') + trackQs.join('&')
+      : base;
     const newSource = new EventSource(url);
     eventSource = newSource;
 
@@ -4902,7 +5003,10 @@ async function send(msg) {
     const resp = await fetch('/action', {
       method: 'POST',
       headers,
-      body: JSON.stringify(msg),
+      // Include the visitor id so the server can attribute/late-bind this
+      // session even if the SSE connect didn't carry one. Never overrides a
+      // field the message already set.
+      body: JSON.stringify({ vid: myVisitorId, ...msg }),
     });
     const result = await resp.json();
     // These rejection codes have their own user-facing feedback (move_rejected
@@ -5478,6 +5582,8 @@ async function quickPlay(btn) {
 const MARATHON_ENABLED = true;
 let marathonDurationKey = '5m';  // selected in setup, sent to server
 let marathonEndsAt = null;       // Date.now() + duration, server-authoritative
+let marathonClockPending = false; // true while server defers the clock (warming)
+let marathonDurationMs = 0;       // full round length, for the frozen pending clock
 let marathonScore = null;        // live {raw, clicks, skips, completed, bonus, total}
 let marathonTarget = null;       // { title, hops, score, shownAtStep }
 let marathonTimerInterval = null;
@@ -5649,6 +5755,11 @@ function renderSpRoundWords() {
 function updateSinglePlayerDiffSlider() {
   const minEl = document.getElementById('spDiffMin');
   const maxEl = document.getElementById('spDiffMax');
+  const fill = document.getElementById('spDiffFill');
+  const desc = document.getElementById('spDiffDesc');
+  // Guard: some browser extensions re-run inline scripts in a sandboxed
+  // about:blank document where these elements don't exist.
+  if (!minEl || !maxEl || !fill || !desc) return;
   let lo = parseInt(minEl.value);
   let hi = parseInt(maxEl.value);
 
@@ -5660,12 +5771,11 @@ function updateSinglePlayerDiffSlider() {
     maxEl.value = hi;
   }
 
-  const fill = document.getElementById('spDiffFill');
   fill.style.left = lo + '%';
   fill.style.width = (hi - lo) + '%';
   // Anchor the red→green gradient to the full track, not to the fill box.
   setFillGradient(fill, lo, hi);
-  document.getElementById('spDiffDesc').textContent = getDiffDescription(lo, hi);
+  desc.textContent = getDiffDescription(lo, hi);
 
   if (lo === 0 && hi === 100) {
     spDifficulty = null;
@@ -5758,6 +5868,11 @@ function setMultiplayerMode(mode) {
 function updateMultiplayerDiffSlider() {
   const minEl = document.getElementById('mpDiffMin');
   const maxEl = document.getElementById('mpDiffMax');
+  const fill = document.getElementById('mpDiffFill');
+  const desc = document.getElementById('mpDiffDesc');
+  // Same guard as updateSinglePlayerDiffSlider — extensions re-run inline scripts
+  // in a DOM-less about:blank sandbox where these elements don't exist.
+  if (!minEl || !maxEl || !fill || !desc) return;
   let lo = parseInt(minEl.value);
   let hi = parseInt(maxEl.value);
 
@@ -5769,11 +5884,10 @@ function updateMultiplayerDiffSlider() {
     maxEl.value = hi;
   }
 
-  const fill = document.getElementById('mpDiffFill');
   fill.style.left = lo + '%';
   fill.style.width = (hi - lo) + '%';
   setFillGradient(fill, lo, hi);
-  document.getElementById('mpDiffDesc').textContent = getDiffDescription(lo, hi);
+  desc.textContent = getDiffDescription(lo, hi);
 
   if (!isHost) return;
   clearTimeout(window.mpDiffDebounce);
@@ -6443,8 +6557,19 @@ function handleServerMessage(msg) {
       break;
 
     case 'marathon_next_target':
+      // A real target means the round clock is already running (the server starts
+      // the deferred clock before delivering the first target). Clear any leftover
+      // frozen-clock state — covers a reconnect that missed marathon_clock_start.
+      if (msg.target) marathonClockPending = false;
       renderMarathonTarget(msg.target);
       if (msg.liveScore) updateMarathonScoreDisplay(msg.liveScore, false);
+      break;
+
+    case 'marathon_clock_start':
+      // The clock was deferred past game_start while warming; this is the real
+      // deadline. Switch the frozen placeholder over to a live countdown.
+      marathonClockPending = false;
+      marathonEndsAt = msg.endsAt;
       break;
 
     case 'marathon_target_hit': {
@@ -6467,12 +6592,20 @@ function handleServerMessage(msg) {
       if (msg.lang) { currentGameLang = msg.lang; updateWikiLangToggleUI(); }
       startGameUI(msg);
       // Fire a Google Analytics event so we can track game starts by
-      // mode/language/difficulty without leaving Railway logs.
+      // mode/language/difficulty without leaving Railway logs. game_started
+      // (delivery:client) mirrors the server-side event name so GA4 reports can
+      // compare client vs server; firing it at game START (not end) is the early
+      // engagement signal that stops a fast visit from counting as a bounce.
       try {
         window.gtag?.('event', 'game_start', {
           mode: msg.mode,
           lang: msg.lang || 'en',
           multiplayer: !isSinglePlayer,
+        });
+        window.gtag?.('event', 'game_started', {
+          delivery: 'client',
+          mode: msg.mode,
+          lang: msg.lang || 'en',
         });
       } catch (e) { /* gtag blocked by adblocker — not our problem */ }
       break;
@@ -6683,6 +6816,11 @@ function startGameUI(msg) {
     statsClassicTri.style.display = '';
     renderTriTargets();
   } else if (msg.mode === 'marathon') {
+    // clockPending: the server deferred the round clock until the first target
+    // warms (degraded 429 path). Show a full, frozen clock until it sends
+    // marathon_clock_start with the real deadline.
+    marathonClockPending = !!msg.clockPending;
+    marathonDurationMs = msg.duration || 0;
     marathonEndsAt = msg.endsAt;
     marathonScore = { raw: 0, clicks: 0, skips: 0, completed: 0, bonus: 0, total: 0 };
     marathonTarget = null;
@@ -6882,8 +7020,12 @@ function startTimer() {
   const td = document.getElementById('timerDisplay');
   const tick = () => {
     let text;
-    if (currentGameMode === 'marathon' && marathonEndsAt) {
-      const remaining = Math.max(0, marathonEndsAt - Date.now());
+    if (currentGameMode === 'marathon' && (marathonClockPending || marathonEndsAt)) {
+      // While pending (server still warming the first target), freeze the display
+      // at the full round length rather than draining time the player can't use.
+      const remaining = marathonClockPending
+        ? marathonDurationMs
+        : Math.max(0, marathonEndsAt - Date.now());
       const s = Math.ceil(remaining / 1000);
       const m = Math.floor(s / 60);
       text = `${m}:${(s % 60).toString().padStart(2, '0')}`;
