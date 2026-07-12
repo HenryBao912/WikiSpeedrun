@@ -2869,11 +2869,26 @@ async function isLegalMove(from, target, lang = DEFAULT_LANG) {
     // worth a false rejection.
     if (normalizeArticle(from) === targetNorm) return true;
 
-    const outLinks = await getPageLinks(from, lang);
+    // CRITICAL: resolve `from` through redirects before fetching its links.
+    // Wikitext links routinely point at redirect forms ([[Rooster]] →
+    // Chicken), and we store the player's position as the RAW clicked title.
+    // prop=links on a redirect stub returns exactly one link (its target),
+    // so without this resolve every click on the rendered article gets
+    // rejected — prod logs showed 2,585 false rejections in one week, with
+    // players hard-stuck on positions like Rooster/Spherical/Electrical_
+    // voltage. resolveRedirect is cached (redirectCache), so this adds ~0ms
+    // on repeat navigations.
+    const fromCanonical = await resolveRedirect(from, lang);
+
+    // Landing page IS the target: if the player's position redirects to the
+    // clicked article (they're literally reading it), allow as a no-op.
+    if (normalizeArticle(fromCanonical) === targetNorm) return true;
+
+    const outLinks = await getPageLinks(fromCanonical, lang);
     // getPageLinks only CACHES complete sets. If `from` isn't cached after the
     // call, the fetch errored mid-pagination and the returned set may be
     // missing the clicked link — fail open rather than reject a real move.
-    if (cacheGet(linkCache, cacheKey(lang, from)) === undefined) return true;
+    if (cacheGet(linkCache, cacheKey(lang, fromCanonical)) === undefined) return true;
     if (outLinks.size === 0) return true; // dead-end or empty fetch — fail open
 
     if (outLinks.has(targetNorm)) return true;
