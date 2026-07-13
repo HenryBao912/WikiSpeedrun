@@ -5,14 +5,18 @@
       <stop offset="100%" stop-color="#00b894"/>
     </linearGradient>
   </defs>
-  <!-- Literal circle so Google's favicon chrome (which always shows a
-       circular badge) sees our background rim-to-rim instead of a square
-       stranded inside a pale halo. -->
-  <circle cx="32" cy="32" r="32" fill="#1a1a24"/>
-  <text x="32" y="52"
+  <!-- Full-bleed background: fill the ENTIRE canvas edge to edge. Google's
+       search results crop favicons into their own circular badge, so any
+       transparent corners on our side render as a white halo around the mark
+       (the previous version was a dark circle on a transparent square).
+       A rim-to-rim gradient square survives every crop shape — Google's
+       circle, browser-tab rounded square, iOS masks — with zero dead space. -->
+  <rect width="64" height="64" fill="url(#g)"/>
+  <!-- White W reads at 16px where gradient-on-dark text turned to mush. -->
+  <text x="32" y="50"
         text-anchor="middle"
         font-family="system-ui,-apple-system,Segoe UI,Roboto,sans-serif"
         font-weight="900"
-        font-size="54"
-        fill="url(#g)">W</text>
+        font-size="50"
+        fill="#ffffff">W</text>
 </svg>

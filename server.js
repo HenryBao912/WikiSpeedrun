@@ -424,17 +424,70 @@ const WIKI_REQUEST_TIMEOUT_MS = 8000;
 // re-reading + re-compressing. Saves ~5x bytes on the wire and keeps the
 // hot path off disk. Re-run when index.html changes (server restart).
 const INDEX_HTML_PATH = path.join(__dirname, 'index.html');
+
+// SEO page routes: each serves the same app but with its own <title>, meta
+// description, and canonical URL swapped in at boot. Purpose: give Google
+// distinct, indexable URLs per game mode — the prerequisite for sitelinks
+// under the main search result (single-URL SPAs never get them). The client
+// reads location.pathname on boot and opens the matching screen, so these
+// deep-link for users too. Copy is tuned per intent; every description
+// carries the "No signup · no downloads · no ads" hook.
+const BASE_TITLE = 'WikiSpeedrun — Free Multiplayer Wikipedia Racing Game';
+const BASE_DESC = "No signup · no downloads · no ads. Race friends from one Wikipedia article to another, or play solo and take on today's Daily Challenge.";
+const PAGE_ROUTES = {
+  '/': null, // base document, no rewrites
+  '/daily-challenge': {
+    title: 'Daily Wikipedia Challenge — WikiSpeedrun',
+    desc: "One new Wikipedia race every day — same start and goal for everyone. Keep your streak alive and climb today's leaderboard. No signup · no downloads · no ads.",
+  },
+  '/multiplayer': {
+    title: 'Multiplayer Wikipedia Race — WikiSpeedrun',
+    desc: 'Create a room, share the code, and race friends live from one Wikipedia article to another. No signup · no downloads · no ads.',
+  },
+  '/singleplayer': {
+    title: 'Singleplayer Wikipedia Speedrun — WikiSpeedrun',
+    desc: 'Practice Wikipedia speedrunning solo — classic races, Tri mode, or Marathon against the clock. No signup · no downloads · no ads.',
+  },
+};
+
+// pathname -> { raw, gz, br, etag } built once at boot.
+const pageVariants = new Map();
 let indexHtmlRaw, indexHtmlGz, indexHtmlBr, indexHtmlEtag;
+
+function buildPageVariant(html) {
+  const raw = Buffer.from(html);
+  return {
+    raw,
+    gz: zlib.gzipSync(raw, { level: 9 }),
+    // Brotli is typically 15-25% smaller than gzip for HTML. Max quality is
+    // fine — boot-time only (4 variants ≈ a few seconds, amortized forever).
+    br: zlib.brotliCompressSync(raw, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 11 } }),
+    etag: '"' + crypto.createHash('sha1').update(raw).digest('hex').slice(0, 16) + '"',
+  };
+}
+
 function loadIndexHtml() {
-  indexHtmlRaw = fs.readFileSync(INDEX_HTML_PATH);
-  indexHtmlGz = zlib.gzipSync(indexHtmlRaw, { level: 9 });
-  // Brotli is the better choice when available — typically 15-25% smaller
-  // than gzip for HTML. Maxing out the compression level is fine since we
-  // only do this once at boot.
-  indexHtmlBr = zlib.brotliCompressSync(indexHtmlRaw, {
-    params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 11 },
-  });
-  indexHtmlEtag = '"' + crypto.createHash('sha1').update(indexHtmlRaw).digest('hex').slice(0, 16) + '"';
+  const base = fs.readFileSync(INDEX_HTML_PATH, 'utf8');
+  for (const [route, meta] of Object.entries(PAGE_ROUTES)) {
+    let html = base;
+    if (meta) {
+      // Title + description appear verbatim in <title>/og/twitter triplets —
+      // replaceAll keeps every copy in sync. The canonical/og:url/JSON-LD URL
+      // all end with `.io/"`, so one pattern rewrites them to the route URL
+      // (og:image's .png URL doesn't match the pattern and stays intact).
+      html = html
+        .split(BASE_TITLE).join(meta.title)
+        .split(BASE_DESC).join(meta.desc)
+        .split('https://wikispeedrun.io/"').join(`https://wikispeedrun.io${route}"`);
+    }
+    pageVariants.set(route, buildPageVariant(html));
+  }
+  // Legacy aliases — /health and older code paths reference these directly.
+  const baseVariant = pageVariants.get('/');
+  indexHtmlRaw = baseVariant.raw;
+  indexHtmlGz = baseVariant.gz;
+  indexHtmlBr = baseVariant.br;
+  indexHtmlEtag = baseVariant.etag;
 }
 loadIndexHtml();
 
@@ -4087,25 +4140,28 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (parsed.pathname === '/' || parsed.pathname === '/index.html') {
+  // App document routes: / plus the per-mode SEO pages (see PAGE_ROUTES).
+  // Same app, per-route <title>/description/canonical baked in at boot.
+  const pageVariant = pageVariants.get(parsed.pathname === '/index.html' ? '/' : parsed.pathname);
+  if (pageVariant && req.method === 'GET') {
     // Honor If-None-Match: send 304 instead of re-shipping the body when
-    // the client has the same version cached. Saves ~265KB raw / ~50KB gz
+    // the client has the same version cached. Saves ~330KB raw / ~65KB br
     // on every revisit within the cache window.
-    if (req.headers['if-none-match'] === indexHtmlEtag) {
-      res.writeHead(304, { 'ETag': indexHtmlEtag, 'Cache-Control': 'public, max-age=60, must-revalidate' });
+    if (req.headers['if-none-match'] === pageVariant.etag) {
+      res.writeHead(304, { 'ETag': pageVariant.etag, 'Cache-Control': 'public, max-age=60, must-revalidate' });
       res.end();
       return;
     }
     // Pick best encoding the client advertises. Brotli > gzip > identity.
     const ae = (req.headers['accept-encoding'] || '').toLowerCase();
     let body, encoding;
-    if (ae.includes('br')) { body = indexHtmlBr; encoding = 'br'; }
-    else if (ae.includes('gzip')) { body = indexHtmlGz; encoding = 'gzip'; }
-    else { body = indexHtmlRaw; encoding = null; }
+    if (ae.includes('br')) { body = pageVariant.br; encoding = 'br'; }
+    else if (ae.includes('gzip')) { body = pageVariant.gz; encoding = 'gzip'; }
+    else { body = pageVariant.raw; encoding = null; }
     const headers = {
       'Content-Type': 'text/html; charset=utf-8',
       'Content-Length': body.length,
-      'ETag': indexHtmlEtag,
+      'ETag': pageVariant.etag,
       // 60s freshness, then mandatory revalidation. Combined with ETag, a
       // returning visitor pays at most a 304 (no body) on stale-revalidate.
       // Short enough that pushed updates reach users within a minute.
@@ -4176,20 +4232,23 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // Single-URL sitemap — the game is one page. Helps Search Console verify
-  // and speeds up initial indexing.
+  // Sitemap: home + the per-mode SEO pages (PAGE_ROUTES). Distinct indexed
+  // URLs are the prerequisite for Google sitelinks under the main result.
   if (parsed.pathname === '/sitemap.xml') {
     res.writeHead(200, { 'Content-Type': 'application/xml', 'Cache-Control': 'public, max-age=86400' });
     const today = new Date().toISOString().slice(0, 10);
+    const urls = Object.keys(PAGE_ROUTES).map(route =>
+      '  <url>\n' +
+      `    <loc>https://wikispeedrun.io${route === '/' ? '/' : route}</loc>\n` +
+      `    <lastmod>${today}</lastmod>\n` +
+      '    <changefreq>weekly</changefreq>\n' +
+      `    <priority>${route === '/' ? '1.0' : '0.8'}</priority>\n` +
+      '  </url>\n'
+    ).join('');
     res.end(
       '<?xml version="1.0" encoding="UTF-8"?>\n' +
       '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
-      '  <url>\n' +
-      '    <loc>https://wikispeedrun.io/</loc>\n' +
-      `    <lastmod>${today}</lastmod>\n` +
-      '    <changefreq>weekly</changefreq>\n' +
-      '    <priority>1.0</priority>\n' +
-      '  </url>\n' +
+      urls +
       '</urlset>\n'
     );
     return;
