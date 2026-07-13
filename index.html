@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>WikiSpeedrun — Multiplayer Wikipedia Racing Game</title>
-<meta name="description" content="Play with friends or yourself. Race from one Wikipedia article to another. Free multiplayer browser game — no signup, no downloads, no ads.">
+<title>WikiSpeedrun — Free Multiplayer Wikipedia Racing Game</title>
+<meta name="description" content="No signup · no downloads · no ads. Race friends from one Wikipedia article to another, or play solo and take on today's Daily Challenge.">
 <meta name="keywords" content="wikipedia race, wikispeedrun, wiki game, wiki race, multiplayer wikipedia game, browser game">
 <meta name="author" content="WikiSpeedrun">
 <meta name="theme-color" content="#6c5ce7">
@@ -12,8 +12,8 @@
 
 <!-- Open Graph (Facebook, LinkedIn, Discord, Slack) -->
 <meta property="og:site_name" content="WikiSpeedrun">
-<meta property="og:title" content="WikiSpeedrun — Multiplayer Wikipedia Racing Game">
-<meta property="og:description" content="Play with friends or yourself. Race from one Wikipedia article to another. Free multiplayer browser game — no signup, no downloads, no ads.">
+<meta property="og:title" content="WikiSpeedrun — Free Multiplayer Wikipedia Racing Game">
+<meta property="og:description" content="No signup · no downloads · no ads. Race friends from one Wikipedia article to another, or play solo and take on today's Daily Challenge.">
 <meta property="og:url" content="https://wikispeedrun.io/">
 <meta property="og:type" content="website">
 <meta property="og:image" content="https://wikispeedrun.io/preview.png">
@@ -22,8 +22,8 @@
 
 <!-- Twitter -->
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="WikiSpeedrun — Multiplayer Wikipedia Racing Game">
-<meta name="twitter:description" content="Play with friends or yourself. Race from one Wikipedia article to another. Free multiplayer browser game — no signup, no downloads, no ads.">
+<meta name="twitter:title" content="WikiSpeedrun — Free Multiplayer Wikipedia Racing Game">
+<meta name="twitter:description" content="No signup · no downloads · no ads. Race friends from one Wikipedia article to another, or play solo and take on today's Daily Challenge.">
 <meta name="twitter:image" content="https://wikispeedrun.io/preview.png">
 
 <!-- Structured data: helps Google show rich results -->
@@ -34,7 +34,7 @@
   "name": "WikiSpeedrun",
   "alternateName": ["Wiki Game", "Wikipedia Speedrun", "Wiki Racing", "Wikipedia Race"],
   "url": "https://wikispeedrun.io/",
-  "description": "Play with friends or yourself. Race from one Wikipedia article to another. Free multiplayer browser game — no signup, no downloads, no ads. Supports English and Simplified Chinese Wikipedia.",
+  "description": "No signup, no downloads, no ads. Race friends from one Wikipedia article to another, or play solo and take on today's Daily Challenge. Supports English and Simplified Chinese Wikipedia.",
   "applicationCategory": "GameApplication",
   "operatingSystem": "Any (web browser)",
   "inLanguage": ["en", "zh-Hans"],
@@ -183,6 +183,9 @@
     transition: opacity 0.2s;
   }
   .home-footer:hover { opacity: 0.95; }
+  /* Crawlable mode links — own line above the credits. */
+  .home-footer .footer-nav { display: block; margin-bottom: 5px; }
+  .home-footer .footer-nav a { color: var(--text2); }
   .home-footer .heart {
     display: inline-block;
     background: linear-gradient(90deg, var(--accent), var(--green), var(--accent));
@@ -4141,6 +4144,17 @@
     </div>
   </div>
   <footer class="home-footer">
+    <!-- Crawlable mode links: real hrefs Google can follow — required
+         groundwork for sitelinks under the search result. A full page load
+         on these paths deep-links into the right screen (see the
+         location.pathname router on DOMContentLoaded). -->
+    <nav class="footer-nav">
+      <a href="/daily-challenge">daily challenge</a>
+      <span class="dot">·</span>
+      <a href="/multiplayer">multiplayer</a>
+      <span class="dot">·</span>
+      <a href="/singleplayer">singleplayer</a>
+    </nav>
     Made with <span class="heart">♥</span> by Henry Bao
     <span class="dot">·</span>
     <a href="mailto:hello@wikispeedrun.io">contact</a>
@@ -5199,6 +5213,24 @@ function startDailyCountdown() {
   dailyCountdownTimer = setInterval(tick, 1000);
 }
 document.addEventListener('DOMContentLoaded', () => { hydrateDailyBadge(); startDailyCountdown(); });
+
+// Deep-link router: /daily-challenge, /multiplayer, /singleplayer are real
+// URLs (the server bakes per-route SEO meta into each; the sitemap and the
+// footer nav point at them). On boot, open the screen the URL promises —
+// this is what makes them honest landing pages for Google sitelinks.
+document.addEventListener('DOMContentLoaded', async () => {
+  const p = location.pathname;
+  if (p === '/singleplayer') selectMode('singleplayer');
+  else if (p === '/multiplayer') selectMode('multiplayer');
+  else if (p === '/daily-challenge') {
+    // Wait for /daily so the already-played check routes correctly (played →
+    // leaderboard modal, not a fresh game). hydrateDailyBadge is idempotent;
+    // racing the other DOMContentLoaded call is harmless.
+    try { await hydrateDailyBadge(); } catch (_) {}
+    const btn = document.querySelector('.home-btn.quick');
+    if (btn) startDailyFromHome(btn);
+  }
+});
 
 // Home Daily Challenge button — single CTA, two modes:
 //   - Not yet played today → starts the daily game
