@@ -6027,6 +6027,15 @@ async function randomizeWord(inputId) {
       // sync path directly.)
       const listId = 'ac' + inputId.charAt(0).toUpperCase() + inputId.slice(1);
       document.getElementById(listId)?.classList.remove('show');
+      // Random words come from pool ORIGINS too, which are never backlink-
+      // validated (obscure origins are a feature). If one lands in a
+      // destination-type box it can be too sparse to play — and because we
+      // skip the input event above, the type-time warning never fired. Call
+      // the validator directly (debounced + cached + fail-open) so the user
+      // sees the warning before Start instead of a rejection after it.
+      if (['spRwDest', 'spRwTarget1', 'spRwTarget3', 'rwDest'].includes(inputId)) {
+        validateDestInput(el);
+      }
       broadcastWordUpdate();
       btn.disabled = false;
       btn.classList.remove('loading');

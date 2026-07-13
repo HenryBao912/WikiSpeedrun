@@ -1753,7 +1753,24 @@ function wikiAPIOnce(params, lang = DEFAULT_LANG) {
           err.retryAfterMs = parseRetryAfter(res.headers['retry-after']);
           return reject(err);
         }
-        try { resolve(JSON.parse(data)); }
+        try {
+          const parsed = JSON.parse(data);
+          // MediaWiki reports many failures as HTTP 200 + {"error":{...}}
+          // (maxlag, ratelimited, internal_api_error, badtitle…). Treating
+          // those as success poisoned downstream caches: countBacklinks saw
+          // `data.query === undefined`, computed 0, and cached "0 backlinks"
+          // for 7 DAYS — prod rejected Apple_Inc./Leonardo_DiCaprio/Burger as
+          // sparse off one transient error. Reject instead so wikiAPI's
+          // retry/backoff engages and failed lookups stay uncached.
+          // (`warnings` is common and benign — only `error` is fatal.)
+          if (parsed && parsed.error) {
+            const err = new Error(`wiki api error: ${parsed.error.code || 'unknown'}`);
+            err.apiCode = parsed.error.code;
+            err.retryAfterMs = parseRetryAfter(res.headers['retry-after']);
+            return reject(err);
+          }
+          resolve(parsed);
+        }
         catch (e) { reject(new Error('wiki non-json response')); }
       });
     });
@@ -1773,12 +1790,21 @@ function wikiAPIOnce(params, lang = DEFAULT_LANG) {
 // we keep the total retry budget small — no more than ~1.5s — to protect p99.
 // Background cache workers live behind a semaphore (cacheDestination) and
 // their 429s don't stall any user path.
+// API error codes that are deterministic verdicts about the REQUEST, not
+// transient upstream conditions — retrying re-asks a question whose answer
+// cannot change. Fail fast so callers get their catch immediately instead
+// of after 3 attempts + ~750ms backoff.
+const NON_RETRYABLE_API_CODES = new Set([
+  'invalidtitle', 'badtitle', 'missingtitle', 'badvalue', 'unknown_action', 'nosuchpageid',
+]);
+
 async function wikiAPI(params, lang = DEFAULT_LANG, attempts = 3) {
   let lastErr;
   for (let i = 0; i < attempts; i++) {
     try { return await wikiAPIOnce(params, lang); }
     catch (e) {
       lastErr = e;
+      if (e.apiCode && NON_RETRYABLE_API_CODES.has(e.apiCode)) throw e;
       if (i < attempts - 1) {
         // Honor Retry-After when Wikipedia explicitly tells us how long to
         // wait (clamped to RETRY_AFTER_MAX_MS upstream). Otherwise fall back
@@ -1900,9 +1926,27 @@ async function countBacklinks(title, threshold, lang = DEFAULT_LANG) {
     if (process.env.DEBUG_BACKLINKS) {
       logEvent('backlink_count', { title, resolved, lang, page: page.length, hasMore, count, threshold });
     }
-    cacheSet(backlinkCountCache, key, count, BACKLINK_COUNT_TTL_MS);
+    // Negative results get a SHORT TTL. A below-threshold count blocks the
+    // article as a destination, so a wrong one (API hiccup that slipped past
+    // the error checks, article that just got popular) must self-correct in
+    // an hour — not lock the article out for a week. At-threshold results
+    // keep the long TTL: popularity doesn't evaporate, and they're the hot
+    // path (every game start re-checks its destination).
+    const ttl = count < threshold ? 60 * 60 * 1000 : BACKLINK_COUNT_TTL_MS;
+    cacheSet(backlinkCountCache, key, count, ttl);
     return count;
   } catch (e) {
+    // invalidtitle/badtitle is a DEFINITIVE verdict — MediaWiki is saying
+    // this title can never be a page (e.g. "../foo" passes our isValidArticle
+    // but fails MediaWiki's title rules). Fail-open here would start a game
+    // against a destination that cannot exist — unwinnable, checkWin can
+    // never match. Return 0 so the guardrail rejects it, and cache it (the
+    // verdict can't change). Everything else stays fail-open: a transient
+    // fetch failure must never block a legitimate article.
+    if (e.apiCode === 'invalidtitle' || e.apiCode === 'badtitle') {
+      cacheSet(backlinkCountCache, key, 0, BACKLINK_COUNT_TTL_MS);
+      return 0;
+    }
     console.error('countBacklinks failed for', title, '->', resolved, e.message);
     return null; // fail open — don't reject an article because we couldn't count
   }
@@ -2901,6 +2945,32 @@ async function isLegalMove(from, target, lang = DEFAULT_LANG) {
     if (WIKI_VARIANTS[lang]) {
       const variant = normalizeArticle((await toVariantTitle(target, lang)) || '');
       if (variant && variant !== targetNorm && outLinks.has(variant)) return true;
+    }
+
+    // Last resort before rejecting: ask Wikipedia DIRECTLY whether `from`
+    // links to `target`. pltitles is a single-target membership probe — one
+    // cheap request, no pagination, authoritative. The cached outLinks set
+    // can be silently WRONG for up to 24h: in the Jul 12–13 prod incident a
+    // rate-limit storm cached truncated link sets as complete, and every
+    // click from those positions was rejected until players gave up (room
+    // 269BF abandoned a game mid-run over it). A cached-set miss is only a
+    // hypothesis; this probe is the verdict. Load is negligible — it runs
+    // only on would-be rejections (~400/day vs ~2.5k navigates), and real
+    // cheat attempts pay one extra request to be confirmed.
+    const probe = await wikiAPI({
+      action: 'query',
+      titles: fromCanonical.replace(/ /g, '_'),
+      prop: 'links',
+      pltitles: target.replace(/ /g, '_'),
+      plnamespace: '0',
+    }, lang);
+    const probePage = Object.values(probe.query?.pages || {})[0];
+    if (probePage?.links?.length > 0) {
+      // Cached set was stale/poisoned — repair it in place (cacheGet hands
+      // out the live Set reference) so later clicks skip the probe.
+      outLinks.add(targetNorm);
+      logEvent('legal_move_cache_repair', { from: fromCanonical, target, lang });
+      return true;
     }
     return false;
   } catch (e) {
