@@ -46,7 +46,10 @@
 }
 </script>
 
-<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<!-- ?v= is a cache-buster: browsers cache favicons far more aggressively than
+     HTML, so without it returning visitors keep the previous icon indefinitely.
+     Bump the number whenever favicon.svg changes. -->
+<link rel="icon" type="image/svg+xml" href="/favicon.svg?v=3">
 <!-- DOMPurify: sanitizes Wikipedia HTML before injecting via innerHTML.
      Self-hosted (not a CDN) so it can't be tampered with upstream and isn't
      blocked where jsDelivr is (e.g. mainland China — the zh.wikipedia audience). -->
@@ -6471,19 +6474,36 @@ function handleServerMessage(msg) {
     }
 
     case 'move_rejected': {
-      // Server refused the navigation because the target isn't actually an
-      // outgoing link of the page we were on (anti-cheat). The normal client
-      // only navigates via real link clicks, so this is rare — but if it fires
-      // we must undo the optimistic local navigation, otherwise our path
-      // desyncs from the server's and every later move gets rejected too.
-      if (myPath.length && myPath[myPath.length - 1] === msg.article) {
-        _forwardNavTitle = null; // server already declined the move — no undo to send
-        myPath.pop();
-        const prev = myPath[myPath.length - 1] || msg.from;
-        if (prev) {
-          currentArticle = prev;
-          loadArticle(prev);
+      // Server refused the navigation because the target isn't an outgoing
+      // link of the page it believes we're on (anti-cheat).
+      //
+      // msg.from is the server's AUTHORITATIVE position. Always snap back to
+      // it. The previous version only rolled back when the rejected article
+      // was still the tail of myPath — but a player clicking faster than the
+      // round-trip has already pushed a newer article, so the guard failed,
+      // no rollback happened, and client/server positions diverged for good:
+      // every later click was validated against the stale server `from` and
+      // rejected, forever. That is the 97-rejections-in-6-minutes case from
+      // the prod logs. Trusting msg.from makes the desync self-healing.
+      _forwardNavTitle = null; // server already declined the move — no undo to send
+      if (msg.from) {
+        // Rewind myPath to the server's position. If it's somewhere in our
+        // history, truncate to it; otherwise reset to it outright so the
+        // breadcrumb and step count match what the server will score.
+        const idx = myPath.lastIndexOf(msg.from);
+        if (idx >= 0) myPath.length = idx + 1;
+        else myPath = [msg.from];
+        if (currentArticle !== msg.from) {
+          currentArticle = msg.from;
+          loadArticle(msg.from);
         }
+        updateBreadcrumbs();
+      } else if (myPath.length && myPath[myPath.length - 1] === msg.article) {
+        // Older server without `from` — fall back to the simple undo.
+        myPath.pop();
+        const prev = myPath[myPath.length - 1];
+        if (prev) { currentArticle = prev; loadArticle(prev); }
+        updateBreadcrumbs();
       }
       showGlobalToast("That link couldn't be followed — pick another.", 3500);
       break;
@@ -7444,13 +7464,29 @@ function navigateTo(article) {
   // rollbacks idempotent), undo the optimistic push so the client path stays in
   // sync — otherwise every later move is validated against the wrong "from".
   send({ type: 'navigate', article }).then(result => {
-    if (result && !result.ok && myPath[myPath.length - 1] === article) {
-      _forwardNavTitle = null; // server declined — no undo to send
+    if (!result || result.ok) return;
+    _forwardNavTitle = null; // server declined — no undo to send
+    if (result.from) {
+      // Authoritative resync (same reasoning as the move_rejected handler):
+      // when the player out-clicks the round-trip, `article` is no longer the
+      // tail, so a tail-equality check would skip the rollback and leave the
+      // client permanently ahead of the server. Snap to the server's position.
+      const idx = myPath.lastIndexOf(result.from);
+      if (idx >= 0) myPath.length = idx + 1;
+      else myPath = [result.from];
+      if (currentArticle !== result.from) {
+        currentArticle = result.from;
+        loadArticle(result.from);
+      }
+      updateBreadcrumbs();
+    } else if (myPath[myPath.length - 1] === article) {
+      // No position echoed (rate_limited, session_lost, older server) — plain undo.
       myPath.pop();
       const prev = myPath[myPath.length - 1];
       if (prev) { currentArticle = prev; loadArticle(prev); }
-      if (result.error === 'rate_limited') showGlobalToast('Slow down a moment — try again.', 2500);
+      updateBreadcrumbs();
     }
+    if (result.error === 'rate_limited') showGlobalToast('Slow down a moment — try again.', 2500);
   });
 }
 

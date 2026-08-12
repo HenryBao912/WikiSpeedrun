@@ -3057,7 +3057,47 @@ function checkWin(room, rp, article) {
   }
 }
 
+// ─── Per-player action serialization ───
+// `navigate` is not atomic: isLegalMove awaits Wikipedia (can take 1-2s on a
+// cold link cache), and only AFTER that does it commit the new position to
+// rp.path. A player who clicks again inside that window had their second
+// request validated against the PRE-commit position, so a perfectly legal
+// link got rejected. Worse, the client's rollback then failed (see the
+// move_rejected handler in index.html) and client/server positions diverged
+// permanently — every later click was checked against a stale `from` and
+// rejected too. Prod evidence: one player logged 97 rejections in 6 minutes,
+// all from a position they had already navigated away from.
+//
+// Chaining each player's actions onto a per-player promise makes the
+// read-validate-commit sequence atomic with respect to that player. Different
+// players still run fully in parallel — the chain is keyed by playerId.
+const playerActionQueue = new Map(); // playerId -> Promise (tail of the chain)
+
+function serializePerPlayer(playerId, fn) {
+  const prev = playerActionQueue.get(playerId) || Promise.resolve();
+  // Swallow the predecessor's rejection so one failed action can't poison
+  // every subsequent action for that player.
+  const next = prev.catch(() => {}).then(fn);
+  playerActionQueue.set(playerId, next);
+  // Drop the entry once this is the last link in the chain, so the Map does
+  // not grow unbounded across the lifetime of the process.
+  next.catch(() => {}).finally(() => {
+    if (playerActionQueue.get(playerId) === next) playerActionQueue.delete(playerId);
+  });
+  return next;
+}
+
 async function handleAction(playerId, msg, req = null) {
+  // Only navigate needs ordering (it is the one read-modify-write on rp.path).
+  // Everything else stays unserialized so a slow action can't head-of-line
+  // block unrelated ones.
+  if (msg.type === 'navigate') {
+    return serializePerPlayer(playerId, () => handleActionInner(playerId, msg, req));
+  }
+  return handleActionInner(playerId, msg, req);
+}
+
+async function handleActionInner(playerId, msg, req = null) {
   console.log(`[${playerId.slice(0,8)}] ${msg.type}`, msg.type === 'navigate' ? msg.article : '');
 
   switch (msg.type) {
@@ -3244,7 +3284,11 @@ async function handleAction(playerId, msg, req = null) {
         recordEvent('navigate_rejected', { playerId, roomCode: player.roomCode, mode: room.mode, meta: { article, from: fromArticle, reason: 'illegal_move', enforced: ENFORCE_MOVE_LEGALITY } });
         if (ENFORCE_MOVE_LEGALITY) {
           sendSSE(playerId, { type: 'move_rejected', article, from: fromArticle });
-          return { ok: false, error: 'illegal_move' };
+          // Echo the authoritative position on the HTTP reply too. The SSE
+          // message can be delayed or dropped (reconnect window), and the
+          // POST response is the one path guaranteed to reach the caller —
+          // navigateTo() uses it to snap the client back into sync.
+          return { ok: false, error: 'illegal_move', from: fromArticle };
         }
       }
 
