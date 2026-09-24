@@ -78,7 +78,12 @@ function isNoiseClientError(message) {
   if (!message) return true;
   return message === 'Script error.'
     || /ResizeObserver loop/i.test(message)
-    || /-extension:\/\//i.test(message);
+    || /-extension:\/\//i.test(message)
+    // Third-party scripts injected into our page by extensions / in-app browsers
+    // that report against us but aren't our code: Firefox-iOS content scripts,
+    // wallet injectors, Dark Reader, Grammarly-style distributors, a Safari ext.
+    // These tokens never appear in first-party code, so matching them is safe.
+    || /__firefox__|window\.ethereum|\bDarkReader\b|EmptyRanges|runtime\.sendMessage|Distributor\.getValue/i.test(message);
 }
 
 // Wikipedia hosts per language. Add a language here + ensure the random
@@ -2739,12 +2744,26 @@ async function startGameForRoom(room, roomCode) {
     } else {
       room.pair = await getRandomPair(viewRange, lang);
     }
+    // Re-entrancy guard. startGameForRoom is async and fire-and-forget from its
+    // callers, so a concurrent return_to_lobby / play_again / second start can null
+    // or replace room.pair while we're parked on an await below. Capture the pair we
+    // built; after every await we re-check identity and abort if it changed, rather
+    // than dereference a stale/null room.pair (was: unhandled_rejection crash here).
+    const _pair = room.pair;
     // Resolve redirects to canonical titles, keep originals for fallback matching.
     // Pool pairs are already canonical — skip the network roundtrip.
     const origDest = room.pair.destination;
     if (!room.pair.fromPool) {
-      room.pair.origin = await resolveRedirect(room.pair.origin, lang);
-      room.pair.destination = await resolveRedirect(room.pair.destination, lang);
+      // Await into temps, then re-check identity before assigning. (A bare
+      // `room.pair.x = await …` would resolve the LHS object BEFORE the await and
+      // silently write to the orphaned old pair; the crash then lands on the next
+      // bare room.pair read. Guarding here keeps room.pair reads/writes honest.)
+      const _o = await resolveRedirect(room.pair.origin, lang);
+      if (room.pair !== _pair) return;
+      room.pair.origin = _o;
+      const _d = await resolveRedirect(room.pair.destination, lang);
+      if (room.pair !== _pair) return;
+      room.pair.destination = _d;
     }
     room.pair.destinationOriginal = origDest;
     // Variant aliases: on zh, the canonical wiki title can be Traditional
@@ -2758,6 +2777,7 @@ async function startGameForRoom(room, roomCode) {
         if (variantForm) destAliases.add(variantForm);
       } catch (e) { /* best-effort — fall back to existing aliases */ }
     }
+    if (room.pair !== _pair) return; // pair reset during the variant await → abort
     room.pair.destinationAliases = [...destAliases];
     // Guardrail: reject manually-set destinations with too few backlinks.
     // Pool destinations are curated so we skip; live-generated fallbacks
@@ -2772,6 +2792,7 @@ async function startGameForRoom(room, roomCode) {
         // countBacklinks resolves redirects + returns null on fetch failure so
         // a transient 429 can't get a popular destination wrongly rejected.
         const backlinkCount = await countBacklinks(room.pair.destination, MIN_BACKLINKS, lang);
+        if (room.pair !== _pair) return; // pair reset during the backlink await → abort
         if (backlinkCount !== null && backlinkCount < MIN_BACKLINKS) {
           const dest = room.pair.destination;
           logEvent('start_rejected_sparse', {

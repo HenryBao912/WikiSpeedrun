@@ -4466,6 +4466,9 @@
     try {
       const msg = (info.message || '').slice(0, 300);
       if (!msg || msg === 'Script error.' || /ResizeObserver loop/i.test(msg) || /-extension:\/\//i.test(msg)) return;
+      // Third-party injected scripts (extensions / in-app browsers) that report
+      // against our page but aren't our code — drop before we POST to /clientlog.
+      if (/__firefox__|window\.ethereum|\bDarkReader\b|EmptyRanges|runtime\.sendMessage|Distributor\.getValue/i.test(msg)) return;
       // Extensions that re-run our inline scripts do so from an about:blank
       // sandbox — those stack frames never come from real page execution.
       if (/about:blank/.test(info.stack || '') || /-extension:\/\//i.test(info.stack || '')) return;
@@ -6202,6 +6205,7 @@ async function createMultiplayerRoom() {
 let autoJoinPending = false;
 
 function shakeInput(el) {
+  if (!el) return; // a rwTarget{1,2,3} field may be absent → getElementById returns null
   el.classList.remove('input-shake');
   void el.offsetWidth; // force reflow
   el.classList.add('input-shake');
