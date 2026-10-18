@@ -7235,18 +7235,21 @@ function isNamespaceLink(target) {
 // sees how long a page takes to appear (a streamer saw ~3s loads; we had no
 // numbers). Sampling is decided ONCE per page session (~25%), not per load: a
 // sampled session reports every load and `sid` groups them, so one player's
-// loads can be compared with each other. Superseded loads are never reported.
+// loads can be compared with each other. `n` numbers a session's reports, so
+// one lost on the way (server rate limit, network) shows as a gap instead of
+// silently skewing that session. Superseded loads are never reported.
 // Overhead is a few timestamps per load and one beacon in sampled sessions, and
 // the reporting must never throw into gameplay.
 const ARTICLE_PERF_SAMPLE_RATE = 0.25;
 const _articlePerfSid = Math.random() < ARTICLE_PERF_SAMPLE_RATE
   ? Math.random().toString(16).slice(2, 14).padEnd(12, '0')
   : null;
+let _articlePerfN = 0;
 function perfNow() {
   try { return performance.now(); } catch (e) { return Date.now(); }
 }
 // lp is the timing record loadArticle fills in; err is what the load threw,
-// or null once its content is shown. Sends at most one report per load.
+// or null once its content is in and laid out. Sends at most one report per load.
 function reportArticleLoad(lp, title, err) {
   if (!_articlePerfSid || lp.reported) return;
   lp.reported = true;
@@ -7259,6 +7262,7 @@ function reportArticleLoad(lp, title, err) {
       first: lp.first,
       total_ms: Math.round(perfNow() - lp.t0),
       sid: _articlePerfSid,
+      n: ++_articlePerfN,
       net: (navigator.connection && navigator.connection.effectiveType) || null,
       mobile: !!(window.matchMedia && matchMedia('(pointer: coarse)').matches),
     };
@@ -7451,7 +7455,6 @@ async function loadArticle(title) {
     content.innerHTML = titleHtml + tocHtml + wikiBody;
     content.style.display = 'block';
     loading.style.display = 'none';
-    reportArticleLoad(lp, title, null);
 
     // One delegated handler for the whole content region, bound ONCE (the
     // container element persists across navigations even as innerHTML is
@@ -7480,6 +7483,13 @@ async function loadArticle(title) {
     }
 
     updateBreadcrumbs();
+    // Report only now: updateBreadcrumbs' scrollWidth read forces the style and
+    // layout of the article just inserted, synchronously, in this same task.
+    // In headless Chrome that was 4-35ms on desktop and 15-78ms at 6x CPU
+    // throttle, against a render_ms of 31-94 / 67-404 that left it out. Paint,
+    // at the next frame, stays out: requestAnimationFrame pauses in background
+    // tabs.
+    reportArticleLoad(lp, title, null);
 
   } catch (err) {
     // A newer load (rapid nav, or a move_rejected/rollback reload) has taken
