@@ -34,10 +34,10 @@
   "name": "WikiSpeedrun",
   "alternateName": ["Wiki Game", "Wikipedia Speedrun", "Wiki Racing", "Wikipedia Race"],
   "url": "https://wikispeedrun.io/",
-  "description": "No signup, no downloads, no ads. Race friends from one Wikipedia article to another, or play solo and take on today’s Daily Challenge. Supports English and Simplified Chinese Wikipedia.",
+  "description": "No signup, no downloads, no ads. Race friends from one Wikipedia article to another, or play solo and take on today’s Daily Challenge.",
   "applicationCategory": "GameApplication",
   "operatingSystem": "Any (web browser)",
-  "inLanguage": ["en", "zh-Hans"],
+  "inLanguage": "en",
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
   "potentialAction": {
     "@type": "PlayAction",
@@ -56,7 +56,7 @@
 <link rel="apple-touch-icon" href="/favicon.png?v=6">
 <!-- DOMPurify: sanitizes Wikipedia HTML before injecting via innerHTML.
      Self-hosted (not a CDN) so it can't be tampered with upstream and isn't
-     blocked where jsDelivr is (e.g. mainland China — the zh.wikipedia audience). -->
+     blocked where jsDelivr is. -->
 <script src="/purify.min.js"></script>
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-XJHZTSVGM5"></script>
@@ -1177,7 +1177,7 @@
   .marathon-mode-btn.active { border-color: var(--accent); background: var(--surface2); }
   .marathon-mode-btn:hover { border-color: var(--accent); }
 
-  /* Marathon setup box: wraps the time picker + lang dropdown so the
+  /* Marathon setup box: wraps the time picker + Start button so the
      marathon setup feels like a single cohesive panel (mirrors the
      round-words-section visual rhythm used by classic/tri). */
   /* Lobby's #lobby uses align-items:center which collapses form-groups to
@@ -1185,7 +1185,6 @@
      as the rest of the column so the box doesn't shrink-wrap awkwardly. */
   .marathon-duration-group { margin-top: 2px; width: 100%; max-width: 420px; align-self: center; }
   .marathon-setup-box {
-    position: relative;
     width: 100%;
     max-width: 420px;
     padding: 20px;
@@ -4049,69 +4048,6 @@
     .players-bar { padding: 2px 16px; }
     .dest-hint-bar { padding: 3px 12px; font-size: 0.72rem; }
   }
-
-  /* Language dropdown — lives in the top-right corner of the Words box.
-     Click the pill to open a panel with the other available languages. */
-  .lang-dropdown {
-    position: absolute;
-    top: 12px;
-    right: 12px;
-    font-size: 0.72rem;
-    font-weight: 600;
-    user-select: none;
-    z-index: 5;
-  }
-  .lang-dropdown-trigger {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 10px;
-    background: var(--surface);
-    border: 1px solid var(--surface2);
-    border-radius: 999px;
-    color: var(--text);
-    cursor: pointer;
-    transition: background 0.15s, border-color 0.15s;
-  }
-  .lang-dropdown-trigger:hover { border-color: var(--accent); }
-  .lang-dropdown-trigger .chevron {
-    font-size: 0.6rem;
-    opacity: 0.6;
-    transition: transform 0.15s;
-  }
-  .lang-dropdown.open .lang-dropdown-trigger .chevron { transform: rotate(180deg); }
-  .lang-dropdown-panel {
-    position: absolute;
-    top: calc(100% + 4px);
-    right: 0;
-    background: var(--surface);
-    border: 1px solid var(--surface2);
-    border-radius: 8px;
-    min-width: 120px;
-    padding: 4px;
-    box-shadow: 0 6px 24px rgba(0,0,0,0.35);
-    display: none;
-  }
-  .lang-dropdown.open .lang-dropdown-panel { display: block; }
-  .lang-dropdown-item {
-    padding: 6px 10px;
-    border-radius: 6px;
-    cursor: pointer;
-    color: var(--text2);
-    transition: background 0.1s, color 0.1s;
-  }
-  .lang-dropdown-item:hover { background: var(--surface2); color: var(--text); }
-  .lang-dropdown-item.active { color: var(--accent2); }
-  /* Both words boxes need position: relative so the dropdown can absolute-anchor. */
-  .round-words-section, #spRoundWordsSection { position: relative; }
-  /* Mobile: bigger tap targets. Default 6×10 padding is ~24px tall — misses
-     are common. Bump to ~42px with larger font so thumbs land reliably. */
-  @media (max-width: 600px) {
-    .lang-dropdown { font-size: 0.82rem; }
-    .lang-dropdown-trigger { padding: 8px 14px; }
-    .lang-dropdown-panel { min-width: 150px; padding: 6px; }
-    .lang-dropdown-item { padding: 12px 14px; font-size: 0.92rem; }
-  }
 </style>
 </head>
 <body>
@@ -4196,16 +4132,6 @@
     </div>
     <div class="form-group marathon-duration-group" id="spMarathonDurationGroup" style="display:none;">
       <div class="marathon-setup-box">
-        <div class="lang-dropdown" data-lang-dropdown>
-          <div class="lang-dropdown-trigger" onclick="toggleLangDropdown(this.parentNode)">
-            <span class="lang-dropdown-label">Eng</span>
-            <span class="chevron">▾</span>
-          </div>
-          <div class="lang-dropdown-panel">
-            <div class="lang-dropdown-item" data-lang="en" onclick="pickLang('en', event)">English</div>
-            <div class="lang-dropdown-item" data-lang="zh" onclick="pickLang('zh', event)">中文 (简体)</div>
-          </div>
-        </div>
         <div class="marathon-box-title">TIME</div>
         <div class="time-picker">
           <div class="time-stepper-value" id="spTimeStepperValue">5m</div>
@@ -4236,16 +4162,6 @@
       </div>
     </div>
     <div class="round-words-section" id="spRoundWordsSection" style="display:flex;">
-      <div class="lang-dropdown" data-lang-dropdown>
-        <div class="lang-dropdown-trigger" onclick="toggleLangDropdown(this.parentNode)">
-          <span class="lang-dropdown-label">Eng</span>
-          <span class="chevron">▾</span>
-        </div>
-        <div class="lang-dropdown-panel">
-          <div class="lang-dropdown-item" data-lang="en" onclick="pickLang('en', event)">English</div>
-          <div class="lang-dropdown-item" data-lang="zh" onclick="pickLang('zh', event)">中文 (简体)</div>
-        </div>
-      </div>
       <div class="rw-title" id="spRwTitle">WORDS</div>
       <div id="spRoundWordsInputs"></div>
       <button class="btn btn-primary" onclick="startSinglePlayer(this)" style="width:100%;margin-top:8px;">Start!</button>
@@ -4301,16 +4217,6 @@
   </div>
   <div class="form-group marathon-duration-group" id="mpMarathonDurationGroup" style="display:none;">
     <div class="marathon-setup-box">
-      <div class="lang-dropdown" data-lang-dropdown>
-        <div class="lang-dropdown-trigger" onclick="toggleLangDropdown(this.parentNode)">
-          <span class="lang-dropdown-label">Eng</span>
-          <span class="chevron">▾</span>
-        </div>
-        <div class="lang-dropdown-panel">
-          <div class="lang-dropdown-item" data-lang="en" onclick="pickLang('en', event)">English</div>
-          <div class="lang-dropdown-item" data-lang="zh" onclick="pickLang('zh', event)">中文 (简体)</div>
-        </div>
-      </div>
       <div class="marathon-box-title">TIME</div>
       <div class="time-picker">
         <div class="time-stepper-value" id="mpTimeStepperValue">5m</div>
@@ -4341,16 +4247,6 @@
     </div>
   </div>
   <div class="round-words-section" id="roundWordsSection" style="display:none;">
-    <div class="lang-dropdown" data-lang-dropdown>
-      <div class="lang-dropdown-trigger" onclick="toggleLangDropdown(this.parentNode)">
-        <span class="lang-dropdown-label">Eng</span>
-        <span class="chevron">▾</span>
-      </div>
-      <div class="lang-dropdown-panel">
-        <div class="lang-dropdown-item" data-lang="en" onclick="pickLang('en', event)">English</div>
-        <div class="lang-dropdown-item" data-lang="zh" onclick="pickLang('zh', event)">中文 (简体)</div>
-      </div>
-    </div>
     <div class="round-words-title" id="mpRoundWordsTitle">Words</div>
     <div class="round-words-inputs" id="roundWordsInputs"></div>
     <button class="btn btn-primary btn-small" id="mpStartBtn" onclick="startMultiplayerGame(this)" style="display:none;">Start!</button>
@@ -4587,10 +4483,10 @@ function scheduleHeroRoll(el) {
   }, delay);
 }
 
-// The mode pickers, language-dropdown triggers, and room-code copy box are
-// <div onclick> controls — not keyboard-reachable or operable on their own.
-// Make them focusable, give them a button role/name, and activate on
-// Enter/Space, so the whole setup flow works without a pointing device.
+// The mode pickers and room-code copy box are <div onclick> controls — not
+// keyboard-reachable or operable on their own. Make them focusable, give them
+// a button role/name, and activate on Enter/Space, so the whole setup flow
+// works without a pointing device.
 function enhanceClickableControls() {
   const activate = (e) => {
     if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
@@ -4598,7 +4494,7 @@ function enhanceClickableControls() {
       e.currentTarget.click();
     }
   };
-  document.querySelectorAll('.mode-btn, .lang-dropdown-trigger, .room-code-display').forEach(el => {
+  document.querySelectorAll('.mode-btn, .room-code-display').forEach(el => {
     if (el._a11yEnhanced) return;
     if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '0');
     if (!el.hasAttribute('role')) el.setAttribute('role', 'button');
@@ -4610,7 +4506,7 @@ function enhanceClickableControls() {
   });
 }
 
-document.addEventListener('DOMContentLoaded', () => { initBgWords(); initHeroLinks(); renderSpRoundWords(); updateLangDropdowns(); enhanceClickableControls(); });
+document.addEventListener('DOMContentLoaded', () => { initBgWords(); initHeroLinks(); renderSpRoundWords(); enhanceClickableControls(); });
 
 // ─── Real-user tracking IDs ───
 // myVisitorId: persistent per browser (localStorage), identifies one human over
@@ -4710,135 +4606,10 @@ let isSinglePlayer = false;
 // modes" to nudge exploration; all other sessions keep "Back to Home".
 let isQuickPlaySession = false;
 
-// Wikipedia language. `wikiLangChoice` is the user's preference (what new
-// games/rooms use); `currentGameLang` is locked to whatever the active room
-// is using so mid-game toggles don't poison the state.
-let wikiLangChoice = (() => {
-  try { return localStorage.getItem('wsr_wiki_lang') || 'en'; } catch { return 'en'; }
-})();
-let currentGameLang = null; // set from game_start, cleared when leaving game
+// The removed language picker (zh mode, dropped Oct 2026) saved its choice
+// under this key. Nothing reads it now; clear it so it doesn't linger.
+try { localStorage.removeItem('wsr_wiki_lang'); } catch {}
 
-// Host of every Wikipedia we speak to. Keep in sync with server's WIKI_HOSTS.
-const WIKI_HOSTS = { en: 'en.wikipedia.org', zh: 'zh.wikipedia.org' };
-// MediaWiki variant codes — force Simplified for Chinese wiki (default
-// mixed/Traditional-leaning output is confusing for mainland users).
-const WIKI_VARIANTS = { zh: 'zh-cn' };
-function wikiHost(lang) { return WIKI_HOSTS[lang] || WIKI_HOSTS.en; }
-function wikiVariant(lang) { return WIKI_VARIANTS[lang] || ''; }
-// The lang to use for Wikipedia fetches right now. Uses the locked game
-// lang during play so the toggle can't retarget mid-race.
-function activeWikiLang() { return currentGameLang || wikiLangChoice; }
-
-// Dropdown labels per language. Shown in the trigger pill.
-const LANG_LABELS = { en: 'Eng', zh: '中文' };
-
-function setWikiLang(lang) {
-  if (lang !== 'en' && lang !== 'zh') return;
-  if (wikiLangChoice === lang) return;
-  wikiLangChoice = lang;
-  try { localStorage.setItem('wsr_wiki_lang', lang); } catch {}
-  updateLangDropdowns();
-}
-// Placeholder text for each input, per language. Kept together so new
-// inputs or languages only require one place to edit. Values must match
-// what's in the HTML templates' default placeholder attribute in English.
-const INPUT_PLACEHOLDERS = {
-  en: {
-    spRwOrigin: 'e.g. Pizza',
-    spRwDest: 'e.g. Moon',
-    spRwTarget1: 'Target',
-    spRwTarget2: 'Start here',
-    spRwTarget3: 'Target',
-    rwOrigin: 'e.g. Pizza',
-    rwDest: 'e.g. Moon',
-    rwTarget1: 'Target',
-    rwTarget2: 'Start here',
-    rwTarget3: 'Target',
-  },
-  zh: {
-    spRwOrigin: 'e.g. 披萨',
-    spRwDest: 'e.g. 月球',
-    spRwTarget1: '目标',
-    spRwTarget2: '起点',
-    spRwTarget3: '目标',
-    rwOrigin: 'e.g. 披萨',
-    rwDest: 'e.g. 月球',
-    rwTarget1: '目标',
-    rwTarget2: '起点',
-    rwTarget3: '目标',
-  },
-};
-
-function applyInputPlaceholders() {
-  const lang = activeWikiLang();
-  const map = INPUT_PLACEHOLDERS[lang] || INPUT_PLACEHOLDERS.en;
-  for (const id in map) {
-    const el = document.getElementById(id);
-    if (el) el.setAttribute('placeholder', map[id]);
-  }
-}
-
-// Sync every dropdown's trigger label + active-option highlight. Called on
-// boot, on pickLang(), and when a room locks a different language.
-function updateLangDropdowns() {
-  const shownLang = currentGameLang || wikiLangChoice;
-  // Keep the document language in sync so screen readers pick the right voice
-  // for CJK content and browsers don't offer to "translate to Chinese" a page
-  // already in Chinese. <html lang> is otherwise hardcoded "en".
-  document.documentElement.lang = shownLang === 'zh' ? 'zh-Hans' : 'en';
-  document.querySelectorAll('[data-lang-dropdown]').forEach(dd => {
-    const label = dd.querySelector('.lang-dropdown-label');
-    if (label) label.textContent = LANG_LABELS[shownLang] || LANG_LABELS.en;
-    dd.querySelectorAll('.lang-dropdown-item').forEach(item => {
-      item.classList.toggle('active', item.dataset.lang === shownLang);
-    });
-  });
-  applyInputPlaceholders();
-}
-// Back-compat alias — callers scattered around still use the old name.
-function updateWikiLangToggleUI() { updateLangDropdowns(); }
-
-function toggleLangDropdown(dd) {
-  // Close any other open dropdown, then toggle this one.
-  document.querySelectorAll('[data-lang-dropdown].open').forEach(other => {
-    if (other !== dd) other.classList.remove('open');
-  });
-  dd.classList.toggle('open');
-}
-
-function pickLang(lang, event) {
-  if (event) event.stopPropagation();
-  document.querySelectorAll('[data-lang-dropdown]').forEach(dd => dd.classList.remove('open'));
-
-  // In an MP lobby, the room's language is server-authoritative. Host sends
-  // set_lang; server broadcasts lang_changed to everyone (including self).
-  // Non-hosts just close the dropdown — they can't change the room's lang.
-  if (currentGameLang && currentRoomCode && !isSinglePlayer) {
-    if (isHost && currentGameLang !== lang) {
-      send({ type: 'set_lang', lang }).catch(() => {});
-    }
-    return;
-  }
-
-  // SP or pre-room: update the user's local preference immediately.
-  const changed = wikiLangChoice !== lang;
-  setWikiLang(lang);
-  if (changed) {
-    document.querySelectorAll('.rw-input').forEach(input => { input.value = ''; });
-    document.querySelectorAll('.autocomplete-list.show').forEach(l => l.classList.remove('show'));
-    // summaryCache holds first-sentence previews keyed by article title. On
-    // a language switch the same title may belong to a different wiki — drop
-    // cached entries rather than serve stale English content for zh titles.
-    if (typeof summaryCache !== 'undefined') summaryCache.clear();
-  }
-}
-
-// Close any open dropdown when clicking outside it.
-document.addEventListener('click', (e) => {
-  if (!e.target.closest('[data-lang-dropdown]')) {
-    document.querySelectorAll('[data-lang-dropdown].open').forEach(dd => dd.classList.remove('open'));
-  }
-});
 let currentArticle = '';
 let myPath = [];
 let gameOrigin = '';
@@ -5603,7 +5374,6 @@ async function quickPlay(btn) {
       // Quick Play skews popular: 10K–1M monthly views filters out the obscure
       // long-tail so newcomers don't get stuck on an article with few links.
       viewRange: [10000, 1000000],
-      lang: wikiLangChoice,
     });
     if (result.ok) {
       currentRoomCode = result.code;
@@ -5671,8 +5441,8 @@ function stepMarathonDuration(delta) {
 // across SP and MP setup surfaces in one place.
 function updateMarathonSetupVisibility(mode, scope) {
   const isMarathon = mode === 'marathon';
-  // Marathon owns its own setup box (lang dropdown + time picker + Start),
-  // so the words/diff sections collapse out of the way entirely.
+  // Marathon owns its own setup box (time picker + Start), so the words/diff
+  // sections collapse out of the way entirely.
   if (scope === 'sp') {
     const diff = document.querySelector('#sp-setup .diff-form-group');
     if (diff) diff.style.display = isMarathon ? 'none' : '';
@@ -5791,7 +5561,6 @@ function renderSpRoundWords() {
       </div>
     `;
   }
-  applyInputPlaceholders();
 }
 
 function updateSinglePlayerDiffSlider() {
@@ -5837,7 +5606,6 @@ async function startSinglePlayer(btn) {
     name: 'Single Player',
     mode: currentGameMode,
     viewRange: spDifficulty,
-    lang: wikiLangChoice,
   };
   if (currentGameMode === 'marathon') {
     payload.duration = marathonDurationKey;
@@ -5946,8 +5714,8 @@ function updateMultiplayerDiffSlider() {
 function renderRoundWords() {
   const container = document.getElementById('roundWordsInputs');
   const section = document.getElementById('roundWordsSection');
-  // Marathon: section chrome (lang dropdown + Start) stays visible via
-  // updateMarathonSetupVisibility; only skip populating the word inputs.
+  // Marathon: updateMarathonSetupVisibility owns the section's visibility;
+  // only skip populating the word inputs.
   if (mpCurrentMode === 'marathon') {
     container.innerHTML = '';
     return;
@@ -5979,7 +5747,6 @@ function renderRoundWords() {
       document.getElementById('rwOrigin')?.addEventListener('input', (e) => { if (e.isComposing) return; fetchAutocomplete(e.target.value, 'acRwOrigin', 'rwOrigin'); });
       document.getElementById('rwDest')?.addEventListener('input', (e) => { if (e.isComposing) return; fetchAutocomplete(e.target.value, 'acRwDest', 'rwDest'); validateDestInput(e.target); });
     }
-    applyInputPlaceholders();
   } else {
     container.innerHTML = `
       <div class="rw-row">
@@ -6011,7 +5778,6 @@ function renderRoundWords() {
         document.getElementById(`rwTarget${n}`)?.addEventListener('input', (e) => { if (e.isComposing) return; fetchAutocomplete(e.target.value, `acRwTarget${n}`, `rwTarget${n}`); });
       });
     }
-    applyInputPlaceholders();
   }
 }
 
@@ -6043,7 +5809,7 @@ async function randomizeWord(inputId) {
     let attempts = 0;
     while (!word && attempts < 3) {
       attempts++;
-      const result = await send({ type: 'random_word', viewRange: spDifficulty || null, lang: wikiLangChoice });
+      const result = await send({ type: 'random_word', viewRange: spDifficulty || null });
       if (result.cooldown) {
         const input = document.getElementById(inputId);
         btn.classList.remove('loading');
@@ -6107,8 +5873,7 @@ function broadcastWordUpdate() {
 }
 
 // Debounce autocomplete calls. Without this, every keystroke fires a
-// Wikipedia opensearch request, which floods under IME composition and
-// triggers rate limits on zh.
+// Wikipedia opensearch request, which floods under IME composition.
 const _acDebounce = new Map(); // listId -> timeout id
 // Bug 3: validate a typed destination's backlink count at type-time, so the
 // user learns it's too isolated BEFORE pressing Start (instead of a post-submit
@@ -6138,7 +5903,7 @@ function validateDestInput(inputEl) {
     let result = _destValidateCache.get(norm);
     if (result === undefined) {
       try {
-        const resp = await fetch(`/validate-dest?title=${encodeURIComponent(title.replace(/ /g, '_'))}&lang=${activeWikiLang()}`);
+        const resp = await fetch(`/validate-dest?title=${encodeURIComponent(title.replace(/ /g, '_'))}`);
         result = await resp.json();
         if (result && result.ok) _destValidateCache.set(norm, result);
       } catch { return; }
@@ -6167,10 +5932,7 @@ async function fetchAutocomplete(query, listId, inputId) {
 }
 async function _fetchAutocompleteNow(query, listId, inputId) {
   try {
-    const lang = activeWikiLang();
-    const variant = wikiVariant(lang);
-    const variantQS = variant ? `&variant=${variant}` : '';
-    const resp = await fetchWithTimeout(`https://${wikiHost(lang)}/w/api.php?action=opensearch&search=${encodeURIComponent(query)}&limit=5&namespace=0&origin=*${variantQS}`);
+    const resp = await fetchWithTimeout(`https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(query)}&limit=5&namespace=0&origin=*`);
     const [, titles] = await resp.json();
     const list = document.getElementById(listId);
     // Build items with DOM APIs so titles containing quotes can't break out
@@ -6200,7 +5962,7 @@ async function createMultiplayerRoom() {
     await connectSSE();
     mpIsHost = true;
     isHost = true;
-    await send({ type: 'create_room', name, lang: wikiLangChoice });
+    await send({ type: 'create_room', name });
   } catch(e) {
     showError('mpError', 'Could not connect to server.');
   }
@@ -6268,11 +6030,9 @@ function backToMultiplayerSetup() {
   clearStartWatchdog(); // a spinning Start handshake we're abandoning shouldn't toast later
   currentRoomCode = null;
   isHost = false;
-  currentGameLang = null;
   // Clean up any in-flight animations from the prior session.
   document.querySelectorAll('.checkpoint-flash').forEach(el => el.remove());
   document.querySelectorAll('.lb-rider.checkpoint-pulse').forEach(el => el.classList.remove('checkpoint-pulse'));
-  updateWikiLangToggleUI();
   showScreen('mp-setup');
 }
 
@@ -6522,7 +6282,6 @@ function handleServerMessage(msg) {
       isHost = true;
       mpIsHost = true;
       isSinglePlayer = msg.singlePlayer || false;
-      if (msg.lang) { currentGameLang = msg.lang; updateWikiLangToggleUI(); }
       document.getElementById('codeText').textContent = msg.code;
       // Daily indicator pill on the in-game header — show only for daily
       // rooms. Hidden by default + reset on every new room creation so a
@@ -6551,9 +6310,6 @@ function handleServerMessage(msg) {
       currentRoomCode = msg.code;
       isHost = false;
       mpIsHost = false;
-      // Joining players use the room's (host-chosen) language, not their own
-      // toggle — otherwise they'd fetch articles from the wrong Wikipedia.
-      if (msg.lang) { currentGameLang = msg.lang; updateWikiLangToggleUI(); }
       document.getElementById('codeText').textContent = msg.code;
       applyHostLobbyControls(false);
       renderRoundWords();
@@ -6579,16 +6335,6 @@ function handleServerMessage(msg) {
         setMarathonDuration(msg.duration);
       }
       renderRoundWords();
-      break;
-
-    case 'lang_changed':
-      // Host switched the room's wiki language. Update local state + wipe
-      // any words that were typed in the old language.
-      currentGameLang = msg.lang;
-      updateLangDropdowns();
-      document.querySelectorAll('.rw-input').forEach(input => { input.value = ''; });
-      document.querySelectorAll('.autocomplete-list.show').forEach(l => l.classList.remove('show'));
-      if (typeof summaryCache !== 'undefined') summaryCache.clear();
       break;
 
     case 'difficulty_changed':
@@ -6657,8 +6403,6 @@ function handleServerMessage(msg) {
 
     case 'game_start':
       clearStartWatchdog(); // handshake completed — cancel the stuck-spinner timeout
-      // Lock the game language so the toggle can't retarget mid-play.
-      if (msg.lang) { currentGameLang = msg.lang; updateWikiLangToggleUI(); }
       startGameUI(msg);
       // Fire a Google Analytics event so we can track game starts by
       // mode/language/difficulty without leaving Railway logs. game_started
@@ -6784,20 +6528,16 @@ function handleServerMessage(msg) {
 }
 
 // Lock (guest) or unlock (host) the lobby's host-only setup controls: the mode
-// selector, the difficulty section, and the room-language dropdown. Extracted
-// so the host path (room_created), the guest path (room_joined), AND host
-// promotion (renderPlayerList, when the original host leaves) stay in sync —
-// previously a promoted guest was left with a greyed-out, unusable setup and a
-// Start button that failed validation, bricking the room.
+// selector and the difficulty section. Extracted so the host path
+// (room_created), the guest path (room_joined), AND host promotion
+// (renderPlayerList, when the original host leaves) stay in sync — previously
+// a promoted guest was left with a greyed-out, unusable setup and a Start
+// button that failed validation, bricking the room.
 function applyHostLobbyControls(host) {
   const sel = document.getElementById('mpModeSelector');
   const diff = document.getElementById('mpDiffSection');
   if (sel) { sel.style.opacity = host ? '1' : '0.5'; sel.style.pointerEvents = host ? 'auto' : 'none'; }
   if (diff) { diff.style.opacity = host ? '1' : '0.5'; diff.style.pointerEvents = host ? 'auto' : 'none'; }
-  document.querySelectorAll('#roundWordsSection .lang-dropdown').forEach(dd => {
-    dd.style.opacity = host ? '' : '0.5';
-    dd.style.pointerEvents = host ? '' : 'none';
-  });
 }
 
 function renderPlayerList(players, hostId) {
@@ -6808,7 +6548,7 @@ function renderPlayerList(players, hostId) {
   // Sync the local isHost flag against the authoritative host id from the
   // server. Without this, when the original host disconnects and the server
   // promotes the next player, that player's client wouldn't unlock the host
-  // controls (Start button, mode selector, language toggle).
+  // controls (Start button, mode selector, difficulty).
   const wasHost = isHost;
   if (hostId && myPlayerId) isHost = (hostId === myPlayerId);
   // Keep the host-only setup controls in sync with the (possibly just-changed)
@@ -7156,40 +6896,23 @@ async function toggleSummary(el, title) {
   // Stop click from propagating (so doc listener doesn't immediately close it)
   try {
     const articleTitle = title.replace(/ /g, '_');
-    const lang = activeWikiLang();
-    const cacheK = `${lang}:${articleTitle}`;
-    let summary = summaryCache.get(cacheK);
+    let summary = summaryCache.get(articleTitle);
     if (!summary) {
-      // For zh we need `variant=zh-cn` applied or the extract comes back
-      // Traditional-heavy. The REST summary endpoint doesn't honor variant,
-      // so we fetch the plain extract via the action API instead.
-      let full = '';
-      const variant = wikiVariant(lang);
-      if (variant) {
-        const url = `https://${wikiHost(lang)}/w/api.php?action=query&prop=extracts&exintro=1&explaintext=1&redirects=1&format=json&origin=*&variant=${variant}&titles=${encodeURIComponent(articleTitle)}`;
-        const res = await fetchWithTimeout(url);
-        const data = await res.json();
-        const page = Object.values(data.query?.pages || {})[0];
-        full = page?.extract || '';
-      } else {
-        const res = await fetchWithTimeout(`https://${wikiHost(lang)}/api/rest_v1/page/summary/${encodeURIComponent(articleTitle)}`);
-        const data = await res.json();
-        full = data.extract || '';
-      }
+      const res = await fetchWithTimeout(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(articleTitle)}`);
+      const data = await res.json();
+      const full = data.extract || '';
       // Get first sentence — handle abbreviations, decimals, etc.
-      // Chinese uses 。 as sentence terminator; English uses .!?.
-      const sentenceEnd = /[.!?。！？]/;
       const abbr = /(?:Mr|Mrs|Ms|Dr|Prof|Sr|Jr|St|Mt|Ft|Lt|Gen|Gov|Sgt|Cpl|Pvt|Rev|Hon|Pres|Inc|Corp|Ltd|Co|vs|etc|approx|dept|est|vol|no|op|al|e\.g|i\.e|U\.S|U\.K|U\.N)\./gi;
       // Replace abbreviation dots with a placeholder
       const safe = full.replace(abbr, m => m.slice(0, -1) + '\x00')
                        .replace(/\d+\.\d+/g, m => m.replace('.', '\x00')); // protect decimals
-      const endMatch = safe.match(sentenceEnd);
+      const endMatch = safe.match(/[.!?]/);
       if (endMatch) {
         summary = full.substring(0, endMatch.index + 1);
       } else {
         summary = full;
       }
-      summaryCachePut(cacheK, summary);
+      summaryCachePut(articleTitle, summary);
     }
     if (activeTooltip === tooltip) tooltip.textContent = summary || 'No summary available.';
   } catch (e) {
@@ -7206,23 +6929,18 @@ document.addEventListener('click', (e) => {
   }
 });
 
-// Known Wikipedia namespace prefixes (English canonical + Simplified-Chinese
-// localized). A link whose title begins "<one of these>:" points at chrome
-// (File:, Category:, Talk:, 分类:, …), not an article, so we render it as a
-// dead link. Matching the explicit set — rather than the old positional
-// "colon before index 15" heuristic — keeps legitimate titles with an early
-// colon clickable (e.g. "Mission: Impossible", "Spider-Man: Homecoming").
+// Known English Wikipedia namespace prefixes. A link whose title begins
+// "<one of these>:" points at chrome (File:, Category:, Talk:, …), not an
+// article, so we render it as a dead link. Matching the explicit set — rather
+// than the old positional "colon before index 15" heuristic — keeps
+// legitimate titles with an early colon clickable (e.g. "Mission: Impossible",
+// "Spider-Man: Homecoming").
 const WIKI_NAMESPACES = new Set([
   'special', 'media', 'wikipedia', 'wikipedia talk', 'wp', 'project',
   'user', 'user talk', 'file', 'file talk', 'image', 'help', 'help talk',
   'talk', 'template', 'template talk', 'category', 'category talk',
   'portal', 'portal talk', 'module', 'module talk', 'draft', 'draft talk',
   'mediawiki', 'mediawiki talk', 'timedtext', 'book',
-  // Simplified-Chinese localized namespaces
-  '维基百科', '维基百科讨论', '帮助', '帮助讨论', '分类', '分类讨论',
-  '模板', '模板讨论', '模块', '模块讨论', '门户', '门户讨论',
-  '文件', '文件讨论', '用户', '用户讨论', '草稿', '草稿讨论',
-  '话题', '讨论',
 ]);
 function isNamespaceLink(target) {
   // Strip a single leading ':' (the forced-link form, e.g. ":Category:Foo")
@@ -7262,7 +6980,7 @@ function reportArticleLoad(lp, title, err) {
     const r = {
       ok: !failed,
       title: String(title).slice(0, 120),
-      lang: lp.lang,
+      lang: 'en', // always English now; kept so article_load lines keep their shape
       first: lp.first,
       total_ms: Math.round(perfNow() - lp.t0),
       sid: _articlePerfSid,
@@ -7278,8 +6996,8 @@ function reportArticleLoad(lp, title, err) {
     if (failed) {
       // Where it broke: our 12s fetch timeout fired; the connection or body
       // stream failed (fetch rejects with TypeError); Wikipedia answered
-      // without a usable article (non-2xx, or an action=parse error body); or
-      // our own processing failed after the HTML arrived.
+      // without a usable article (non-2xx); or our own processing failed
+      // after the HTML arrived.
       const name = err && err.name;
       r.err = name === 'AbortError' ? 'timeout'
         : lp.fetchMs != null ? 'render'
@@ -7320,31 +7038,15 @@ async function loadArticle(title) {
   // Timing for the sampled /perf beacon (reportArticleLoad). seq 1 is the
   // page session's first load: usually a cold connection to Wikipedia (only a
   // lobby autocomplete or summary tooltip could have warmed it).
-  const lp = { t0: perfNow(), lang: activeWikiLang(), first: seq === 1, status: null, fetchMs: null, bytes: null, reported: false };
+  const lp = { t0: perfNow(), first: seq === 1, status: null, fetchMs: null, bytes: null, reported: false };
 
   try {
-    // For languages with a variant (zh → Simplified), use the action=parse
-    // endpoint which returns variant-converted HTML. For plain English, the
-    // REST API gives cleaner Parsoid output — keep using it.
-    const lang = activeWikiLang();
-    const variant = wikiVariant(lang);
-    let html;
-    if (variant) {
-      const parseUrl = `https://${wikiHost(lang)}/w/api.php?action=parse&prop=text&redirects=1&format=json&origin=*&variant=${variant}&page=${encodeURIComponent(title)}`;
-      // Article HTML can be sizeable on slow networks — bump timeout to 12 s.
-      const resp = await fetchWithTimeout(parseUrl, {}, 12000);
-      lp.status = resp.status;
-      if (!resp.ok) throw new Error('Article not found');
-      const data = await resp.json();
-      html = data.parse?.text?.['*'];
-      if (!html) throw new Error('Article not found');
-    } else {
-      const apiUrl = `https://${wikiHost(lang)}/api/rest_v1/page/html/${encodeURIComponent(title)}`;
-      const resp = await fetchWithTimeout(apiUrl, {}, 12000);
-      lp.status = resp.status;
-      if (!resp.ok) throw new Error('Article not found');
-      html = await resp.text();
-    }
+    const apiUrl = `https://en.wikipedia.org/api/rest_v1/page/html/${encodeURIComponent(title)}`;
+    // Article HTML can be sizeable on slow networks — bump timeout to 12 s.
+    const resp = await fetchWithTimeout(apiUrl, {}, 12000);
+    lp.status = resp.status;
+    if (!resp.ok) throw new Error('Article not found');
+    const html = await resp.text();
     lp.fetchMs = perfNow() - lp.t0; // response body fully read
     lp.bytes = html.length;
 
@@ -7510,8 +7212,7 @@ async function loadArticle(title) {
     h.textContent = 'Error loading article';
     content.appendChild(h);
     const p = document.createElement('p');
-    const wikiName = activeWikiLang() === 'zh' ? 'Chinese Wikipedia' : 'English Wikipedia';
-    p.textContent = `Could not load "${failedTitle}". This article may not exist on ${wikiName}.`;
+    p.textContent = `Could not load "${failedTitle}". This article may not exist on English Wikipedia.`;
     content.appendChild(p);
     if (myPath.length > 1) {
       // If this was a FORWARD navigation, the server may have accepted the move
@@ -9908,29 +9609,18 @@ function compactPath(path, maxNodes = 6) {
   return [names[0], names[1], '…', names[names.length - 2], names[names.length - 1]];
 }
 
-// Localized share strings — when the game ran on the Chinese wiki, all
-// the share text + image labels should be Simplified Chinese for consistency.
+// Share text + image labels, kept in one table so every share surface
+// (copy text, card, image) uses the same wording.
 const SHARE_STRINGS = {
-  en: {
-    steps: 'steps', start: 'Start:', yourTurn: 'your turn →',
-    triSuffix: ' (Tri)', triTargets: '3 targets',
-    marathonSuffix: ' (Marathon)', pts: 'pts', targets: 'targets', min: 'min',
-    cardTitle: 'Your run', copy: 'Copy share', save: 'Save image',
-    showCard: 'Share your run', hideCard: 'Hide share',
-    copied: 'Copied!', saved: 'Saved!', copyFail: 'Copy failed',
-  },
-  zh: {
-    steps: '步', start: '起点:', yourTurn: '轮到你了 →',
-    triSuffix: '(三叉)', triTargets: '3 个目标',
-    marathonSuffix: '(马拉松)', pts: '分', targets: '个目标', min: '分钟',
-    cardTitle: '你的成绩', copy: '复制分享', save: '保存图片',
-    showCard: '分享成绩', hideCard: '隐藏分享',
-    copied: '已复制!', saved: '已保存!', copyFail: '复制失败',
-  },
+  steps: 'steps', start: 'Start:', yourTurn: 'your turn →',
+  triSuffix: ' (Tri)', triTargets: '3 targets',
+  marathonSuffix: ' (Marathon)', pts: 'pts', targets: 'targets', min: 'min',
+  cardTitle: 'Your run', copy: 'Copy share', save: 'Save image',
+  showCard: 'Share your run', hideCard: 'Hide share',
+  copied: 'Copied!', saved: 'Saved!', copyFail: 'Copy failed',
 };
 function shareStr() {
-  const lang = (typeof activeWikiLang === 'function' ? activeWikiLang() : 'en');
-  return SHARE_STRINGS[lang] || SHARE_STRINGS.en;
+  return SHARE_STRINGS;
 }
 
 function buildShareText(r, msg) {
@@ -10116,8 +9806,8 @@ function populateShareCard(msg) {
   const toggleBtn = document.getElementById('shareToggleBtn');
   if (!card) return;
   const S = shareStr();
-  // Apply localized labels to the static-text elements (title, button copy)
-  // before any branching so even early returns leave them in the right lang.
+  // Set the static-text labels (title, button copy) before any branching so
+  // even early returns leave them in their default state.
   const titleEl = card.querySelector('.share-card-title');
   if (titleEl) titleEl.textContent = S.cardTitle;
   // Default: both hidden. Reset from previous game.
@@ -10144,7 +9834,7 @@ function populateShareCard(msg) {
   }
 
   const steps = Math.max(0, r.path.length - 1);
-  // Update the localized "steps" label first — this rebuilds the span that
+  // Update the "steps" label first — this rebuilds the span that
   // holds the step count, so we update its textContent here directly to
   // avoid the duplicate-id pitfall (innerHTML used to inject a second
   // id="scSteps", and the prior getElementById call overwrote a now-stale
@@ -10277,9 +9967,6 @@ function backToHome() {
   currentRoomCode = null;
   isHost = false;
   isSinglePlayer = false;
-  // Unlock the wiki-language toggle now that we're out of any room.
-  currentGameLang = null;
-  updateWikiLangToggleUI();
   showScreen('home');
 }
 
