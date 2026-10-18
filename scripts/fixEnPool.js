@@ -2,7 +2,7 @@
 // Rewrite data/puzzlePool.en.json in-place so every title is the canonical
 // form returned by resolveRedirect() (follows Wikipedia redirects).
 //
-// Side effects handled (same as fixZhPool.js):
+// Side effects handled:
 //   - Pairs collapsing to duplicate (origin, destination) → keep first.
 //   - Triples where targets merge into the same title → drop entirely
 //     (need 3 distinct per game rules).

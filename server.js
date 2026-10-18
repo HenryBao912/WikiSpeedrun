@@ -86,9 +86,6 @@ function isNoiseClientError(message) {
     || /__firefox__|window\.ethereum|\bDarkReader\b|EmptyRanges|runtime\.sendMessage|Distributor\.getValue/i.test(message);
 }
 
-// Wikipedia hosts per language. Add a language here + ensure the random
-// article / bio-detection heuristics below know about it and it's available
-// to rooms. Client's toggle must stay in sync.
 // Structured session logging. Each call writes a single JSON line to stdout,
 // which Railway captures and lets us grep/jq later. Free-form data field;
 // always includes ISO timestamp + event name.
