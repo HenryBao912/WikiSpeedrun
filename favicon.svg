@@ -5,19 +5,22 @@
       <stop offset="100%" stop-color="#00b894"/>
     </linearGradient>
   </defs>
-  <!-- Circular mark, dark base, gradient W.
-       Google does NOT crop favicons to a circle — it draws the icon INSIDE a
-       white circular badge with padding around it. A square therefore always
-       reads as a sticker pasted into a circle (corners crowding the rim), which
-       is what the previous full-bleed square looked like. A circle that fills
-       the whole canvas instead sits concentrically inside Google's badge, so the
-       surrounding white reads as intentional framing rather than dead space.
-       Keeping the corners transparent also lets Google's converter emit PNG with
-       alpha rather than flattening the art to JPEG. -->
-  <circle cx="32" cy="32" r="32" fill="#1a1a24"/>
-  <!-- Gradient W on the dark base keeps the brand palette (matches the wordmark)
-       and stays legible at 16px because the contrast is glyph-vs-dark, not
-       glyph-vs-white-badge. -->
+  <!-- Two looks from one file, switched by color scheme.
+       Default (light, and whatever Google's favicon converter renders): the
+       gradient W alone on a transparent canvas. Google Search draws every
+       favicon at ~70% inside its own white circular badge (measured Oct 2026:
+       47px badge, 33px icon), so a dark disc always showed a white ring around
+       it — the full-bleed square before it read as a sticker in a circle. With
+       no disc, Google's white badge becomes the W's background and there is no
+       ring left to see.
+       Dark: the dark disc comes back so the W keeps its contrast on dark tab
+       strips. If a renderer ignores <style>, the disc shows — which is exactly
+       the previous icon, so the worst case is no change. -->
+  <style>
+    .disc { display: none; }
+    @media (prefers-color-scheme: dark) { .disc { display: inline; } }
+  </style>
+  <circle class="disc" cx="32" cy="32" r="32" fill="#1a1a24"/>
   <text x="32" y="51"
         text-anchor="middle"
         font-family="system-ui,-apple-system,Segoe UI,Roboto,sans-serif"
