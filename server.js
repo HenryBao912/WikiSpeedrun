@@ -382,6 +382,24 @@ function allowPageview(ip) {
   return true;
 }
 
+// Per-IP daily cap on RECORDED page views (DB row + GA4 hit). The bucket above
+// stops bursts but not a slow steady loop: Oct 2026, one campus IP reloaded the
+// homepage every ~12s around the clock, minting a fresh visitor id each time, and
+// inflated visitors ~20×. A shared school NAT legitimately sends a few dozen a day
+// (busiest real IP: ~12/day), so 100 leaves real users alone. Past the cap the
+// beacon still gets its 204 — it just isn't counted. Resets at UTC midnight.
+const PAGEVIEW_DAILY_CAP = 100;
+const pageviewDailyCounts = new Map(); // ip -> recorded page views today
+let pageviewDailyDay = '';
+function underPageviewDailyCap(ip) {
+  const day = new Date().toISOString().slice(0, 10);
+  if (day !== pageviewDailyDay) { pageviewDailyCounts.clear(); pageviewDailyDay = day; }
+  const n = (pageviewDailyCounts.get(ip) || 0) + 1;
+  // Bounded: past 50k distinct IPs in a day, untracked IPs are simply let through.
+  if (pageviewDailyCounts.has(ip) || pageviewDailyCounts.size < 50000) pageviewDailyCounts.set(ip, n);
+  return n <= PAGEVIEW_DAILY_CAP;
+}
+
 // Server-side GA4 Measurement Protocol — fires for EVERYONE, including users
 // whose ad blocker kills the client gtag, so GA4 stops undercounting. clientId
 // MUST be stable per browser (GA's own client id when we have it, else the
@@ -437,13 +455,16 @@ const INDEX_HTML_PATH = path.join(__dirname, 'index.html');
 // reads location.pathname on boot and opens the matching screen, so these
 // deep-link for users too. Copy is tuned per intent; every description
 // carries the "No signup · no downloads · no ads" hook.
+// Apostrophes are typographic (’, U+2019), never ASCII ': Google's snippet
+// pipeline escaped the plain one and showed "today&#39;s" literally in results.
+// BASE_DESC must stay byte-identical to index.html's meta copy (split/join below).
 const BASE_TITLE = 'WikiSpeedrun — Free Multiplayer Wikipedia Racing Game';
-const BASE_DESC = "No signup · no downloads · no ads. Race friends from one Wikipedia article to another, or play solo and take on today's Daily Challenge.";
+const BASE_DESC = "No signup · no downloads · no ads. Race friends from one Wikipedia article to another, or play solo and take on today’s Daily Challenge.";
 const PAGE_ROUTES = {
   '/': null, // base document, no rewrites
   '/daily-challenge': {
     title: 'Daily Wikipedia Challenge — WikiSpeedrun',
-    desc: "One new Wikipedia race every day — same start and goal for everyone. Keep your streak alive and climb today's leaderboard. No signup · no downloads · no ads.",
+    desc: "One new Wikipedia race every day — same start and goal for everyone. Keep your streak alive and climb today’s leaderboard. No signup · no downloads · no ads.",
   },
   '/multiplayer': {
     title: 'Multiplayer Wikipedia Race — WikiSpeedrun',
@@ -1074,18 +1095,32 @@ async function getCountryForReq(req) {
 const dailyHop1Cache = new Map();          // date -> Array<title>
 const dailyOriginLinksCache = new Map();   // date -> Array<title>
 
+const dailyWarmInFlight = new Set();       // dates with a warm currently running
+
 function warmDailyLinkCaches(daily) {
   if (!daily) return;
-  // Fire-and-forget — runs once per (date, server-process). cacheDestination
-  // already runs synchronously when the first player starts, so this typically
-  // hits the cache instantly. We snapshot the sets into plain arrays for
-  // deterministic indexing in fake-path generation.
-  cacheDestination(daily.destination, 'en').then(destData => {
-    if (destData?.hop1?.size) dailyHop1Cache.set(daily.date, [...destData.hop1].slice(0, 200));
-  }).catch(() => {});
-  getPageLinks(daily.origin, 'en').then(links => {
-    if (links?.size) dailyOriginLinksCache.set(daily.date, [...links].slice(0, 200));
-  }).catch(() => {});
+  // Fire-and-forget, once per (date, server-process). Called from every /daily
+  // fetch (the home-screen preview) and every daily start, so without this guard
+  // each page load re-ran the warm — Oct 2026, a reload loop drove it 5k+×/day.
+  // A failed fetch leaves its pool unset, so a later call retries just that half.
+  if (dailyHop1Cache.has(daily.date) && dailyOriginLinksCache.has(daily.date)) return;
+  if (dailyWarmInFlight.has(daily.date)) return;
+  dailyWarmInFlight.add(daily.date);
+  // Only the destination's direct backlinks are needed — not the full
+  // cacheDestination pipeline, whose 30 random hop2 fetches were discarded here.
+  // Same 2000 limit as cacheDestination: backlinkCache keys ignore the limit, so
+  // a smaller fetch would be cached and truncate the game's own hop1 set.
+  // We snapshot the sets into plain arrays for deterministic indexing in
+  // fake-path generation.
+  const hop1 = dailyHop1Cache.has(daily.date) ? null
+    : getBacklinks(daily.destination, 2000, 'en').then(links => {
+        if (links?.size) dailyHop1Cache.set(daily.date, [...links].slice(0, 200));
+      }).catch(() => {});
+  const originLinks = dailyOriginLinksCache.has(daily.date) ? null
+    : getPageLinks(daily.origin, 'en').then(links => {
+        if (links?.size) dailyOriginLinksCache.set(daily.date, [...links].slice(0, 200));
+      }).catch(() => {});
+  Promise.all([hop1, originLinks]).finally(() => dailyWarmInFlight.delete(daily.date));
 }
 
 // ─── Fake leaderboard generation ───
@@ -4124,6 +4159,7 @@ const server = http.createServer(async (req, res) => {
     if (!allowPageview(clientIpFromReq(req))) { res.writeHead(429); res.end(); return; }
     // Accept the beacon but don't record bots — keeps the headcount human.
     if (isBotUA(req.headers['user-agent'])) { res.writeHead(204); res.end(); return; }
+    if (!underPageviewDailyCap(clientIpFromReq(req))) { res.writeHead(204); res.end(); return; }
     try {
       const data = JSON.parse(await readBody(req));
       const visitorId = sanitizeVid(data.vid);
