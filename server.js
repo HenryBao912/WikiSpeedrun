@@ -382,6 +382,134 @@ function allowPageview(ip) {
   return true;
 }
 
+// Per-IP daily cap on RECORDED page views (DB row + GA4 hit). The bucket above
+// stops bursts but not a slow steady loop: Oct 2026, one campus IP reloaded the
+// homepage every ~12s around the clock, minting a fresh visitor id each time, and
+// inflated visitors ~20×. A shared school NAT legitimately sends a few dozen a day
+// (busiest real IP: ~12/day), so 100 leaves real users alone. Past the cap the
+// beacon still gets its 204 — it just isn't counted. Resets at UTC midnight.
+const PAGEVIEW_DAILY_CAP = 100;
+const pageviewDailyCounts = new Map(); // ip -> recorded page views today
+let pageviewDailyDay = '';
+function underPageviewDailyCap(ip) {
+  const day = new Date().toISOString().slice(0, 10);
+  if (day !== pageviewDailyDay) { pageviewDailyCounts.clear(); pageviewDailyDay = day; }
+  const n = (pageviewDailyCounts.get(ip) || 0) + 1;
+  // Bounded: past 50k distinct IPs in a day, untracked IPs are simply let through.
+  if (pageviewDailyCounts.has(ip) || pageviewDailyCounts.size < 50000) pageviewDailyCounts.set(ip, n);
+  return n <= PAGEVIEW_DAILY_CAP;
+}
+
+// Rate limits for the public /perf article-load beacon (one report per article
+// load, from ~25% of page sessions). Per IP: a sampled session reports EVERY
+// load, a fast player keeps up 20-30 loads/min through back-to-back games, and
+// a campus or NAT IP carries several sessions at once. Replaying 55h of prod
+// /action logs (Oct 16-18), the old burst 20 at 15/min would have cut reports
+// from up to 12% of sampled sessions (8% of loads, mostly fast players and
+// shared IPs); burst 40 at 30/min, ~3%. Its own bounded Map, so perf reports
+// never spend a visitor's /pageview budget. Global: per-IP limits can't bound
+// total volume (many sources, or forged leftmost X-Forwarded-For hops, each get
+// a fresh bucket), so the endpoint is capped at 30 lines/min (~43k/day at most)
+// whatever the source; the 120 burst absorbs a few sampled sessions peaking at
+// once. Expected traffic is ~3k article_load lines/day (~2/min) next to ~18k
+// app log lines/day.
+const PERF_IP_MAX = 40;
+const PERF_IP_REFILL_PER_SEC = 0.5;
+const PERF_GLOBAL_MAX = 120;
+const PERF_GLOBAL_REFILL_PER_SEC = 0.5;
+const perfBuckets = new Map(); // ip -> { tokens, last }
+const perfGlobalBucket = { tokens: PERF_GLOBAL_MAX, last: Date.now() };
+// Reports the buckets turn away, by reason. Each one is a hole in a sampled
+// session (the client's `n` shows where); these counts say whether our limits
+// made it. Logged as one article_load_dropped line per 10-minute window, and
+// only when nonzero (at most 144 lines/day). Flushed by the next /perf request
+// rather than a timer, since scripts/ require this file and must still exit,
+// so after a quiet spell a window just runs long; `since` marks its start.
+// ip_limited counts requests refused before their body is read, junk included.
+const PERF_DROP_WINDOW_MS = 10 * 60 * 1000;
+const perfDrops = { ip_limited: 0, global_limited: 0, since: Date.now() };
+function flushPerfDrops() {
+  const now = Date.now();
+  if (now - perfDrops.since < PERF_DROP_WINDOW_MS) return;
+  if (perfDrops.ip_limited || perfDrops.global_limited) {
+    logEvent('article_load_dropped', {
+      ip_limited: perfDrops.ip_limited,
+      global_limited: perfDrops.global_limited,
+      since: new Date(perfDrops.since).toISOString(),
+    });
+  }
+  perfDrops.ip_limited = 0;
+  perfDrops.global_limited = 0;
+  perfDrops.since = now;
+}
+function takeToken(b, max, refillPerSec) {
+  const now = Date.now();
+  // Clamped like allowAction: a backwards wall-clock step must not drain tokens.
+  b.tokens = Math.min(max, b.tokens + (Math.max(0, now - b.last) / 1000) * refillPerSec);
+  b.last = now;
+  if (b.tokens < 1) return false;
+  b.tokens -= 1;
+  return true;
+}
+function allowPerf(ip) {
+  // The key can come from X-Forwarded-For (up to ~16KB of header); a real IP
+  // fits in 45 chars, so cap it to keep the 5000-entry Map small.
+  const key = String(ip).slice(0, 64);
+  let b = perfBuckets.get(key);
+  if (!b) {
+    if (perfBuckets.size > 5000) { const o = perfBuckets.keys().next().value; if (o !== undefined) perfBuckets.delete(o); }
+    b = { tokens: PERF_IP_MAX, last: Date.now() };
+    perfBuckets.set(key, b);
+  }
+  if (takeToken(b, PERF_IP_MAX, PERF_IP_REFILL_PER_SEC)) return true;
+  perfDrops.ip_limited++;
+  return false;
+}
+function allowPerfGlobal() {
+  if (takeToken(perfGlobalBucket, PERF_GLOBAL_MAX, PERF_GLOBAL_REFILL_PER_SEC)) return true;
+  perfDrops.global_limited++;
+  return false;
+}
+
+// One /perf report, validated field by field. Every value is client-supplied on
+// an unauthenticated endpoint, so numbers must be finite and are clamped,
+// strings are whitelisted or pattern-checked and truncated, booleans count only
+// as literal `true`, and unknown fields are dropped. Returns null (log nothing)
+// for anything without a usable total_ms.
+const PERF_MAX_BODY = 2048; // a real report is ~300 bytes
+const PERF_MAX_MS = 10 * 60 * 1000;
+const PERF_MAX_BYTES = 50_000_000;
+const PERF_ERR_CLASSES = new Set(['timeout', 'http', 'network', 'render']);
+const PERF_NET_TYPES = new Set(['slow-2g', '2g', '3g', '4g']);
+function perfInt(v, max) {
+  return (typeof v === 'number' && Number.isFinite(v)) ? Math.min(max, Math.max(0, Math.round(v))) : null;
+}
+function sanitizeArticleLoad(d) {
+  if (!d || typeof d !== 'object') return null;
+  const total = perfInt(d.total_ms, PERF_MAX_MS);
+  if (total === null) return null;
+  const title = typeof d.title === 'string' ? d.title.slice(0, 120) : '';
+  const out = {
+    ok: d.ok === true,
+    total_ms: total,
+    fetch_ms: perfInt(d.fetch_ms, PERF_MAX_MS),
+    render_ms: perfInt(d.render_ms, PERF_MAX_MS),
+    bytes: perfInt(d.bytes, PERF_MAX_BYTES),
+    title: isValidArticle(title) ? title : null,
+    lang: (typeof d.lang === 'string' && Object.hasOwn(WIKI_HOSTS, d.lang)) ? d.lang : null,
+    first: d.first === true,
+    net: PERF_NET_TYPES.has(d.net) ? d.net : null,
+    mobile: d.mobile === true,
+    sid: (typeof d.sid === 'string' && /^[0-9a-f]{8,16}$/.test(d.sid)) ? d.sid : null,
+    n: perfInt(d.n, 1_000_000), // the session's report number: a gap is a lost report
+  };
+  if (!out.ok) {
+    out.err = PERF_ERR_CLASSES.has(d.err) ? d.err : 'other';
+    out.status = (Number.isInteger(d.status) && d.status >= 100 && d.status <= 599) ? d.status : null;
+  }
+  return out;
+}
+
 // Server-side GA4 Measurement Protocol — fires for EVERYONE, including users
 // whose ad blocker kills the client gtag, so GA4 stops undercounting. clientId
 // MUST be stable per browser (GA's own client id when we have it, else the
@@ -437,13 +565,16 @@ const INDEX_HTML_PATH = path.join(__dirname, 'index.html');
 // reads location.pathname on boot and opens the matching screen, so these
 // deep-link for users too. Copy is tuned per intent; every description
 // carries the "No signup · no downloads · no ads" hook.
+// Apostrophes are typographic (’, U+2019), never ASCII ': Google's snippet
+// pipeline escaped the plain one and showed "today&#39;s" literally in results.
+// BASE_DESC must stay byte-identical to index.html's meta copy (split/join below).
 const BASE_TITLE = 'WikiSpeedrun — Free Multiplayer Wikipedia Racing Game';
-const BASE_DESC = "No signup · no downloads · no ads. Race friends from one Wikipedia article to another, or play solo and take on today's Daily Challenge.";
+const BASE_DESC = "No signup · no downloads · no ads. Race friends from one Wikipedia article to another, or play solo and take on today’s Daily Challenge.";
 const PAGE_ROUTES = {
   '/': null, // base document, no rewrites
   '/daily-challenge': {
     title: 'Daily Wikipedia Challenge — WikiSpeedrun',
-    desc: "One new Wikipedia race every day — same start and goal for everyone. Keep your streak alive and climb today's leaderboard. No signup · no downloads · no ads.",
+    desc: "One new Wikipedia race every day — same start and goal for everyone. Keep your streak alive and climb today’s leaderboard. No signup · no downloads · no ads.",
   },
   '/multiplayer': {
     title: 'Multiplayer Wikipedia Race — WikiSpeedrun',
@@ -1029,7 +1160,9 @@ function countryFromHeaders(req) {
 function clientIpFromReq(req) {
   // Standard proxy chain: x-forwarded-for is comma-separated, leftmost is original client.
   const xff = (req.headers['x-forwarded-for'] || '').toString();
-  if (xff) return xff.split(',')[0].trim();
+  // Capped: the header can carry ~16KB, and this value keys every per-IP Map
+  // (rate limits, the 50k-entry page-view cap). A real address fits in 45 chars.
+  if (xff) return xff.split(',')[0].trim().slice(0, 64);
   return req.socket?.remoteAddress || null;
 }
 
@@ -1074,18 +1207,32 @@ async function getCountryForReq(req) {
 const dailyHop1Cache = new Map();          // date -> Array<title>
 const dailyOriginLinksCache = new Map();   // date -> Array<title>
 
+const dailyWarmInFlight = new Set();       // dates with a warm currently running
+
 function warmDailyLinkCaches(daily) {
   if (!daily) return;
-  // Fire-and-forget — runs once per (date, server-process). cacheDestination
-  // already runs synchronously when the first player starts, so this typically
-  // hits the cache instantly. We snapshot the sets into plain arrays for
-  // deterministic indexing in fake-path generation.
-  cacheDestination(daily.destination, 'en').then(destData => {
-    if (destData?.hop1?.size) dailyHop1Cache.set(daily.date, [...destData.hop1].slice(0, 200));
-  }).catch(() => {});
-  getPageLinks(daily.origin, 'en').then(links => {
-    if (links?.size) dailyOriginLinksCache.set(daily.date, [...links].slice(0, 200));
-  }).catch(() => {});
+  // Fire-and-forget, once per (date, server-process). Called from every /daily
+  // fetch (the home-screen preview) and every daily start, so without this guard
+  // each page load re-ran the warm — Oct 2026, a reload loop drove it 5k+×/day.
+  // A failed fetch leaves its pool unset, so a later call retries just that half.
+  if (dailyHop1Cache.has(daily.date) && dailyOriginLinksCache.has(daily.date)) return;
+  if (dailyWarmInFlight.has(daily.date)) return;
+  dailyWarmInFlight.add(daily.date);
+  // Only the destination's direct backlinks are needed — not the full
+  // cacheDestination pipeline, whose 30 random hop2 fetches were discarded here.
+  // Same 2000 limit as cacheDestination: backlinkCache keys ignore the limit, so
+  // a smaller fetch would be cached and truncate the game's own hop1 set.
+  // We snapshot the sets into plain arrays for deterministic indexing in
+  // fake-path generation.
+  const hop1 = dailyHop1Cache.has(daily.date) ? null
+    : getBacklinks(daily.destination, 2000, 'en').then(links => {
+        if (links?.size) dailyHop1Cache.set(daily.date, [...links].slice(0, 200));
+      }).catch(() => {});
+  const originLinks = dailyOriginLinksCache.has(daily.date) ? null
+    : getPageLinks(daily.origin, 'en').then(links => {
+        if (links?.size) dailyOriginLinksCache.set(daily.date, [...links].slice(0, 200));
+      }).catch(() => {});
+  Promise.all([hop1, originLinks]).finally(() => dailyWarmInFlight.delete(daily.date));
 }
 
 // ─── Fake leaderboard generation ───
@@ -2687,6 +2834,7 @@ function initRoom(code, hostId, hostName, lang = DEFAULT_LANG) {
     marathon: null,   // marathon mode: { startArticle, duration, candidates, endsAt }
     started: false,
     startTime: null,
+    raceStartTime: null, // classic/tri: when game_start went out; win times count from here
     winner: null,
     destData: null, // { hop1: Set, hop2: Set, aliases: Set } for distance calc
     viewRange: null, // [minViews, maxViews] for difficulty filtering
@@ -2717,6 +2865,7 @@ function newPlayerState(name, roomColorIndex) {
 async function startGameForRoom(room, roomCode) {
   room.started = true;
   room.startTime = Date.now();
+  room.raceStartTime = null; // stamped as game_start goes out (classic/tri, below)
   room.winner = null;
   room.giveUpVotes.clear(); // Reset votes for new game
   const viewRange = room.viewRange || null;
@@ -2836,6 +2985,18 @@ async function startGameForRoom(room, roomCode) {
     for (const [, p] of room.players) {
       Object.assign(p, { path: [room.pair.origin], finished: false, finishTime: null, visited: [], distances: [] });
     }
+    // Start the race clock as game_start goes out, not at room.startTime. The
+    // player can't click before this lands, and their on-screen timer starts on
+    // it (startGameUI). Between the two is our own Wikipedia-bound setup:
+    // resolveRedirect for a non-pool pair, and countBacklinks for a manual
+    // destination, whose title lookup is uncached, so every daily makes a live
+    // request. That took 0.2-0.3s warm and 0.7-1.3s cold locally, more under 429
+    // backoff, and was billed to every winner, like the validation lag that
+    // handleAction's arrival stamp keeps out. (Marathon anchors endsAt after
+    // its pre-warm wait the same way.) room.startTime stays the request time for
+    // game_over's wall-clock durationMs. Math.max: a wall clock stepped back
+    // mid-setup must not make a race time longer than one from startTime.
+    room.raceStartTime = Math.max(room.startTime, Date.now());
     broadcastToRoom(roomCode, {
       type: 'game_start',
       mode: 'classic',
@@ -2889,6 +3050,9 @@ async function startGameForRoom(room, roomCode) {
     for (const [, p] of room.players) {
       Object.assign(p, { path: [startArticle], finished: false, finishTime: null, visited: [startArticle], distances: [] });
     }
+    // Race clock starts as game_start goes out (see classic above): a pool miss
+    // waits on live triple generation first.
+    room.raceStartTime = Math.max(room.startTime, Date.now());
     broadcastToRoom(roomCode, {
       type: 'game_start',
       mode: 'tri',
@@ -3109,16 +3273,38 @@ function serializePerPlayer(playerId, fn) {
 }
 
 async function handleAction(playerId, msg, req = null) {
+  // Stamp arrival HERE, before the per-player queue, so a winning click is
+  // timed from when it reached us. Validation after this point is our own
+  // Wikipedia-bound work (shared WIKI_MAX_CONCURRENT queue + 429 backoff; Oct 18
+  // prod: 1.45% of /action took >3s, p99 10s, max 33s), and a click queued
+  // behind the same player's previous slow click waits on top of that. Stamping
+  // inside handleActionInner would bill the player for all of it.
+  const arrivedAt = Date.now();
   // Only navigate needs ordering (it is the one read-modify-write on rp.path).
   // Everything else stays unserialized so a slow action can't head-of-line
   // block unrelated ones.
   if (msg.type === 'navigate') {
-    return serializePerPlayer(playerId, () => handleActionInner(playerId, msg, req));
+    return serializePerPlayer(playerId, () => handleActionInner(playerId, msg, req, arrivedAt));
   }
-  return handleActionInner(playerId, msg, req);
+  return handleActionInner(playerId, msg, req, arrivedAt);
 }
 
-async function handleActionInner(playerId, msg, req = null) {
+// Race time (ms since room.raceStartTime, i.e. since game_start went out) for a
+// win whose click arrived at `arrivedAt`. Falls back to the processing-time
+// stamp (now - raceStartTime) when the arrival isn't inside this round: before
+// the race started (a click queued across a play_again restart) or after now
+// (wall clock stepped back). raceStartTime is never before room.startTime, so
+// the result is never negative, never NaN, and never greater than the old
+// `Date.now() - room.startTime`. Server clocks only — a client-sent time is
+// never trusted. null if this round's race clock hasn't started.
+function winTimeMs(room, arrivedAt) {
+  if (!Number.isFinite(room.raceStartTime)) return null;
+  const processingMs = Math.max(0, Date.now() - room.raceStartTime);
+  const arrivalMs = arrivedAt - room.raceStartTime;
+  return (arrivalMs >= 0 && arrivalMs <= processingMs) ? arrivalMs : processingMs;
+}
+
+async function handleActionInner(playerId, msg, req = null, arrivedAt = Date.now()) {
   console.log(`[${playerId.slice(0,8)}] ${msg.type}`, msg.type === 'navigate' ? msg.article : '');
 
   switch (msg.type) {
@@ -3287,6 +3473,21 @@ async function handleActionInner(playerId, msg, req = null) {
         if (!rp) sendSSE(playerId, { type: 'session_lost', reason });
         return { ok: false, error: reason };
       }
+      // Classic/tri: no move counts until game_start goes out (raceStartTime).
+      // Before that the round's starting positions aren't assigned (in a new
+      // room rp.path is still [], so the legality check below has no "from" and
+      // is skipped), and a real client can't click: links only appear once
+      // game_start lands. A scripted client could otherwise post the
+      // destination straight after start_daily's reply and take a 0-step, ~1ms
+      // win at the top of the daily leaderboard. Marathon runs its own clock
+      // and never sets raceStartTime.
+      if (room.mode !== 'marathon' && !Number.isFinite(room.raceStartTime)) {
+        logEvent('navigate_rejected', {
+          playerId, roomCode: player.roomCode, article: msg.article, reason: 'before_start',
+        });
+        recordEvent('navigate_rejected', { playerId, roomCode: player.roomCode, mode: room.mode, meta: { article: msg.article, reason: 'before_start' } });
+        return { ok: false, error: 'not_started' };
+      }
 
       const article = msg.article;
       if (!isValidArticle(article)) return { ok: false, error: 'Invalid article' };
@@ -3393,7 +3594,14 @@ async function handleActionInner(playerId, msg, req = null) {
       }
       if (won) {
         rp.finished = true;
-        rp.finishTime = Date.now() - room.startTime;
+        // Timed from game_start going out (room.raceStartTime) to the click's
+        // arrival (see handleAction), so neither our start-up setup nor our
+        // validation lag reaches the results screen or the daily leaderboard.
+        rp.finishTime = winTimeMs(room, arrivedAt);
+        // Known, accepted limitation: the winner is still whoever's validation
+        // FINISHES first. In a multiplayer photo finish, a click that arrived
+        // earlier but is stuck on slower Wikipedia lookups can record the lower
+        // time yet lose room.winner to a later click that validated faster.
         if (!room.winner) {
           room.winner = playerId;
           const results = [...room.players.entries()].map(([id, p]) => ({
@@ -3903,6 +4111,7 @@ async function handleActionInner(playerId, msg, req = null) {
       // Reset room state but keep players connected
       room.started = false;
       room.startTime = null;
+      room.raceStartTime = null;
       room.winner = null;
       room.pair = null;
       room.triple = null;
@@ -4045,6 +4254,27 @@ function readBody(req) {
   });
 }
 
+// Bounded read for tiny fire-and-forget beacons (/perf). Unlike readBody it
+// never rejects or destroys the socket: past `max` chars it stops buffering and
+// resolves null, so the endpoint can still answer its 204 (the caller sends
+// Connection: close so the rest of an oversized upload is not drained). An
+// aborted upload resolves null via 'close' (which follows 'end' on a complete
+// request, so it never pre-empts a real body).
+function readBeaconBody(req, max) {
+  return new Promise(resolve => {
+    let body = '';
+    req.setEncoding('utf8');
+    req.on('data', chunk => {
+      if (body === null) return;
+      body += chunk;
+      if (body.length > max) { body = null; resolve(null); }
+    });
+    req.on('end', () => resolve(body));
+    req.on('error', () => resolve(null));
+    req.on('close', () => resolve(null));
+  });
+}
+
 function cors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -4124,6 +4354,7 @@ const server = http.createServer(async (req, res) => {
     if (!allowPageview(clientIpFromReq(req))) { res.writeHead(429); res.end(); return; }
     // Accept the beacon but don't record bots — keeps the headcount human.
     if (isBotUA(req.headers['user-agent'])) { res.writeHead(204); res.end(); return; }
+    if (!underPageviewDailyCap(clientIpFromReq(req))) { res.writeHead(204); res.end(); return; }
     try {
       const data = JSON.parse(await readBody(req));
       const visitorId = sanitizeVid(data.vid);
@@ -4132,6 +4363,28 @@ const server = http.createServer(async (req, res) => {
       // Each self-gates on its own id; recordEvent needs a vid, sendGA4 a clientId.
       recordEvent('page_view', { visitorId, meta: page ? { page } : null });
       sendGA4({ clientId: gaClientId, name: 'page_view', params: {} });
+    } catch (_) { /* malformed — ignore, never error a logging endpoint */ }
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
+  // Article-load timing beacon (index.html loadArticle). The browser fetches
+  // article HTML straight from Wikipedia, so this is our only view of how long
+  // players wait for a page. Logged as one article_load line and nothing else:
+  // no Postgres row, no GA4 hit, no Discord ping (unlike /clientlog, which
+  // treats everything as client_error). Public + unauthenticated: rate-limited
+  // per IP and globally, bots skipped, every field validated, and it always
+  // answers 204 — even for reports it drops (counted, see flushPerfDrops).
+  if (parsed.pathname === '/perf' && req.method === 'POST') {
+    try {
+      flushPerfDrops();
+      if (!isBotUA(req.headers['user-agent']) && allowPerf(clientIpFromReq(req))) {
+        const body = await readBeaconBody(req, PERF_MAX_BODY);
+        if (body === null) res.setHeader('Connection', 'close');
+        const entry = body === null ? null : sanitizeArticleLoad(JSON.parse(body));
+        if (entry && allowPerfGlobal()) logEvent('article_load', entry);
+      }
     } catch (_) { /* malformed — ignore, never error a logging endpoint */ }
     res.writeHead(204);
     res.end();

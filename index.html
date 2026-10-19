@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>WikiSpeedrun — Free Multiplayer Wikipedia Racing Game</title>
-<meta name="description" content="No signup · no downloads · no ads. Race friends from one Wikipedia article to another, or play solo and take on today's Daily Challenge.">
+<meta name="description" content="No signup · no downloads · no ads. Race friends from one Wikipedia article to another, or play solo and take on today’s Daily Challenge.">
 <meta name="keywords" content="wikipedia race, wikispeedrun, wiki game, wiki race, multiplayer wikipedia game, browser game">
 <meta name="author" content="WikiSpeedrun">
 <meta name="theme-color" content="#6c5ce7">
@@ -13,7 +13,7 @@
 <!-- Open Graph (Facebook, LinkedIn, Discord, Slack) -->
 <meta property="og:site_name" content="WikiSpeedrun">
 <meta property="og:title" content="WikiSpeedrun — Free Multiplayer Wikipedia Racing Game">
-<meta property="og:description" content="No signup · no downloads · no ads. Race friends from one Wikipedia article to another, or play solo and take on today's Daily Challenge.">
+<meta property="og:description" content="No signup · no downloads · no ads. Race friends from one Wikipedia article to another, or play solo and take on today’s Daily Challenge.">
 <meta property="og:url" content="https://wikispeedrun.io/">
 <meta property="og:type" content="website">
 <meta property="og:image" content="https://wikispeedrun.io/preview.png">
@@ -23,7 +23,7 @@
 <!-- Twitter -->
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="WikiSpeedrun — Free Multiplayer Wikipedia Racing Game">
-<meta name="twitter:description" content="No signup · no downloads · no ads. Race friends from one Wikipedia article to another, or play solo and take on today's Daily Challenge.">
+<meta name="twitter:description" content="No signup · no downloads · no ads. Race friends from one Wikipedia article to another, or play solo and take on today’s Daily Challenge.">
 <meta name="twitter:image" content="https://wikispeedrun.io/preview.png">
 
 <!-- Structured data: helps Google show rich results -->
@@ -34,7 +34,7 @@
   "name": "WikiSpeedrun",
   "alternateName": ["Wiki Game", "Wikipedia Speedrun", "Wiki Racing", "Wikipedia Race"],
   "url": "https://wikispeedrun.io/",
-  "description": "No signup, no downloads, no ads. Race friends from one Wikipedia article to another, or play solo and take on today's Daily Challenge. Supports English and Simplified Chinese Wikipedia.",
+  "description": "No signup, no downloads, no ads. Race friends from one Wikipedia article to another, or play solo and take on today’s Daily Challenge. Supports English and Simplified Chinese Wikipedia.",
   "applicationCategory": "GameApplication",
   "operatingSystem": "Any (web browser)",
   "inLanguage": ["en", "zh-Hans"],
@@ -49,7 +49,7 @@
 <!-- ?v= is a cache-buster: browsers cache favicons far more aggressively than
      HTML, so without it returning visitors keep the previous icon indefinitely.
      Bump the number whenever favicon.svg changes. -->
-<link rel="icon" type="image/svg+xml" href="/favicon.svg?v=3">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg?v=4">
 <!-- DOMPurify: sanitizes Wikipedia HTML before injecting via innerHTML.
      Self-hosted (not a CDN) so it can't be tampered with upstream and isn't
      blocked where jsDelivr is (e.g. mainland China — the zh.wikipedia audience). -->
@@ -7230,6 +7230,68 @@ function isNamespaceLink(target) {
   return WIKI_NAMESPACES.has(prefix);
 }
 
+// ─── Article load timing → /perf ───
+// loadArticle fetches article HTML straight from Wikipedia, so the server never
+// sees how long a page takes to appear (a streamer saw ~3s loads; we had no
+// numbers). Sampling is decided ONCE per page session (~25%), not per load: a
+// sampled session reports every load and `sid` groups them, so one player's
+// loads can be compared with each other. `n` numbers a session's reports, so
+// one lost on the way (server rate limit, network) shows as a gap instead of
+// silently skewing that session. Superseded loads are never reported.
+// Overhead is a few timestamps per load and one beacon in sampled sessions, and
+// the reporting must never throw into gameplay.
+const ARTICLE_PERF_SAMPLE_RATE = 0.25;
+const _articlePerfSid = Math.random() < ARTICLE_PERF_SAMPLE_RATE
+  ? Math.random().toString(16).slice(2, 14).padEnd(12, '0')
+  : null;
+let _articlePerfN = 0;
+function perfNow() {
+  try { return performance.now(); } catch (e) { return Date.now(); }
+}
+// lp is the timing record loadArticle fills in; err is what the load threw,
+// or null once its content is in and laid out. Sends at most one report per load.
+function reportArticleLoad(lp, title, err) {
+  if (!_articlePerfSid || lp.reported) return;
+  lp.reported = true;
+  try {
+    const failed = err !== null;
+    const r = {
+      ok: !failed,
+      title: String(title).slice(0, 120),
+      lang: lp.lang,
+      first: lp.first,
+      total_ms: Math.round(perfNow() - lp.t0),
+      sid: _articlePerfSid,
+      n: ++_articlePerfN,
+      net: (navigator.connection && navigator.connection.effectiveType) || null,
+      mobile: !!(window.matchMedia && matchMedia('(pointer: coarse)').matches),
+    };
+    if (lp.fetchMs != null) {
+      r.fetch_ms = Math.round(lp.fetchMs);
+      r.bytes = lp.bytes;
+      if (!failed) r.render_ms = r.total_ms - r.fetch_ms;
+    }
+    if (failed) {
+      // Where it broke: our 12s fetch timeout fired; the connection or body
+      // stream failed (fetch rejects with TypeError); Wikipedia answered
+      // without a usable article (non-2xx, or an action=parse error body); or
+      // our own processing failed after the HTML arrived.
+      const name = err && err.name;
+      r.err = name === 'AbortError' ? 'timeout'
+        : lp.fetchMs != null ? 'render'
+        : name === 'TypeError' ? 'network'
+        : 'http';
+      if (r.err === 'http') r.status = lp.status;
+    }
+    const payload = JSON.stringify(r);
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon('/perf', new Blob([payload], { type: 'application/json' }));
+    } else {
+      fetch('/perf', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload, keepalive: true }).catch(() => {});
+    }
+  } catch (e) { /* instrumentation must never break a load */ }
+}
+
 // ─── Wikipedia Article Loading ─── (simplified, kept from original)
 // Monotonic load token: a newer loadArticle (rapid navigation, or a
 // move_rejected / rate-limit rollback reloading the previous page) supersedes
@@ -7251,6 +7313,11 @@ async function loadArticle(title) {
   content.style.display = 'none';
   container.scrollTop = 0;
 
+  // Timing for the sampled /perf beacon (reportArticleLoad). seq 1 is the
+  // page session's first load: usually a cold connection to Wikipedia (only a
+  // lobby autocomplete or summary tooltip could have warmed it).
+  const lp = { t0: perfNow(), lang: activeWikiLang(), first: seq === 1, status: null, fetchMs: null, bytes: null, reported: false };
+
   try {
     // For languages with a variant (zh → Simplified), use the action=parse
     // endpoint which returns variant-converted HTML. For plain English, the
@@ -7262,6 +7329,7 @@ async function loadArticle(title) {
       const parseUrl = `https://${wikiHost(lang)}/w/api.php?action=parse&prop=text&redirects=1&format=json&origin=*&variant=${variant}&page=${encodeURIComponent(title)}`;
       // Article HTML can be sizeable on slow networks — bump timeout to 12 s.
       const resp = await fetchWithTimeout(parseUrl, {}, 12000);
+      lp.status = resp.status;
       if (!resp.ok) throw new Error('Article not found');
       const data = await resp.json();
       html = data.parse?.text?.['*'];
@@ -7269,9 +7337,12 @@ async function loadArticle(title) {
     } else {
       const apiUrl = `https://${wikiHost(lang)}/api/rest_v1/page/html/${encodeURIComponent(title)}`;
       const resp = await fetchWithTimeout(apiUrl, {}, 12000);
+      lp.status = resp.status;
       if (!resp.ok) throw new Error('Article not found');
       html = await resp.text();
     }
+    lp.fetchMs = perfNow() - lp.t0; // response body fully read
+    lp.bytes = html.length;
 
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, 'text/html');
@@ -7412,12 +7483,20 @@ async function loadArticle(title) {
     }
 
     updateBreadcrumbs();
+    // Report only now: updateBreadcrumbs' scrollWidth read forces the style and
+    // layout of the article just inserted, synchronously, in this same task.
+    // In headless Chrome that was 4-35ms on desktop and 15-78ms at 6x CPU
+    // throttle, against a render_ms of 31-94 / 67-404 that left it out. Paint,
+    // at the next frame, stays out: requestAnimationFrame pauses in background
+    // tabs.
+    reportArticleLoad(lp, title, null);
 
   } catch (err) {
     // A newer load (rapid nav, or a move_rejected/rollback reload) has taken
     // over — don't pop myPath or render an error for this stale load, or we'd
     // double-pop and desync the path from the server.
     if (seq !== _loadArticleSeq) return;
+    reportArticleLoad(lp, title, err);
     // Undo the navigation — go back to previous article.
     // Build with DOM APIs: article titles are user-influenced via the URL/link
     // click and must never be concatenated into HTML strings.
