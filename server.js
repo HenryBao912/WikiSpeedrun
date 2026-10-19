@@ -568,6 +568,10 @@ const INDEX_HTML_PATH = path.join(__dirname, 'index.html');
 // Apostrophes are typographic (’, U+2019), never ASCII ': Google's snippet
 // pipeline escaped the plain one and showed "today&#39;s" literally in results.
 // BASE_DESC must stay byte-identical to index.html's meta copy (split/join below).
+// The home <title> (the browser tab, and Google's headline) is the bare brand;
+// BASE_TITLE is the og:/twitter: share title. Each route swaps its own title
+// into all three.
+const HOME_TITLE = 'WikiSpeedrun';
 const BASE_TITLE = 'WikiSpeedrun — Free Multiplayer Wikipedia Racing Game';
 const BASE_DESC = "No signup · no downloads · no ads. Race friends from one Wikipedia article to another, or play solo and take on today’s Daily Challenge.";
 const PAGE_ROUTES = {
@@ -607,11 +611,13 @@ function loadIndexHtml() {
   for (const [route, meta] of Object.entries(PAGE_ROUTES)) {
     let html = base;
     if (meta) {
-      // Title + description appear verbatim in <title>/og/twitter triplets —
-      // replaceAll keeps every copy in sync. The canonical/og:url/JSON-LD URL
-      // all end with `.io/"`, so one pattern rewrites them to the route URL
-      // (og:image's .png URL doesn't match the pattern and stays intact).
+      // The share title and description appear verbatim in their og/twitter
+      // tags, and <title> holds HOME_TITLE — replaceAll keeps every copy in
+      // sync. The canonical/og:url/JSON-LD URL all end with `.io/"`, so one
+      // pattern rewrites them to the route URL (og:image's .png URL doesn't
+      // match the pattern and stays intact).
       html = html
+        .split(`<title>${HOME_TITLE}</title>`).join(`<title>${meta.title}</title>`)
         .split(BASE_TITLE).join(meta.title)
         .split(BASE_DESC).join(meta.desc)
         .split('https://wikispeedrun.io/"').join(`https://wikispeedrun.io${route}"`);
