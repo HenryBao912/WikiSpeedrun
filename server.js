@@ -1877,9 +1877,16 @@ let wikiPumpScheduled = false;
 // (up to 20 getPageLinks per navigate), marathon candidate warming, the daily
 // warm. Oct 18 prod: 1.45% of /action took >3s (p99 10s, max 33s), hourly
 // slow-request counts tracked 429 counts at r=0.95, and one
-// cacheDestination('BBC') took 44s — under a 429 storm a click waited behind
-// dozens of background fetches. Wikipedia's limit is the constraint, so the
-// gates stay as they are; only the order changes.
+// cacheDestination('BBC') took 44s. Under 429s a click check loses time two
+// ways: backoff after its own 429s (Retry-After, clamped to 5s, up to twice
+// per call) and the wait for a slot behind the background fetches queued
+// ahead of it. Priority removes only the wait. The backoff and the 8s request
+// timeout are untouched and can reach that p99/max by themselves, so expect
+// the tail to shrink by the wait's share, not vanish. Stubbed, two 429s with
+// Retry-After: 1 behind 30 queued fetches: 3.0s of queue wait before, 0.03s
+// after, the 2s of backoff the same (scripts/testWikiPriority.js 1c).
+// Wikipedia's limit is the constraint, so the gates stay as they are; only
+// the order changes.
 //
 // Priority is an AsyncLocalStorage context { high }: withWikiPriority(fn) runs
 // fn's requests high, retries and later pages included (they read the same
@@ -1959,6 +1966,17 @@ function wikiAPIOnce(params, lang = DEFAULT_LANG) {
     const reqUrl = `https://${host}/w/api.php?${qs}`;
     const req = https.get(reqUrl, { headers: { 'User-Agent': WIKI_USER_AGENT } }, (res) => {
       let data = '';
+      // A response cut off mid-body by a clean FIN (a short Content-Length
+      // body, or a chunked one missing its last chunk) fires neither 'end' nor
+      // a request 'error', and the timeout below goes with the socket. Node
+      // destroys res as aborted but emits 'error' only if res has a listener,
+      // so without these two the Promise never settled: its slot never came
+      // back (four of those and every Wikipedia call waits forever) and its
+      // coalesceWiki entry stayed, hanging every later caller of that key,
+      // e.g. each click check from that article. Reproduced on Node 22 against
+      // a local socket; guarded by scripts/testWikiApi.js.
+      res.on('error', reject);
+      res.on('close', () => { if (!res.complete) reject(new Error('wiki response aborted')); });
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
         // Rate-limit / upstream error → Wikipedia returns HTML, not JSON. Let
@@ -2210,7 +2228,7 @@ async function getRedirectsTo(title, lang = DEFAULT_LANG) {
   });
 }
 
-async function computeDistance(currentArticle, destination, destData, lang = DEFAULT_LANG) {
+async function computeDistance(currentArticle, destination, destData, lang = DEFAULT_LANG, highFetches = null) {
   const currentNorm = normalizeArticle(currentArticle);
   const destNorm = normalizeArticle(destination);
 
@@ -2265,16 +2283,26 @@ async function computeDistance(currentArticle, destination, destData, lang = DEF
     }
   }
 
-  // Fetch up to 20 uncached in parallel batches. Always background priority,
-  // even under a player-priority caller (the marathon pick): it's 10 parallel
-  // fetches at a time, each possibly multi-page, and in the high class they
-  // would sit FIFO ahead of every other player's click check.
+  // Fetch up to 20 uncached in parallel batches, as background work unless the
+  // caller hands over a budget ({ left: n }, shared across its calls) that
+  // still has room. Only the marathon pick does: the player waits on it with
+  // the round clock running, and when no hop set settles a candidate these
+  // fetches are its critical path. Stubbed, 12 outlinks behind 30 queued
+  // fetches: 4.6s as background, 1.8s inside the budget
+  // (scripts/testWikiPriority.js 1d). The budget bounds what one pick puts in
+  // the high class, where each batch of 10 sits FIFO ahead of other players'
+  // click checks: the pick scans every warmed candidate until a 2-hop, and
+  // each one left unsettled fetches up to 20 more outlinks here. Past the
+  // budget the batches run as background, like every fire-and-forget caller.
   const toFetch = uncached.slice(0, 20);
   for (let i = 0; i < toFetch.length; i += 10) {
     const batch = toFetch.slice(i, i + 10);
-    const results = await inWikiBackground(() => Promise.all(
+    const fetchBatch = () => Promise.all(
       batch.map(article => getPageLinks(article, lang).catch(() => new Set()))
-    ));
+    );
+    const inBudget = !!highFetches && highFetches.left > 0;
+    if (inBudget) highFetches.left -= batch.length;
+    const results = await (inBudget ? fetchBatch() : inWikiBackground(fetchBatch));
     for (const middleLinks of results) {
       for (const link of middleLinks) {
         if (destData.hop1.has(link)) return 3;
@@ -2698,7 +2726,11 @@ async function pickMarathonTarget(room, rp, currentArticle) {
   // Previous version capped the scan at 4, which could miss closer 2-hops
   // sitting later in the candidates Map and skew picks toward higher hops.
   // computeDistance hits the in-process cache after the warm pass, so the
-  // full scan stays sub-millisecond per call.
+  // full scan stays sub-millisecond per call, unless no hop set settles a
+  // candidate and computeDistance falls back to live verification. That runs
+  // at the pick's player priority for one candidate's worth of fetches (it
+  // fetches at most 20 per call) and as background past that.
+  const highFetches = { left: 20 };
   const scan = async () => {
     const out = [];
     for (const [key, entry] of room.marathon.candidates) {
@@ -2706,7 +2738,7 @@ async function pickMarathonTarget(room, rp, currentArticle) {
       if (!entry.data) continue;
       if (key === currentNorm) continue;
 
-      const hops = await computeDistance(currentArticle, entry.title, entry.data, lang);
+      const hops = await computeDistance(currentArticle, entry.title, entry.data, lang, highFetches);
       if (hops < 2) continue; // 1-hop filtered per design: forces strategy
 
       out.push({ key, entry, hops });
@@ -3749,8 +3781,11 @@ async function handleActionInner(playerId, msg, req = null, arrivedAt = Date.now
       }
       const currentArticle = rp.path[rp.path.length - 1] || room.marathon.startArticle;
       // Player priority: they wait on this pick with the round clock running.
-      // Its critical path is getPageLinks(currentArticle), often still in
-      // flight from navigate's prefetch, which this promotes.
+      // It first needs getPageLinks(currentArticle), often still in flight
+      // from navigate's prefetch, which this promotes. When no hop set settles
+      // a candidate, computeDistance's live verification is on the critical
+      // path too; it keeps this priority within the pick's budget (see
+      // pickMarathonTarget).
       const pick = await withWikiPriority(() => pickMarathonTarget(room, rp, currentArticle));
       if (!pick) {
         sendSSE(playerId, { type: 'marathon_next_target', target: null, reason: 'warming' });
