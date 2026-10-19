@@ -3471,6 +3471,21 @@ async function handleActionInner(playerId, msg, req = null, arrivedAt = Date.now
         if (!rp) sendSSE(playerId, { type: 'session_lost', reason });
         return { ok: false, error: reason };
       }
+      // Classic/tri: no move counts until game_start goes out (raceStartTime).
+      // Before that the round's starting positions aren't assigned (in a new
+      // room rp.path is still [], so the legality check below has no "from" and
+      // is skipped), and a real client can't click: links only appear once
+      // game_start lands. A scripted client could otherwise post the
+      // destination straight after start_daily's reply and take a 0-step, ~1ms
+      // win at the top of the daily leaderboard. Marathon runs its own clock
+      // and never sets raceStartTime.
+      if (room.mode !== 'marathon' && !Number.isFinite(room.raceStartTime)) {
+        logEvent('navigate_rejected', {
+          playerId, roomCode: player.roomCode, article: msg.article, reason: 'before_start',
+        });
+        recordEvent('navigate_rejected', { playerId, roomCode: player.roomCode, mode: room.mode, meta: { article: msg.article, reason: 'before_start' } });
+        return { ok: false, error: 'not_started' };
+      }
 
       const article = msg.article;
       if (!isValidArticle(article)) return { ok: false, error: 'Invalid article' };
