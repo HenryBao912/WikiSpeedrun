@@ -1160,7 +1160,9 @@ function countryFromHeaders(req) {
 function clientIpFromReq(req) {
   // Standard proxy chain: x-forwarded-for is comma-separated, leftmost is original client.
   const xff = (req.headers['x-forwarded-for'] || '').toString();
-  if (xff) return xff.split(',')[0].trim();
+  // Capped: the header can carry ~16KB, and this value keys every per-IP Map
+  // (rate limits, the 50k-entry page-view cap). A real address fits in 45 chars.
+  if (xff) return xff.split(',')[0].trim().slice(0, 64);
   return req.socket?.remoteAddress || null;
 }
 
