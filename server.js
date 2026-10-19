@@ -4531,6 +4531,16 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // favicon.svg rendered at 192px (see index.html). /favicon.ico serves the
+  // same PNG: clients that never read <link rel="icon"> ask for it and got 404s.
+  if (parsed.pathname === '/favicon.png' || parsed.pathname === '/favicon.ico') {
+    res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400' });
+    fs.createReadStream(path.join(__dirname, 'favicon.png'))
+      .on('error', () => { if (!res.headersSent) res.writeHead(500); res.end(); })
+      .pipe(res);
+    return;
+  }
+
   // og:image for link-preview cards (iMessage, Slack, WhatsApp, Discord,
   // Twitter, Facebook). Referenced by the <meta property="og:image"> tag
   // in index.html. Kept as a plain route so the URL stays clean and

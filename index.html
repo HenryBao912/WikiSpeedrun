@@ -48,8 +48,12 @@
 
 <!-- ?v= is a cache-buster: browsers cache favicons far more aggressively than
      HTML, so without it returning visitors keep the previous icon indefinitely.
-     Bump the number whenever favicon.svg changes. -->
-<link rel="icon" type="image/svg+xml" href="/favicon.svg?v=4">
+     Bump the number whenever favicon.svg changes. favicon.png is the same
+     design rendered at 192px (a multiple of 48, as Google asks), so whichever
+     file a browser or Google picks, the icon looks the same. -->
+<link rel="icon" type="image/svg+xml" href="/favicon.svg?v=6">
+<link rel="icon" type="image/png" sizes="192x192" href="/favicon.png?v=6">
+<link rel="apple-touch-icon" href="/favicon.png?v=6">
 <!-- DOMPurify: sanitizes Wikipedia HTML before injecting via innerHTML.
      Self-hosted (not a CDN) so it can't be tampered with upstream and isn't
      blocked where jsDelivr is (e.g. mainland China — the zh.wikipedia audience). -->
