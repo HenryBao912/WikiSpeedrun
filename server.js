@@ -86,9 +86,6 @@ function isNoiseClientError(message) {
     || /__firefox__|window\.ethereum|\bDarkReader\b|EmptyRanges|runtime\.sendMessage|Distributor\.getValue/i.test(message);
 }
 
-// Wikipedia hosts per language. Add a language here + ensure the random
-// article / bio-detection heuristics below know about it and it's available
-// to rooms. Client's toggle must stay in sync.
 // Structured session logging. Each call writes a single JSON line to stdout,
 // which Railway captures and lets us grep/jq later. Free-form data field;
 // always includes ISO timestamp + event name.
@@ -533,9 +530,12 @@ function sendGA4({ clientId, name, params = {} }) {
   }
 }
 
+// English-only. The zh.wikipedia mode was removed in Oct 2026: 95 of ~68k
+// games, and 51 of its 52 players also played English. The lang plumbing
+// stays (wiki helpers, cache keys, rooms and the events.lang column all
+// carry a lang), but normalizeLang resolves every value to 'en'.
 const WIKI_HOSTS = {
   en: 'en.wikipedia.org',
-  zh: 'zh.wikipedia.org',
 };
 const DEFAULT_LANG = 'en';
 // Per Wikimedia's User-Agent policy (https://meta.wikimedia.org/wiki/
@@ -568,6 +568,10 @@ const INDEX_HTML_PATH = path.join(__dirname, 'index.html');
 // Apostrophes are typographic (’, U+2019), never ASCII ': Google's snippet
 // pipeline escaped the plain one and showed "today&#39;s" literally in results.
 // BASE_DESC must stay byte-identical to index.html's meta copy (split/join below).
+// The home <title> (the browser tab, and Google's headline) is the bare brand;
+// BASE_TITLE is the og:/twitter: share title. Each route swaps its own title
+// into all three.
+const HOME_TITLE = 'WikiSpeedrun';
 const BASE_TITLE = 'WikiSpeedrun — Free Multiplayer Wikipedia Racing Game';
 const BASE_DESC = "No signup · no downloads · no ads. Race friends from one Wikipedia article to another, or play solo and take on today’s Daily Challenge.";
 const PAGE_ROUTES = {
@@ -607,11 +611,13 @@ function loadIndexHtml() {
   for (const [route, meta] of Object.entries(PAGE_ROUTES)) {
     let html = base;
     if (meta) {
-      // Title + description appear verbatim in <title>/og/twitter triplets —
-      // replaceAll keeps every copy in sync. The canonical/og:url/JSON-LD URL
-      // all end with `.io/"`, so one pattern rewrites them to the route URL
-      // (og:image's .png URL doesn't match the pattern and stays intact).
+      // The share title and description appear verbatim in their og/twitter
+      // tags, and <title> holds HOME_TITLE — replaceAll keeps every copy in
+      // sync. The canonical/og:url/JSON-LD URL all end with `.io/"`, so one
+      // pattern rewrites them to the route URL (og:image's .png URL doesn't
+      // match the pattern and stays intact).
       html = html
+        .split(`<title>${HOME_TITLE}</title>`).join(`<title>${meta.title}</title>`)
         .split(BASE_TITLE).join(meta.title)
         .split(BASE_DESC).join(meta.desc)
         .split('https://wikispeedrun.io/"').join(`https://wikispeedrun.io${route}"`);
@@ -629,9 +635,8 @@ loadIndexHtml();
 
 // DOMPurify is the sanitizer guarding all Wikipedia-HTML injection. It's served
 // from our own origin (vendored at build time) rather than a CDN: a CDN is a
-// supply-chain + availability risk — jsDelivr in particular is frequently
-// blocked in mainland China, exactly the audience for the zh.wikipedia mode —
-// and a missing sanitizer used to fall back to injecting raw HTML.
+// supply-chain + availability risk (jsDelivr in particular is blocked on some
+// networks), and a missing sanitizer used to fall back to injecting raw HTML.
 const PURIFY_PATH = path.join(__dirname, 'purify.min.js');
 let purifyRaw, purifyGz, purifyEtag;
 function loadPurify() {
@@ -640,8 +645,15 @@ function loadPurify() {
   purifyEtag = '"' + crypto.createHash('sha1').update(purifyRaw).digest('hex').slice(0, 16) + '"';
 }
 loadPurify();
-function normalizeLang(lang) {
-  return (lang && WIKI_HOSTS[lang]) ? lang : DEFAULT_LANG;
+// Every client-supplied lang resolves to 'en'. Kept as the single funnel for
+// that value because tabs opened before the zh mode was removed still send
+// lang=zh with create_room, start_single, random_word and /validate-dest.
+// They get an English game, and room_created / room_joined / game_start keep
+// echoing lang:'en', which is what switches those old clients to en.wikipedia.
+// If a language ever comes back, test Object.hasOwn(WIKI_HOSTS, lang): the old
+// WIKI_HOSTS[lang] check let inherited keys like 'constructor' through.
+function normalizeLang() {
+  return DEFAULT_LANG;
 }
 
 // Max length for a Wikipedia article title. The API docs cap at 255 bytes;
@@ -689,10 +701,8 @@ function generatePlayerId() {
 
 // ─── Random article fetching from Wikipedia ───
 
-// Quick title-based filter (no API call needed). Per-language — the English
-// heuristics (word count, non-ASCII rejection) don't apply to zh.
-function isBadTitle(title, lang = DEFAULT_LANG) {
-  if (lang === 'zh') return isBadTitleZh(title);
+// Quick title-based filter (no API call needed)
+function isBadTitle(title) {
   const lower = title.toLowerCase().replace(/_/g, ' ');
   // Lists, indexes, outlines, drafts
   if (/^(list of|lists of|index of|outline of|draft:|wikipedia:|template:|category:|portal:|module:|wikipedia)/.test(lower)) return true;
@@ -718,24 +728,6 @@ function isBadTitle(title, lang = DEFAULT_LANG) {
   return false;
 }
 
-// Chinese Wikipedia has different prefixes and "list" conventions. Also,
-// rejecting non-ASCII obviously doesn't work — every normal zh article is
-// non-ASCII. Rely mostly on the API validation (length, disambiguation).
-function isBadTitleZh(title) {
-  const t = title.replace(/_/g, ' ');
-  // Namespace prefixes (Wikipedia/Template/Category/Portal/Module/File in zh)
-  if (/^(维基百科|Wikipedia|模板|Template|分类|Category|门户|Portal|模块|Module|文件|File|帮助|Help|User|用户|草稿|Draft):/i.test(t)) return true;
-  // Parenthetical qualifiers (disambiguation style)
-  if (t.includes('(') || t.includes('（')) return true;
-  // Pure digits (years)
-  if (/^\d{3,4}年?$/.test(t)) return true;
-  // Single-character titles are usually too ambiguous
-  if (t.replace(/\s/g, '').length <= 1) return true;
-  // "...列表" (list-of) at the end → skip
-  if (/列表$/.test(t)) return true;
-  return false;
-}
-
 // Validate articles via API: check they're real content pages (not disambig/stubs)
 // Biographies get a stricter threshold — only very famous people are fun to play with
 async function validateArticles(titles, lang = DEFAULT_LANG) {
@@ -757,44 +749,24 @@ async function validateArticles(titles, lang = DEFAULT_LANG) {
       // Skip disambiguation pages
       if (page.pageprops && 'disambiguation' in page.pageprops) continue;
 
-      // Detect biographies — check categories AND title pattern.
-      // Different categories per-language.
+      // Detect biographies — check categories AND title pattern
       const cats = (page.categories || []).map(c => c.title.toLowerCase());
-      let isBioByCat;
-      if (lang === 'zh') {
-        // zh category names: "在世人物", "XXXX年出生", "XXXX年逝世", etc.
-        isBioByCat = cats.some(c =>
-          c.includes('在世人物') ||
-          c.includes('在世人士') ||
-          /\d{1,4}年出生/.test(c) ||
-          /\d{1,4}年逝世/.test(c) ||
-          c.includes('传记') ||
-          c.includes('演员') ||
-          c.includes('歌手') ||
-          c.includes('政治家') ||
-          c.includes('作家') ||
-          c.includes('运动员')
-        );
-      } else {
-        isBioByCat = cats.some(c =>
-          c.includes('living people') ||
-          c.includes('possibly living people') ||
-          /\d{1,4} births/.test(c) ||
-          /\d{1,4} deaths/.test(c) ||
-          c.includes('biography') ||
-          c.includes('actresses') ||
-          c.includes('actors') ||
-          c.includes('politicians') ||
-          c.includes('singers') ||
-          c.includes('footballers') ||
-          c.includes('musicians')
-        );
-      }
-      // Title heuristic: Latin "Firstname Lastname" — doesn't apply to zh.
+      const isBioByCat = cats.some(c =>
+        c.includes('living people') ||
+        c.includes('possibly living people') ||
+        /\d{1,4} births/.test(c) ||
+        /\d{1,4} deaths/.test(c) ||
+        c.includes('biography') ||
+        c.includes('actresses') ||
+        c.includes('actors') ||
+        c.includes('politicians') ||
+        c.includes('singers') ||
+        c.includes('footballers') ||
+        c.includes('musicians')
+      );
+      // Title heuristic: "Firstname Lastname" pattern (2-3 capitalized words, no other stuff)
       const titleClean = page.title.replace(/_/g, ' ');
-      const isBioByTitle = lang === 'zh'
-        ? false
-        : /^[A-Z][a-z]+ [A-Z][a-z]+( [A-Z][a-z]+)?$/.test(titleClean);
+      const isBioByTitle = /^[A-Z][a-z]+ [A-Z][a-z]+( [A-Z][a-z]+)?$/.test(titleClean);
 
       const isBio = isBioByCat || isBioByTitle;
 
@@ -927,7 +899,7 @@ async function getTopViewedArticles(lang = DEFAULT_LANG) {
         const t = a.article;
         if (t === 'Main_Page' || t === 'Special:Search' || t.startsWith('Special:')) return false;
         if (t.startsWith('Wikipedia:') || t.startsWith('Portal:') || t.startsWith('Help:')) return false;
-        if (isBadTitle(t, lang)) return false;
+        if (isBadTitle(t)) return false;
         return true;
       })
       .filter(a => a.views >= 1000)
@@ -1007,7 +979,7 @@ async function getGoodRandomArticles(count, viewRange, lang = DEFAULT_LANG) {
       const data = await wikiAPI(params, lang);
       const batch = (data.query?.random || [])
         .map(r => r.title.replace(/ /g, '_'))
-        .filter(t => !isBadTitle(t, lang));
+        .filter(t => !isBadTitle(t));
 
       if (batch.length === 0) continue;
       const validated = await validateArticles(batch, lang);
@@ -1051,7 +1023,7 @@ async function fetchRandomArticles(count, lang = DEFAULT_LANG) {
       const data = await wikiAPI(params, lang);
       const batch = (data.query?.random || [])
         .map(r => r.title.replace(/ /g, '_'))
-        .filter(t => !isBadTitle(t, lang));
+        .filter(t => !isBadTitle(t));
       if (batch.length === 0) continue;
       const validated = await validateArticles(batch, lang);
       for (const a of validated) {
@@ -1732,9 +1704,7 @@ async function getRandomPair(viewRange, lang = DEFAULT_LANG) {
     if (any) return { origin: any.origin, destination: any.destination };
   }
   // Last-resort hardcoded fallback.
-  return lang === 'zh'
-    ? { origin: '披萨', destination: '月球' }
-    : { origin: 'Pizza', destination: 'Moon' };
+  return { origin: 'Pizza', destination: 'Moon' };
 }
 
 async function getRandomTriple(viewRange, lang = DEFAULT_LANG) {
@@ -1757,45 +1727,17 @@ async function getRandomTriple(viewRange, lang = DEFAULT_LANG) {
     const any = pickFromPool('triple', lang, null);
     if (any) return { targets: any.targets.slice() };
   }
-  return lang === 'zh'
-    ? { targets: ['月球', '恐龙', '爵士乐'] }
-    : { targets: ['Moon', 'Dinosaur', 'Jazz'] };
+  return { targets: ['Moon', 'Dinosaur', 'Jazz'] };
 }
 
 function normalizeArticle(name) {
   return (name || '').replace(/_/g, ' ').toLowerCase();
 }
 
-// Build the composite key used to store per-language cache entries. Without
-// this, `Pizza` on en.wikipedia and `Pizza` on zh.wikipedia would collide
-// and a Chinese room could get English link data (or vice versa).
+// The key every wiki cache stores entries under: `<lang>:<normalized title>`
+// (always `en:` now; see WIKI_HOSTS).
 function cacheKey(lang, title) {
   return `${lang || DEFAULT_LANG}:${normalizeArticle(title)}`;
-}
-
-// Convert a title to the wiki's display variant (e.g. Traditional → Simplified
-// for zh). Uses action=parse's displaytitle output which honors variant=zh-cn
-// even when the underlying article is canonically stored in Traditional. Used
-// at pool-generation time so the pool JSON only holds Simplified titles.
-async function toVariantTitle(title, lang = DEFAULT_LANG) {
-  if (!WIKI_VARIANTS[lang]) return title;
-  try {
-    const data = await wikiAPI({
-      action: 'parse',
-      page: title.replace(/ /g, '_'),
-      prop: 'displaytitle',
-      redirects: '1',
-    }, lang);
-    const dt = data.parse?.displaytitle || '';
-    // displaytitle is HTML. Grab the main-title span when present, otherwise
-    // strip tags and trim.
-    const mainMatch = dt.match(/<span class="mw-page-title-main">([^<]+)<\/span>/);
-    if (mainMatch && mainMatch[1]) return mainMatch[1].replace(/ /g, '_');
-    const plain = dt.replace(/<[^>]+>/g, '').trim();
-    return plain ? plain.replace(/ /g, '_') : title;
-  } catch (e) {
-    return title;
-  }
 }
 
 // Resolve Wikipedia redirects to canonical title
@@ -1876,12 +1818,6 @@ function coalesceWiki(key, fn) {
   return p;
 }
 
-// MediaWiki variant codes. Chinese wiki auto-converts Simplified ↔ Traditional
-// at display time; we always want Simplified output for now.
-const WIKI_VARIANTS = {
-  zh: 'zh-cn',
-};
-
 // Cap how long a single 429 retry can wait. Wikipedia's Retry-After can be
 // large (60s+) under heavy load — that would stall navigate handlers way
 // past any reasonable p99 budget. Better to fail fast and let the client
@@ -1939,9 +1875,7 @@ function releaseWikiSlot() {
 
 function wikiAPIOnce(params, lang = DEFAULT_LANG) {
   return acquireWikiSlot().then(() => new Promise((resolve, reject) => {
-    const finalParams = { ...params, format: 'json', origin: '*' };
-    if (WIKI_VARIANTS[lang]) finalParams.variant = WIKI_VARIANTS[lang];
-    const qs = new URLSearchParams(finalParams);
+    const qs = new URLSearchParams({ ...params, format: 'json', origin: '*' });
     const host = WIKI_HOSTS[lang] || WIKI_HOSTS[DEFAULT_LANG];
     const reqUrl = `https://${host}/w/api.php?${qs}`;
     const req = https.get(reqUrl, { headers: { 'User-Agent': WIKI_USER_AGENT } }, (res) => {
@@ -2101,16 +2035,11 @@ async function getBacklinks(title, limit = 500, lang = DEFAULT_LANG) {
 const backlinkCountCache = new Map(); // lang|title -> { value: number, expires }
 const BACKLINK_COUNT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 async function countBacklinks(title, threshold, lang = DEFAULT_LANG) {
-  // Resolve to the page's CANONICAL stored title before counting. redirects=1
-  // follows redirects; converttitles=1 maps a variant title to the stored form.
-  // The latter is essential for zh: the pool stores Simplified titles (柯震东)
-  // but the page is stored Traditional (柯震東), and list=backlinks needs the
-  // EXACT stored title (it does not variant-convert) — without this every
-  // Simplified zh title counts as 0 backlinks and gets wrongly rejected as
-  // sparse. For en (no variant) converttitles is a harmless no-op.
+  // Resolve to the page's CANONICAL stored title before counting (redirects=1):
+  // list=backlinks needs the EXACT stored title and does not follow redirects.
   let resolved = title;
   try {
-    const data = await wikiAPI({ action: 'query', titles: title.replace(/ /g, '_'), redirects: '1', converttitles: '1' }, lang);
+    const data = await wikiAPI({ action: 'query', titles: title.replace(/ /g, '_'), redirects: '1' }, lang);
     const page = Object.values(data.query?.pages || {})[0];
     if (page && page.missing === undefined && page.title) resolved = page.title;
   } catch (e) { /* fall back to the raw title */ }
@@ -2522,7 +2451,7 @@ async function startMarathonForRoom(room, roomCode) {
   // player is stuck in a dead-end at t=0.
   const startArticle = hubsArr.length
     ? hubsArr[Math.floor(Math.random() * hubsArr.length)]
-    : (lang === 'zh' ? '维基百科' : 'Wikipedia');
+    : 'Wikipedia';
   const startNorm = normalizeArticle(startArticle);
 
   // Candidate pool: unique destinations from pair pool, excluding the start.
@@ -2735,8 +2664,8 @@ async function pickMarathonTarget(room, rp, currentArticle) {
 }
 
 // Called from the navigate handler in marathon mode. Checks whether the
-// navigated article matches the player's current target (with redirect +
-// variant fallbacks, matching classic/tri logic). On a hit: records the
+// navigated article matches the player's current target (with a redirect
+// fallback, matching classic/tri logic). On a hit: records the
 // event, clears currentTarget, pushes an SSE so the client can celebrate +
 // request the next target. No return value — best-effort.
 async function handleMarathonNavigate(room, rp, playerId, article, lang) {
@@ -2751,12 +2680,6 @@ async function handleMarathonNavigate(room, rp, playerId, article, lang) {
     try {
       const resolved = await resolveRedirect(article, lang);
       if (normalizeArticle(resolved) === targetNorm) matched = true;
-    } catch {}
-  }
-  if (!matched && WIKI_VARIANTS[lang]) {
-    try {
-      const variantForm = await toVariantTitle(article, lang);
-      if (variantForm && normalizeArticle(variantForm) === targetNorm) matched = true;
     } catch {}
   }
   if (!matched) return;
@@ -2915,24 +2838,11 @@ async function startGameForRoom(room, roomCode) {
       room.pair.destination = _d;
     }
     room.pair.destinationOriginal = origDest;
-    // Variant aliases: on zh, the canonical wiki title can be Traditional
-    // (太平天國) while our pool stores Simplified (太平天国). A player navigating
-    // via a zh-TW/zh-HK link lands on the Traditional form, so plain string
-    // equality misses the win. Build an alias set covering both forms.
-    const destAliases = new Set([room.pair.destination, origDest]);
-    if (WIKI_VARIANTS[lang]) {
-      try {
-        const variantForm = await toVariantTitle(room.pair.destination, lang);
-        if (variantForm) destAliases.add(variantForm);
-      } catch (e) { /* best-effort — fall back to existing aliases */ }
-    }
-    if (room.pair !== _pair) return; // pair reset during the variant await → abort
-    room.pair.destinationAliases = [...destAliases];
     // Guardrail: reject manually-set destinations with too few backlinks.
     // Pool destinations are curated so we skip; live-generated fallbacks
     // would already be popular enough. The threshold of 15 is empirical:
-    // 拉布布 (7 backlinks) produced a 15-min unwinnable game; 太平天国
-    // (1585 backlinks) was fine. Below 15 the game has too few entry
+    // a 7-backlink destination produced a 15-min unwinnable game, while one
+    // with 1585 backlinks was fine. Below 15 the game has too few entry
     // paths for realistic play.
     const manualDest = !!(room.manualArticles && room.manualArticles.destination);
     if (manualDest) {
@@ -3020,9 +2930,6 @@ async function startGameForRoom(room, roomCode) {
     cacheDestination(room.pair.destination, lang)
       .then(async destData => {
         room.destData = destData;
-        // Tag the cache with the lang it was computed for, so a mid-lobby
-        // set_lang can detect stale data and recompute.
-        room.destDataLang = lang;
         const dist = await computeDistance(room.pair.origin, room.pair.destination, destData, lang);
         // Origin is path[0], so its distance belongs at index 0. Assign by
         // index, not push: this .then can resolve AFTER a fast player's first
@@ -3175,15 +3082,11 @@ async function isLegalMove(from, target, lang = DEFAULT_LANG) {
 
     if (outLinks.has(targetNorm)) return true;
 
-    // The clicked link may go through a redirect, or (zh) a Traditional↔
-    // Simplified variant, so the raw title differs from what prop=links stored.
-    // Mirror checkWin's resolve→variant fallback ladder before rejecting.
+    // The clicked link may go through a redirect, so the raw title differs
+    // from what prop=links stored. Mirror checkWin's redirect fallback before
+    // rejecting.
     const resolved = normalizeArticle(await resolveRedirect(target, lang));
     if (resolved !== targetNorm && outLinks.has(resolved)) return true;
-    if (WIKI_VARIANTS[lang]) {
-      const variant = normalizeArticle((await toVariantTitle(target, lang)) || '');
-      if (variant && variant !== targetNorm && outLinks.has(variant)) return true;
-    }
 
     // Last resort before rejecting: ask Wikipedia DIRECTLY whether `from`
     // links to `target`. pltitles is a single-target membership probe — one
@@ -3219,11 +3122,8 @@ async function isLegalMove(from, target, lang = DEFAULT_LANG) {
 function checkWin(room, rp, article) {
   if (room.mode === 'classic') {
     const current = normalizeArticle(article);
-    // Check against every known alias of the destination. destinationAliases
-    // covers canonical + pool form + (on zh) the variant-converted form so
-    // Traditional↔Simplified mismatches don't hide wins.
-    const aliases = room.pair.destinationAliases
-      || [room.pair.destination, room.pair.destinationOriginal].filter(Boolean);
+    // Check against both resolved and original destination
+    const aliases = [room.pair.destination, room.pair.destinationOriginal].filter(Boolean);
     if (aliases.some(a => normalizeArticle(a) === current)) return true;
     // Also check if the navigated article redirects to the destination
     // (async check stored for next comparison)
@@ -3571,25 +3471,13 @@ async function handleActionInner(playerId, msg, req = null, arrivedAt = Date.now
       let won = checkWin(room, rp, article);
       // Detect whether the quick check already registered a checkpoint (tri
       // mode mutates rp.visited in checkWin); if nothing happened, fall
-      // through to redirect + variant fallbacks below.
+      // through to the redirect fallback below.
       const progressedBefore = won || rp.visited.length > visitedBefore;
       if (!progressedBefore) {
         // Try resolving the article in case it's a redirect to the destination
         const resolved = await resolveRedirect(article, roomLang);
         if (normalizeArticle(resolved) !== normalizeArticle(article)) {
           won = checkWin(room, rp, resolved);
-        }
-        // For zh: player may arrive on the Traditional form of a page whose
-        // Simplified form is the destination/target (pool stores Simplified).
-        // Convert the incoming title through the wiki's variant and retry.
-        const progressedAfterResolve = won || rp.visited.length > visitedBefore;
-        if (!progressedAfterResolve && WIKI_VARIANTS[roomLang]) {
-          try {
-            const variantForm = await toVariantTitle(article, roomLang);
-            if (variantForm && normalizeArticle(variantForm) !== normalizeArticle(article)) {
-              won = checkWin(room, rp, variantForm);
-            }
-          } catch (e) { /* best-effort — fall through */ }
         }
       }
       if (won) {
@@ -3896,9 +3784,7 @@ async function handleActionInner(playerId, msg, req = null, arrivedAt = Date.now
       // Use viewRange from message (SP setup) or from room (MP lobby)
       let viewRange = room?.viewRange || null;
       if (!viewRange) viewRange = parseViewRange(msg.viewRange);
-      // Prefer the room's language; fall back to the lang on this one-off
-      // request (SP setup sends it via msg.lang before a room exists).
-      const lang = normalizeLang(room?.lang || msg.lang);
+      const lang = normalizeLang(msg.lang);
 
       // Pool path: single titles mined from pool pairs (dedup, range-filtered,
       // with a sliding window of this player's last N picks excluded so rapid
@@ -4050,24 +3936,10 @@ async function handleActionInner(playerId, msg, req = null, arrivedAt = Date.now
     }
 
     case 'set_lang': {
-      const player = players.get(playerId);
-      if (!player) return { ok: false };
-      const room = rooms.get(player.roomCode);
-      if (!room || room.host !== playerId) return { ok: false, error: 'Only host can change language' };
-      if (room.started) return { ok: false, error: 'Cannot change language during game' };
-      const newLang = normalizeLang(msg.lang);
-      if (room.lang === newLang) return { ok: true };
-      room.lang = newLang;
-      // Any manual words the lobby had set are in the wrong language now.
-      room.manualArticles = null;
-      // Toss cached link data tied to the old language. Any in-flight
-      // cacheDestination for the old lang will still write into
-      // room.destData when it resolves, so we also stamp room.destDataLang
-      // (see startGameForRoom) and verify at use time.
-      room.destData = null;
-      room.destDataLang = null;
-      room.triDestData = null;
-      broadcastToRoom(player.roomCode, { type: 'lang_changed', lang: newLang });
+      // Only tabs opened before the language picker was removed send this.
+      // A room's lang is always normalizeLang(...) === 'en', so there is
+      // nothing to change. Reply ok and broadcast nothing: the old client only
+      // switches language on a lang_changed broadcast, so it stays on English.
       return { ok: true };
     }
 
@@ -4394,7 +4266,7 @@ const server = http.createServer(async (req, res) => {
   // Backlink validation for the destination word-box (Bug 3): lets the client
   // warn at type-time that an article is too isolated to be a playable target,
   // instead of only finding out after pressing Start. Backed by the same
-  // countBacklinks the runtime guardrail uses (redirect/variant-resolving,
+  // countBacklinks the runtime guardrail uses (redirect-resolving,
   // 7-day cached, fail-open). Outbound load is bounded by the global request
   // limiter; results are cached so repeated checks are cheap.
   if (parsed.pathname === '/validate-dest' && req.method === 'GET') {
@@ -4520,6 +4392,16 @@ const server = http.createServer(async (req, res) => {
     // Guard the stream: an unhandled 'error' on a piped Readable (missing file,
     // permission flip mid-deploy) would otherwise throw and crash the process.
     fs.createReadStream(path.join(__dirname, 'favicon.svg'))
+      .on('error', () => { if (!res.headersSent) res.writeHead(500); res.end(); })
+      .pipe(res);
+    return;
+  }
+
+  // favicon.svg rendered at 192px (see index.html). /favicon.ico serves the
+  // same PNG: clients that never read <link rel="icon"> ask for it and got 404s.
+  if (parsed.pathname === '/favicon.png' || parsed.pathname === '/favicon.ico') {
+    res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400' });
+    fs.createReadStream(path.join(__dirname, 'favicon.png'))
       .on('error', () => { if (!res.headersSent) res.writeHead(500); res.end(); })
       .pipe(res);
     return;
@@ -4777,7 +4659,6 @@ module.exports = {
   cacheDestination,
   computeDistance,
   resolveRedirect,
-  toVariantTitle,
   normalizeArticle,
   // Backlink helpers — generatePool.js's sparse-destination guardrail imports
   // getBacklinks; without these exports the require returned undefined and the

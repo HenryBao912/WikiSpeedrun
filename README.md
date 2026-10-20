@@ -12,7 +12,7 @@ Race from one Wikipedia article to another using only the in-article links. Play
 - **Tri**: visit three target articles in any order.
 - **Marathon** *(new in v1.0.0)*: time-boxed chains — 3 / 5 / 8 / 12 minute runs. One target at a time; reach it and a new one appears. Score by efficiency (fewer clicks = more points) with completion bonuses at 5 / 10 / 15 targets.
 
-All modes support English and Simplified Chinese Wikipedia.
+All modes are played on English Wikipedia.
 
 ## Run locally
 
@@ -27,7 +27,7 @@ Requires Node 20+. No external services; Wikipedia is called directly.
 ## How it works
 
 - **Server**: plain Node `http` module. No framework, no dependencies. Real-time updates via Server-Sent Events.
-- **Client**: single HTML file. Fetches Wikipedia HTML via `action=parse` and strips navboxes/references/editsections before rendering.
+- **Client**: single HTML file. Fetches article HTML from Wikipedia's REST API (`/api/rest_v1/page/html`) and strips navboxes/references/editsections before rendering.
 - **Puzzle pool**: pre-generated from Wikipedia's pageview API. Start/target articles are well-known enough to be solvable but not trivially one-hop connected.
 - **Distance cache**: at game start, the server pre-computes the 1/2/3-hop neighborhood of the destination so the "distance to target" badge updates without a round-trip per click.
 
@@ -45,7 +45,7 @@ Environment variables (all optional):
 
 ## Pool generation
 
-The puzzle pool lives in `data/puzzlePool.{en,zh}.json`. To regenerate:
+The puzzle pool lives in `data/puzzlePool.en.json`. To regenerate:
 
 ```bash
 npm run generate-pool         # full pass

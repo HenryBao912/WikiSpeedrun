@@ -5,8 +5,7 @@
 //
 //   1. countBacklinks("Apple_Inc.") returns a HIGH count (was 0 before the fix).
 //   2. A genuinely-sparse article is detected as sparse.
-//   3. zh Simplified titles resolve to their canonical form (were counted as 0).
-//   4. The daily-challenge selector never returns a sparse / blacklisted dest.
+//   3. The daily-challenge selector never returns a sparse / blacklisted dest.
 
 const path = require('path');
 const fs = require('fs');
@@ -28,11 +27,7 @@ function ok(cond, msg) { console.log((cond ? '  ✓ ' : '  ✗ ') + msg); if (!c
   const rain = await wss.countBacklinks('Raindrop_cake', 15, 'en');
   ok(rain !== null && rain < 15, `Raindrop_cake → ${rain} (expected <15)`);
 
-  console.log('\n[3] zh Simplified titles resolve to canonical (Bug found: variant counting)');
-  const ko = await wss.countBacklinks('柯震东', 15, 'zh'); // Simplified; page is Traditional 柯震東
-  ok(ko !== null && ko >= 15, `柯震东 → ${ko} (expected ≥15, was 0 before converttitles fix)`);
-
-  console.log('\n[4] daily-challenge selector never returns a sparse/blacklisted destination (Bug 2)');
+  console.log('\n[3] daily-challenge selector never returns a sparse/blacklisted destination (Bug 2)');
   // Deterministic: the daily draws from the (now-cleaned) pool. Walk 120 days
   // and assert each destination is a real pool destination and not blacklisted.
   const poolDests = new Set();

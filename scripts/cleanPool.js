@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Removes unplayable / unsuitable destinations from the committed puzzle pools:
+// Removes unplayable / unsuitable destinations from the committed puzzle pool
+// (data/puzzlePool.en.json):
 //   - SPARSE destinations: fewer than MIN_BACKLINKS (15) mainspace backlinks, so
 //     they're effectively unreachable (the "1win" / "Raindrop_cake" incidents).
 //     This is the same guardrail the runtime + generator use; running it as a
@@ -12,7 +13,7 @@
 // never backlink-checked (you start there; only reachability of the *target*
 // matters).
 //
-// Usage: node scripts/cleanPool.js [--dry] [--lang en|zh]
+// Usage: node scripts/cleanPool.js [--dry]
 // Reuses server.js's countBacklinks (redirect-resolving, fail-open, cached) and
 // its global request concurrency limiter, so it won't trip Wikipedia's 429s.
 
@@ -22,8 +23,6 @@ const { countBacklinks, normalizeArticle } = require('..' + path.sep + 'server.j
 
 const MIN_BACKLINKS = 15;
 const DRY = process.argv.includes('--dry');
-const LANG_ARG = (() => { const i = process.argv.indexOf('--lang'); return i >= 0 ? process.argv[i + 1] : null; })();
-const LANGS = LANG_ARG ? [LANG_ARG] : ['en', 'zh'];
 
 // Content unsuitable for a shareable random/daily puzzle target, plus specific
 // articles confirmed sparse in production incidents. Explicit list (not fuzzy
@@ -103,7 +102,7 @@ async function cleanLang(lang) {
 
 (async () => {
   console.log(`Pool cleanup (threshold ${MIN_BACKLINKS} backlinks)${DRY ? ' [DRY RUN]' : ''}`);
-  for (const lang of LANGS) await cleanLang(lang);
+  await cleanLang('en');
   console.log('\nDone.');
   process.exit(0);
 })().catch(e => { console.error('FATAL', e); process.exit(1); });

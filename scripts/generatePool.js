@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// Generate a pool of solvable puzzles per language so the live server rarely
-// has to hit Wikipedia at game start. Solvability = we can compute a finite
-// distance from origin to destination using cacheDestination + computeDistance.
+// Generate a pool of solvable puzzles (English Wikipedia) so the live server
+// rarely has to hit Wikipedia at game start. Solvability = we can compute a
+// finite distance from origin to destination using cacheDestination +
+// computeDistance.
 //
 // Usage:
-//   node scripts/generatePool.js            # default: en + zh, full pool
-//   node scripts/generatePool.js --lang en  # one language
+//   node scripts/generatePool.js            # full pool → data/puzzlePool.en.json
 //   node scripts/generatePool.js --fast     # small run for local sanity
 
 const fs = require('fs');
@@ -16,18 +16,13 @@ const {
   getGoodRandomArticles,
   cacheDestination,
   computeDistance,
-  toVariantTitle,
   normalizeArticle,
 } = require('..' + path.sep + 'server.js');
 
 // ─── Config ───
 const args = process.argv.slice(2);
 const FAST = args.includes('--fast');
-const argLang = (() => {
-  const i = args.indexOf('--lang');
-  return i >= 0 ? args[i + 1] : null;
-})();
-const LANGS = argLang ? [argLang] : ['en', 'zh'];
+const LANG = 'en';
 
 // Difficulty buckets — tuned to the client's slider. Each bucket picks pairs
 // where both articles have pageviews-per-month in the given range.
@@ -52,7 +47,7 @@ const SOLVABLE_MAX_DIST = 5;
 // startGameForRoom. "1win" had 350K monthly views but only 3 backlinks; the
 // runtime guardrail caught it, but only AFTER it made it into the pool.
 // Validating here at build time keeps bad destinations out of the pool
-// entirely. Tracks count of rejected pairs for the per-language report.
+// entirely. Tracks count of rejected pairs for the end-of-run report.
 const MIN_DEST_BACKLINKS = 15;
 const sparseRejections = new Map(); // destination -> backlinks count
 
@@ -128,15 +123,9 @@ async function generatePairForBucket(lang, bucket) {
       }
       const dist = await computeDistance(pair.origin, pair.destination, destData, lang);
       if (dist !== null && dist <= SOLVABLE_MAX_DIST) {
-        // For variant-aware wikis (zh), convert titles to the display variant
-        // (Simplified) before writing so the pool never stores Traditional.
-        const [origin, destination] = await Promise.all([
-          toVariantTitle(pair.origin, lang),
-          toVariantTitle(pair.destination, lang),
-        ]);
         return {
-          origin,
-          destination,
+          origin: pair.origin,
+          destination: pair.destination,
           viewRange: bucket.viewRange,
           difficulty: bucket.name,
           dist,
@@ -178,9 +167,8 @@ async function generateTripleForBucket(lang, bucket) {
       }
       const d2 = await computeDistance(start, t2, dest2Data, lang);
       if (d2 === null || d2 > SOLVABLE_MAX_DIST) continue;
-      const convertedTargets = await Promise.all(triple.targets.map(t => toVariantTitle(t, lang)));
       return {
-        targets: convertedTargets,
+        targets: triple.targets,
         viewRange: bucket.viewRange,
         difficulty: bucket.name,
         distances: [d1, d2],
@@ -202,7 +190,7 @@ async function generateForLang(lang) {
     triples: [],
   };
 
-  // Dedup within each language — don't let the same origin/destination repeat.
+  // Dedup — don't let the same origin/destination repeat.
   const seenPairs = new Set();
   const seenTriples = new Set();
 
@@ -260,21 +248,18 @@ async function generateForLang(lang) {
       console.log(`     ${count.toString().padStart(3)} backlinks: ${dest}`);
     }
     if (sorted.length > 10) console.log(`     … and ${sorted.length - 10} more`);
-    sparseRejections.clear(); // reset for next language
   }
 }
 
 // ─── Main ───
 (async () => {
   console.log(FAST ? '⚡ Fast mode (small pool, for sanity checks)' : '🏗  Full pool generation');
-  for (const lang of LANGS) {
-    try {
-      await generateForLang(lang);
-    } catch (e) {
-      console.error(`\n✗ [${lang}] Failed:`, e.message);
-      process.exitCode = 1;
-    }
+  try {
+    await generateForLang(LANG);
+  } catch (e) {
+    console.error(`\n✗ [${LANG}] Failed:`, e.message);
+    process.exitCode = 1;
   }
-  console.log('\nDone. Commit data/puzzlePool.*.json so the deploy ships warm.\n');
+  console.log('\nDone. Commit data/puzzlePool.en.json so the deploy ships warm.\n');
   process.exit(0);
 })();

@@ -5,26 +5,21 @@
       <stop offset="100%" stop-color="#00b894"/>
     </linearGradient>
   </defs>
-  <!-- Two looks from one file, switched by color scheme.
-       Default (light, and whatever Google's favicon converter renders): the
-       gradient W alone on a transparent canvas. Google Search draws every
-       favicon at ~70% inside its own white circular badge (measured Oct 2026:
-       47px badge, 33px icon), so a dark disc always showed a white ring around
-       it — the full-bleed square before it read as a sticker in a circle. With
-       no disc, Google's white badge becomes the W's background and there is no
-       ring left to see.
-       Dark: the dark disc comes back so the W keeps its contrast on dark tab
-       strips. If a renderer ignores <style>, the disc shows — which is exactly
-       the previous icon, so the worst case is no change. -->
-  <style>
-    .disc { display: none; }
-    @media (prefers-color-scheme: dark) { .disc { display: inline; } }
-  </style>
-  <circle class="disc" cx="32" cy="32" r="32" fill="#1a1a24"/>
-  <text x="32" y="51"
+  <!-- A solid, full-bleed dark SQUARE, on purpose. Google Search shows favicons
+       in a 28px circle and picks one of two treatments (measured on live dark-mode
+       results, Oct 2026): an icon whose corners are all one solid colour is
+       cropped to fill the circle (how x.com and vercel.com get a full dark
+       circle); anything else is shrunk to 18px on Google's own white circle,
+       which leaves a white ring. That caught both earlier tries: the July square's
+       gradient gave it four different corners, and the Aug-Oct circle's corners
+       were transparent. So: no transparency, a flat background, every corner
+       #1a1a24, and the W kept inside the inscribed circle so the crop never
+       clips it. favicon.png is this design rendered at 192px. -->
+  <rect width="64" height="64" fill="#1a1a24"/>
+  <text x="32" y="47"
         text-anchor="middle"
         font-family="system-ui,-apple-system,Segoe UI,Roboto,sans-serif"
         font-weight="900"
-        font-size="56"
+        font-size="44"
         fill="url(#g)">W</text>
 </svg>
