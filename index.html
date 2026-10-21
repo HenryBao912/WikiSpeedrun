@@ -4762,6 +4762,21 @@ function connectSSE(forceNew = false) {
     };
 
     newSource.onerror = (e) => {
+      // The browser's own retry re-requests this source's original URL. A
+      // session's first source was opened before the server gave us an id, so
+      // its URL carries no playerId/rt: the retry lands as a brand-new player
+      // with no room, 'connected' hands us that id, and the next click gets
+      // session_lost ("Your game session expired"). In the Oct 19 2026 prod
+      // logs, 0 of 346 in-room drops on a first connection were resumed. So
+      // don't let it retry: close it, and if it's the live source, redial
+      // through connectSSE(), whose URL has playerId + rt, so the server's
+      // grace rebind keeps us in the room.
+      if (newSource.readyState === EventSource.CONNECTING && myPlayerId &&
+          !newSource.url.includes('playerId=')) {
+        newSource.close();
+        if (eventSource === newSource) connectSSE().catch(() => {});
+        return;
+      }
       // EventSource fires error events for transient issues + before
       // auto-reconnect attempts. Only log when actually CLOSED — the
       // intermediate retries are noise that scared users when surfaced.

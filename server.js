@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const url = require('url');
 const zlib = require('zlib');
+const { AsyncLocalStorage } = require('async_hooks');
 
 // ─── Game State ───
 const rooms = new Map();
@@ -1806,16 +1807,31 @@ function cacheSet(cache, key, value, ttlMs = CACHE_TTL_MS) {
 // 429 burst we saw in prod logs (popular destinations like Earth/Mexico
 // fanned out simultaneously across game starts + navigates). With coalescing
 // the first caller does the fetch and the rest await the same Promise.
-const inFlightWiki = new Map(); // namespaced-key -> Promise
+//
+// Queue priority (see withWikiPriority below) belongs to the shared request,
+// not to whichever caller started it. The request runs under its own context
+// object, seeded from the first caller; a player-facing caller that joins
+// raises it to high, which promotes the waiter it already has in the queue and
+// every page and retry it issues after that. This is the common case, not an
+// edge: each click launches a background computeDistance whose first fetch is
+// getPageLinks(newArticle), and the player's next click check needs exactly
+// that set. Without promotion the click check would wait on a low-priority
+// request stuck behind all the background work queued ahead of it.
+const inFlightWiki = new Map(); // namespaced-key -> { promise, ctx }
 function coalesceWiki(key, fn) {
+  const caller = wikiPriority.getStore();
   const existing = inFlightWiki.get(key);
-  if (existing) return existing;
-  const p = (async () => {
+  if (existing) {
+    if (caller?.high) existing.ctx.high = true;
+    return existing.promise;
+  }
+  const ctx = { high: !!caller?.high };
+  const promise = wikiPriority.run(ctx, async () => {
     try { return await fn(); }
     finally { inFlightWiki.delete(key); }
-  })();
-  inFlightWiki.set(key, p);
-  return p;
+  });
+  inFlightWiki.set(key, { promise, ctx });
+  return promise;
 }
 
 // Cap how long a single 429 retry can wait. Wikipedia's Retry-After can be
@@ -1852,9 +1868,79 @@ const WIKI_MIN_INTERVAL_MS = 100; // ≥ this between starts → ~10 req/s ceili
 let wikiInFlight = 0;
 let wikiLastStart = 0;
 let wikiPumpScheduled = false;
-const wikiWaiters = [];
+
+// Player-facing requests go first. Every server-side Wikipedia call shares the
+// gates above, and the click check a player sits waiting on (navigate →
+// isLegalMove → resolveRedirect + getPageLinks, then the win check) used to
+// queue FIFO behind background work: cacheDestination's aliases + hop1 + 30
+// hop2 backlink fetches per game start, computeDistance's live verification
+// (up to 20 getPageLinks per navigate), marathon candidate warming, the daily
+// warm. Oct 18 prod: 1.45% of /action took >3s (p99 10s, max 33s), hourly
+// slow-request counts tracked 429 counts at r=0.95, and one
+// cacheDestination('BBC') took 44s. Under 429s a click check loses time two
+// ways: backoff after its own 429s (Retry-After, clamped to 5s, up to twice
+// per call) and the wait for a slot behind the background fetches queued
+// ahead of it. Priority removes only the wait. The backoff and the 8s request
+// timeout are untouched and can reach that p99/max by themselves, so expect
+// the tail to shrink by the wait's share, not vanish. Stubbed, two 429s with
+// Retry-After: 1 behind 30 queued fetches: 3.0s of queue wait before, 0.03s
+// after, the 2s of backoff the same (scripts/testWikiPriority.js 1c).
+// Wikipedia's limit is the constraint, so the gates stay as they are; only
+// the order changes.
+//
+// Priority is an AsyncLocalStorage context { high }: withWikiPriority(fn) runs
+// fn's requests high, retries and later pages included (they read the same
+// store); no store means background. Wrap the awaited call, not the handler
+// around it: the store follows every promise and timer created inside the
+// span, so fire-and-forget work launched in it would run high too.
+// inWikiBackground drops the store for work that has to sit inside a span. It
+// uses run(undefined), not exit(): on Node 22 exit() works by disabling the
+// storage, coalesceWiki's own run() re-enables it, and from then on the rest
+// of the callback sees the caller's high store again. In a background
+// Promise.all, only the first fetch stayed low.
+const wikiPriority = new AsyncLocalStorage();
+function withWikiPriority(fn) { return wikiPriority.run({ high: true }, fn); }
+function inWikiBackground(fn) { return wikiPriority.run(undefined, fn); }
+
+// One arrival-ordered list. Each waiter holds the context object it was queued
+// under, live, so coalesceWiki can promote it while it waits. The pump starts
+// the oldest high waiter, else the oldest waiter: FIFO within each class.
+// Starvation guard: a high start that jumps a waiting low counts as a skip,
+// and after WIKI_MAX_LOW_SKIPS in a row the oldest low goes next, so
+// background work keeps at least one start in five however much player
+// traffic queues. (Player requests are sparse today, a few per click, so the
+// guard rarely fires.)
+const WIKI_MAX_LOW_SKIPS = 4;
+let wikiLowSkips = 0;
+let wikiPumpImmediate = false;
+const wikiWaiters = []; // { ctx, start }
 function acquireWikiSlot() {
-  return new Promise(resolve => { wikiWaiters.push(resolve); pumpWikiQueue(); });
+  const ctx = wikiPriority.getStore();
+  return new Promise(start => { wikiWaiters.push({ ctx, start }); scheduleWikiPump(); });
+}
+// Acquire and release don't pump inline. They schedule one pump for after the
+// current burst of promise continuations, so choosing who starts next sees
+// everything that burst queued. A finished request is usually one step of a
+// chain (the click check's resolveRedirect → getPageLinks pages → the win
+// check), and the next step is queued by continuations that run just after
+// the slot is released. An inline pump gave that slot to the oldest
+// background waiter before the next step existed, so the step waited for
+// another slot to free: about a quarter of a response time per step once
+// slow responses make the concurrency cap bind. Against a stubbed Wikipedia
+// at 150-1500ms per response under steady background load, a 3-step click
+// check averaged 3.2s inline vs 2.7s deferred (2.5s floor). setImmediate runs
+// after those continuations; the gates are unchanged. Guarded by
+// scripts/testWikiPriority.js (1b).
+function scheduleWikiPump() {
+  if (wikiPumpImmediate) return;
+  wikiPumpImmediate = true;
+  setImmediate(() => { wikiPumpImmediate = false; pumpWikiQueue(); });
+}
+function nextWikiWaiter() {
+  const hi = wikiWaiters.findIndex(w => w.ctx?.high);
+  if (hi > 0 && wikiLowSkips < WIKI_MAX_LOW_SKIPS) { wikiLowSkips++; return hi; }
+  if (hi !== 0) wikiLowSkips = 0; // the oldest waiter is low, and it starts now
+  return 0;
 }
 function pumpWikiQueue() {
   if (!wikiWaiters.length || wikiInFlight >= WIKI_MAX_CONCURRENT) return;
@@ -1865,12 +1951,12 @@ function pumpWikiQueue() {
   }
   wikiLastStart = Date.now();
   wikiInFlight++;
-  wikiWaiters.shift()();
+  wikiWaiters.splice(nextWikiWaiter(), 1)[0].start();
   if (wikiWaiters.length) pumpWikiQueue(); // let the interval gate the next one
 }
 function releaseWikiSlot() {
   wikiInFlight--;
-  pumpWikiQueue();
+  scheduleWikiPump();
 }
 
 function wikiAPIOnce(params, lang = DEFAULT_LANG) {
@@ -1880,6 +1966,17 @@ function wikiAPIOnce(params, lang = DEFAULT_LANG) {
     const reqUrl = `https://${host}/w/api.php?${qs}`;
     const req = https.get(reqUrl, { headers: { 'User-Agent': WIKI_USER_AGENT } }, (res) => {
       let data = '';
+      // A response cut off mid-body by a clean FIN (a short Content-Length
+      // body, or a chunked one missing its last chunk) fires neither 'end' nor
+      // a request 'error', and the timeout below goes with the socket. Node
+      // destroys res as aborted but emits 'error' only if res has a listener,
+      // so without these two the Promise never settled: its slot never came
+      // back (four of those and every Wikipedia call waits forever) and its
+      // coalesceWiki entry stayed, hanging every later caller of that key,
+      // e.g. each click check from that article. Reproduced on Node 22 against
+      // a local socket; guarded by scripts/testWikiApi.js.
+      res.on('error', reject);
+      res.on('close', () => { if (!res.complete) reject(new Error('wiki response aborted')); });
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
         // Rate-limit / upstream error → Wikipedia returns HTML, not JSON. Let
@@ -2131,7 +2228,7 @@ async function getRedirectsTo(title, lang = DEFAULT_LANG) {
   });
 }
 
-async function computeDistance(currentArticle, destination, destData, lang = DEFAULT_LANG) {
+async function computeDistance(currentArticle, destination, destData, lang = DEFAULT_LANG, highFetches = null) {
   const currentNorm = normalizeArticle(currentArticle);
   const destNorm = normalizeArticle(destination);
 
@@ -2186,13 +2283,26 @@ async function computeDistance(currentArticle, destination, destData, lang = DEF
     }
   }
 
-  // Fetch up to 20 uncached in parallel batches
+  // Fetch up to 20 uncached in parallel batches, as background work unless the
+  // caller hands over a budget ({ left: n }, shared across its calls) that
+  // still has room. Only the marathon pick does: the player waits on it with
+  // the round clock running, and when no hop set settles a candidate these
+  // fetches are its critical path. Stubbed, 12 outlinks behind 30 queued
+  // fetches: 4.6s as background, 1.8s inside the budget
+  // (scripts/testWikiPriority.js 1d). The budget bounds what one pick puts in
+  // the high class, where each batch of 10 sits FIFO ahead of other players'
+  // click checks: the pick scans every warmed candidate until a 2-hop, and
+  // each one left unsettled fetches up to 20 more outlinks here. Past the
+  // budget the batches run as background, like every fire-and-forget caller.
   const toFetch = uncached.slice(0, 20);
   for (let i = 0; i < toFetch.length; i += 10) {
     const batch = toFetch.slice(i, i + 10);
-    const results = await Promise.all(
+    const fetchBatch = () => Promise.all(
       batch.map(article => getPageLinks(article, lang).catch(() => new Set()))
     );
+    const inBudget = !!highFetches && highFetches.left > 0;
+    if (inBudget) highFetches.left -= batch.length;
+    const results = await (inBudget ? fetchBatch() : inWikiBackground(fetchBatch));
     for (const middleLinks of results) {
       for (const link of middleLinks) {
         if (destData.hop1.has(link)) return 3;
@@ -2616,7 +2726,11 @@ async function pickMarathonTarget(room, rp, currentArticle) {
   // Previous version capped the scan at 4, which could miss closer 2-hops
   // sitting later in the candidates Map and skew picks toward higher hops.
   // computeDistance hits the in-process cache after the warm pass, so the
-  // full scan stays sub-millisecond per call.
+  // full scan stays sub-millisecond per call, unless no hop set settles a
+  // candidate and computeDistance falls back to live verification. That runs
+  // at the pick's player priority for one candidate's worth of fetches (it
+  // fetches at most 20 per call) and as background past that.
+  const highFetches = { left: 20 };
   const scan = async () => {
     const out = [];
     for (const [key, entry] of room.marathon.candidates) {
@@ -2624,7 +2738,7 @@ async function pickMarathonTarget(room, rp, currentArticle) {
       if (!entry.data) continue;
       if (key === currentNorm) continue;
 
-      const hops = await computeDistance(currentArticle, entry.title, entry.data, lang);
+      const hops = await computeDistance(currentArticle, entry.title, entry.data, lang, highFetches);
       if (hops < 2) continue; // 1-hop filtered per design: forces strategy
 
       out.push({ key, entry, hops });
@@ -2824,16 +2938,20 @@ async function startGameForRoom(room, roomCode) {
     const _pair = room.pair;
     // Resolve redirects to canonical titles, keep originals for fallback matching.
     // Pool pairs are already canonical — skip the network roundtrip.
+    // game_start waits on this and on the backlink guardrail below (the Start
+    // button spins, with a 15s client watchdog), so both run at player
+    // priority. The cacheDestination warm launched after game_start stays
+    // background.
     const origDest = room.pair.destination;
     if (!room.pair.fromPool) {
       // Await into temps, then re-check identity before assigning. (A bare
       // `room.pair.x = await …` would resolve the LHS object BEFORE the await and
       // silently write to the orphaned old pair; the crash then lands on the next
       // bare room.pair read. Guarding here keeps room.pair reads/writes honest.)
-      const _o = await resolveRedirect(room.pair.origin, lang);
+      const _o = await withWikiPriority(() => resolveRedirect(room.pair.origin, lang));
       if (room.pair !== _pair) return;
       room.pair.origin = _o;
-      const _d = await resolveRedirect(room.pair.destination, lang);
+      const _d = await withWikiPriority(() => resolveRedirect(room.pair.destination, lang));
       if (room.pair !== _pair) return;
       room.pair.destination = _d;
     }
@@ -2850,7 +2968,7 @@ async function startGameForRoom(room, roomCode) {
       try {
         // countBacklinks resolves redirects + returns null on fetch failure so
         // a transient 429 can't get a popular destination wrongly rejected.
-        const backlinkCount = await countBacklinks(room.pair.destination, MIN_BACKLINKS, lang);
+        const backlinkCount = await withWikiPriority(() => countBacklinks(room.pair.destination, MIN_BACKLINKS, lang));
         if (room.pair !== _pair) return; // pair reset during the backlink await → abort
         if (backlinkCount !== null && backlinkCount < MIN_BACKLINKS) {
           const dest = room.pair.destination;
@@ -3395,8 +3513,12 @@ async function handleActionInner(playerId, msg, req = null, arrivedAt = Date.now
       // Core anti-cheat: the move is only legal if `article` is actually linked
       // from the page the player is on. Without this the path (and the Daily
       // leaderboard built from it) is forgeable via direct navigate POSTs.
+      // The reply waits on this check, so it runs at player priority, like the
+      // marathon-hit and win-check lookups below. Wikipedia work this handler
+      // launches without awaiting (distance, prefetch) starts outside those
+      // spans and stays background.
       const fromArticle = rp.path[rp.path.length - 1];
-      if (fromArticle && !(await isLegalMove(fromArticle, article, room.lang || DEFAULT_LANG))) {
+      if (fromArticle && !(await withWikiPriority(() => isLegalMove(fromArticle, article, room.lang || DEFAULT_LANG)))) {
         // Log every would-be rejection (so enforcement can be monitored, and
         // shadow mode observed) — but only actually block when enforcement is on.
         logEvent('navigate_rejected', {
@@ -3456,8 +3578,10 @@ async function handleActionInner(playerId, msg, req = null, arrivedAt = Date.now
         // hit, pickMarathonTarget needs them to compute distance — without
         // this prefetch the player waits on a Wikipedia roundtrip BETWEEN
         // every target reveal, which is the biggest source of marathon lag.
+        // (Background priority: if the pick or the next click check needs the
+        // set while this is still queued, joining it promotes it.)
         getPageLinks(article, mLang).catch(() => {});
-        await handleMarathonNavigate(room, rp, playerId, article, mLang);
+        await withWikiPriority(() => handleMarathonNavigate(room, rp, playerId, article, mLang));
         return { ok: true };
       }
 
@@ -3475,7 +3599,7 @@ async function handleActionInner(playerId, msg, req = null, arrivedAt = Date.now
       const progressedBefore = won || rp.visited.length > visitedBefore;
       if (!progressedBefore) {
         // Try resolving the article in case it's a redirect to the destination
-        const resolved = await resolveRedirect(article, roomLang);
+        const resolved = await withWikiPriority(() => resolveRedirect(article, roomLang));
         if (normalizeArticle(resolved) !== normalizeArticle(article)) {
           won = checkWin(room, rp, resolved);
         }
@@ -3656,7 +3780,13 @@ async function handleActionInner(playerId, msg, req = null, arrivedAt = Date.now
         return { ok: true };
       }
       const currentArticle = rp.path[rp.path.length - 1] || room.marathon.startArticle;
-      const pick = await pickMarathonTarget(room, rp, currentArticle);
+      // Player priority: they wait on this pick with the round clock running.
+      // It first needs getPageLinks(currentArticle), often still in flight
+      // from navigate's prefetch, which this promotes. When no hop set settles
+      // a candidate, computeDistance's live verification is on the critical
+      // path too; it keeps this priority within the pick's budget (see
+      // pickMarathonTarget).
+      const pick = await withWikiPriority(() => pickMarathonTarget(room, rp, currentArticle));
       if (!pick) {
         sendSSE(playerId, { type: 'marathon_next_target', target: null, reason: 'warming' });
         return { ok: true };
@@ -3715,7 +3845,7 @@ async function handleActionInner(playerId, msg, req = null, arrivedAt = Date.now
       rp.marathonState.currentTarget = null;
 
       const currentArticle = rp.path[rp.path.length - 1] || room.marathon.startArticle;
-      const pick = await pickMarathonTarget(room, rp, currentArticle);
+      const pick = await withWikiPriority(() => pickMarathonTarget(room, rp, currentArticle));
       if (!pick) {
         sendSSE(playerId, {
           type: 'marathon_next_target',
@@ -4268,7 +4398,8 @@ const server = http.createServer(async (req, res) => {
   // instead of only finding out after pressing Start. Backed by the same
   // countBacklinks the runtime guardrail uses (redirect-resolving,
   // 7-day cached, fail-open). Outbound load is bounded by the global request
-  // limiter; results are cached so repeated checks are cheap.
+  // limiter; results are cached so repeated checks are cheap. Player priority:
+  // someone is typing into the form and waiting on the warning.
   if (parsed.pathname === '/validate-dest' && req.method === 'GET') {
     const title = parsed.query.title;
     const lang = normalizeLang(parsed.query.lang);
@@ -4278,7 +4409,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     const MIN = 15;
-    const count = await countBacklinks(title, MIN, lang);
+    const count = await withWikiPriority(() => countBacklinks(title, MIN, lang));
     // null = couldn't determine → not sparse (fail open; never block on our hiccup).
     const sparse = count !== null && count < MIN;
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
