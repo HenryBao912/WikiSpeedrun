@@ -4285,6 +4285,15 @@ function cors(res) {
 
 // ─── HTTP Server ───
 const server = http.createServer(async (req, res) => {
+  // www.wikispeedrun.io → the apex, same path and query. One canonical host for
+  // Google and for shared links; the www domain exists only to land here.
+  // Railway passes the visitor's Host header through unchanged.
+  if ((req.headers.host || '').toLowerCase().split(':')[0] === 'www.wikispeedrun.io') {
+    res.writeHead(301, { Location: 'https://wikispeedrun.io' + (req.url.startsWith('/') ? req.url : '/') });
+    res.end();
+    return;
+  }
+
   const parsed = url.parse(req.url, true);
   cors(res);
 
@@ -4463,8 +4472,11 @@ const server = http.createServer(async (req, res) => {
 
   // App document routes: / plus the per-mode SEO pages (see PAGE_ROUTES).
   // Same app, per-route <title>/description/canonical baked in at boot.
+  // HEAD gets the same status and headers as GET (Node drops the body itself);
+  // uptime monitors and link checkers send HEAD, and it used to fall through
+  // to the 404.
   const pageVariant = pageVariants.get(parsed.pathname === '/index.html' ? '/' : parsed.pathname);
-  if (pageVariant && req.method === 'GET') {
+  if (pageVariant && (req.method === 'GET' || req.method === 'HEAD')) {
     // Honor If-None-Match: send 304 instead of re-shipping the body when
     // the client has the same version cached. Saves ~330KB raw / ~65KB br
     // on every revisit within the cache window.
