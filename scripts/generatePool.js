@@ -7,22 +7,38 @@
 // Usage:
 //   node scripts/generatePool.js            # full pool → data/puzzlePool.en.json
 //   node scripts/generatePool.js --fast     # small run for local sanity
+//
+// The generator picks its own articles. It used to call getRandomPair /
+// getRandomTriple, which read the committed pool first, so a "refresh" only
+// re-validated and reshuffled the entries it already had (every pair in the
+// Oct 2026 pool was already in the April one). Worse, the runtime's inclusive
+// range match let a request for one bucket take the next bucket's entries, and
+// the top-viewed list fell back to famous articles when a range had few hits,
+// so labels drifted: only 12 of the 47 "easy" destinations really had 500K+
+// monthly views, and "hard" held China and Germany. Every title here is now
+// measured (two 30-day windows of real page views) before it gets a label.
 
 const fs = require('fs');
 const path = require('path');
+const https = require('https');
 const {
-  getRandomPair,
-  getRandomTriple,
-  getGoodRandomArticles,
+  getTopViewedArticles,
+  validateArticles,
+  isBadTitle,
+  resolveRedirect,
+  getPageLinks,
   cacheDestination,
   computeDistance,
   normalizeArticle,
+  HARDCODED_DAILY_BLACKLIST,
+  WIKI_HOSTS,
 } = require('..' + path.sep + 'server.js');
 
 // ─── Config ───
 const args = process.argv.slice(2);
 const FAST = args.includes('--fast');
 const LANG = 'en';
+const UA = 'WikiSpeedrun/1.0 (https://wikispeedrun.io; mailto:hello@wikispeedrun.io)';
 
 // Difficulty buckets — tuned to the client's slider. Each bucket picks pairs
 // where both articles have pageviews-per-month in the given range.
@@ -35,6 +51,12 @@ const BUCKETS = [
 
 const PAIRS_PER_BUCKET   = FAST ? 3 : 50;
 const TRIPLES_PER_BUCKET = FAST ? 2 : 25;
+// The daily draws only on easy pairs with a 2-word destination at least 2 hops
+// away, about 60% of the bucket, and must not repeat a destination for weeks;
+// 50 easy pairs gave it 32 candidates and a 32-day cycle. Easy pairs are the
+// cheapest to find (the top list), so the bucket is larger.
+const EASY_PAIRS = FAST ? 3 : 80;
+const pairsWanted = bucket => bucket.name === 'easy' ? EASY_PAIRS : PAIRS_PER_BUCKET;
 // How hard to try for each slot before giving up. Unsolvable pairs don't get
 // written — they'd be a bad game experience.
 const MAX_ATTEMPTS_PER_SLOT = FAST ? 2 : 5;
@@ -53,10 +75,23 @@ const sparseRejections = new Map(); // destination -> backlinks count
 
 // Smallest pool worth writing, as a share of the per-bucket targets summed.
 // A run starved by Wikipedia 429s (or with no network at all) still finishes,
-// just with a thin or empty pool. Recent full runs land near 150 pairs and 72
-// triples (easy and medium fill; expert gets ~10 of 50), so half is a floor
-// for broken runs, not a quality bar; the refresh PR shows the real counts.
+// just with a thin or empty pool. Half is a floor for broken runs, not a
+// quality bar; the refresh PR shows the real counts.
 const MIN_POOL_SHARE = 0.5;
+
+// Content the pool must not carry in any role: an origin or a `?` hub is as
+// visible as a destination. HARDCODED_DAILY_BLACKLIST only covered daily
+// destinations, so Sexual_intercourse → Australia was a curated daily and
+// Hentai a `?` word.
+const DENY_WORDS = /\b(sex|sexual|sexuality|intercourse|penis|vagina|genitals?|hentai|porn|pornography|pornographic|erotic|erotica|nude|nudity|masturbation|orgasm|fetish|bdsm|incest|suicide|self-harm|rape|xnxx|xvideos|pornhub|xhamster|onlyfans)\b/i;
+function isDeniedTitle(title) {
+  const spaced = title.replace(/_/g, ' ');
+  return HARDCODED_DAILY_BLACKLIST.has(title) || DENY_WORDS.test(spaced)
+    // "Neatsville, Kentucky" had 2.2M "human" views in a month: a known
+    // pageview anomaly. Comma titles are place disambiguators and the like,
+    // and the anomalies cluster there; nothing a player misses.
+    || spaced.includes(',');
+}
 
 // Distinguish "API returned no backlinks" from "API call failed silently".
 // cacheDestination uses getBacklinks(2000) which returns an empty Set on
@@ -98,10 +133,28 @@ if (!fs.existsSync(OUT_DIR)) fs.mkdirSync(OUT_DIR, { recursive: true });
 
 // ─── Helpers ───
 
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+async function mapLimit(items, limit, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) { const i = next++; results[i] = await fn(items[i], i); }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, worker));
+  return results;
+}
+
 // Why this pool shouldn't replace the committed one; empty = fine to write.
 function poolProblems(pool) {
   const problems = [];
-  const minPairs = Math.ceil(PAIRS_PER_BUCKET * BUCKETS.length * MIN_POOL_SHARE);
+  const minPairs = Math.ceil(BUCKETS.reduce((n, b) => n + pairsWanted(b), 0) * MIN_POOL_SHARE);
   const minTriples = Math.ceil(TRIPLES_PER_BUCKET * BUCKETS.length * MIN_POOL_SHARE);
   if (pool.pairs.length < minPairs) problems.push(`${pool.pairs.length} pairs (need ${minPairs})`);
   if (pool.triples.length < minTriples) problems.push(`${pool.triples.length} triples (need ${minTriples})`);
@@ -139,12 +192,126 @@ function logProgress(lang, kind, bucket, have, want) {
   if (have >= want) process.stdout.write('\n');
 }
 
+// ─── Candidate articles, measured ───
+
+// Real page views (all access, human agents) for a title over [start, end],
+// YYYYMMDD. The REST pageviews host is outside server.js's action-API queue.
+function viewsBetween(title, start, end, lang) {
+  const url = `https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/${lang}.wikipedia/all-access/user/${encodeURIComponent(title)}/daily/${start}/${end}`;
+  return new Promise(resolve => {
+    const req = https.get(url, { headers: { 'User-Agent': UA } }, res => {
+      let data = '';
+      res.on('data', c => data += c);
+      res.on('end', () => {
+        if (res.statusCode === 404) return resolve(0); // no views recorded at all
+        try { resolve((JSON.parse(data).items || []).reduce((s, d) => s + (d.views || 0), 0)); }
+        catch (_) { resolve(null); }
+      });
+    });
+    req.on('error', () => resolve(null));
+    req.setTimeout(10000, () => req.destroy());
+  });
+}
+const ymd = d => d.toISOString().slice(0, 10).replace(/-/g, '');
+const WINDOWS = (() => {
+  const end = new Date(); end.setUTCDate(end.getUTCDate() - 1); // yesterday: today is partial
+  const mid = new Date(end); mid.setUTCDate(mid.getUTCDate() - 30);
+  const start = new Date(mid); start.setUTCDate(start.getUTCDate() - 30);
+  const dayAfter = d => { const x = new Date(d); x.setUTCDate(x.getUTCDate() + 1); return x; };
+  return { recent: [ymd(dayAfter(mid)), ymd(end)], prior: [ymd(dayAfter(start)), ymd(mid)] };
+})();
+
+// Two windows: the last 30 days and the 30 before. The recent one places the
+// title in a bucket; the prior one must reach half the bucket floor, so a
+// one-day news spike (the April pool had NBA_play-in_tournament and Nynetjer as
+// "easy"; by autumn they had 1-2K views a month) fails, and a steady article
+// a little below the floor last month still passes.
+async function measure(title, lang) {
+  const [recent, prior] = await Promise.all([
+    viewsBetween(title, WINDOWS.recent[0], WINDOWS.recent[1], lang),
+    viewsBetween(title, WINDOWS.prior[0], WINDOWS.prior[1], lang),
+  ]);
+  if (recent === null || prior === null) return null;
+  return { recent, prior };
+}
+function inBucket(v, bucket) {
+  const [min, max] = bucket.viewRange;
+  return v.recent >= min && v.recent <= max && v.prior >= min / 2;
+}
+
+// Per-bucket queues of measured, canonical, validated titles, refilled from a
+// sampler as they drain. Titles are never offered twice in a run.
+const seenTitles = new Set();
+const queues = new Map(BUCKETS.map(b => [b.name, []]));
+const views = new Map(); // title -> recent views
+
+// Easy and medium come from the day's top-1000 (≥ ~230K/month at the bottom);
+// hard and expert from the outgoing links of random popular articles, which
+// land mostly in the 5K-500K range and are well connected by construction.
+// The old random-article sampler found a 5K-50K article in roughly one of
+// fifty draws, and the top list had no fallback that wasn't famous.
+let topCache = null;
+async function sampleTitles(bucket, lang) {
+  if (!topCache) {
+    topCache = (await getTopViewedArticles(lang)).map(a => a.title);
+    shuffle(topCache);
+  }
+  if (bucket.viewRange[0] >= 50000) {
+    // The ×30 proxy is only a pre-filter; measure() decides.
+    const [min, max] = bucket.viewRange;
+    const top = await getTopViewedArticles(lang);
+    return shuffle(top.filter(a => a.views >= min / 2 && a.views <= max * 2).map(a => a.title)).slice(0, 40);
+  }
+  const hub = topCache[Math.floor(Math.random() * topCache.length)];
+  if (!hub) return [];
+  const links = [...await getPageLinks(hub, lang)].map(t => t.replace(/ /g, '_'));
+  return shuffle(links).slice(0, 40);
+}
+
+async function refill(bucket, lang) {
+  for (let round = 0; round < 6 && queues.get(bucket.name).length < 4; round++) {
+    let titles;
+    try { titles = await sampleTitles(bucket, lang); } catch (e) { console.error('\n  sample failed:', e.message); continue; }
+    titles = titles.filter(t => !seenTitles.has(t) && !isBadTitle(t) && !isDeniedTitle(t));
+    titles.forEach(t => seenTitles.add(t));
+    if (!titles.length) continue;
+    // Real content pages only (no disambiguation, no stubs, few biographies).
+    let valid;
+    try { valid = await validateArticles(titles.slice(0, 20), lang); } catch (_) { continue; }
+    valid = valid.filter(t => !isBadTitle(t) && !isDeniedTitle(t)); // the API's canonical spelling may differ
+    const measured = await mapLimit(valid, 4, async (t) => {
+      const canon = await resolveRedirect(t, lang);
+      if (canon !== t && (seenTitles.has(canon) || isBadTitle(canon) || isDeniedTitle(canon))) return null;
+      seenTitles.add(canon);
+      const v = await measure(canon, lang);
+      return v && inBucket(v, bucket) ? { title: canon, recent: v.recent } : null;
+    });
+    for (const m of measured) {
+      if (!m) continue;
+      views.set(m.title, m.recent);
+      queues.get(bucket.name).push(m.title);
+    }
+  }
+}
+
+// Take n distinct measured titles for a bucket (null if the samplers ran dry).
+async function takeTitles(bucket, n, lang) {
+  const q = queues.get(bucket.name);
+  if (q.length < n) await refill(bucket, lang);
+  if (q.length < n) return null;
+  return q.splice(0, n);
+}
+
+// ─── Puzzle building ───
+
 async function generatePairForBucket(lang, bucket) {
   for (let attempt = 0; attempt < MAX_ATTEMPTS_PER_SLOT; attempt++) {
     try {
-      const pair = await getRandomPair(bucket.viewRange, lang);
+      const picked = await takeTitles(bucket, 2, lang);
+      if (!picked) return null;
+      const [origin, destination] = picked;
       // Validate solvability: compute distance with live hop1/hop2 data.
-      const destData = await cacheDestination(pair.destination, lang);
+      const destData = await cacheDestination(destination, lang);
       // Backlink minimum: a destination with too few inbound links is
       // effectively unwinnable. But hop1.size === 0 from cacheDestination
       // can mean EITHER "truly isolated" OR "API call failed silently" —
@@ -152,9 +319,9 @@ async function generatePairForBucket(lang, bucket) {
       // (likely-flaky) results just skip this pair without polluting the
       // rejection log.
       if (!destData?.hop1 || destData.hop1.size < MIN_DEST_BACKLINKS) {
-        const verdict = await isDestinationActuallySparse(pair.destination, lang);
+        const verdict = await isDestinationActuallySparse(destination, lang);
         if (verdict.sparse === true) {
-          sparseRejections.set(pair.destination, verdict.count);
+          sparseRejections.set(destination, verdict.count);
           continue;
         } else if (verdict.sparse === null) {
           // Inconclusive — try a fresh pair, don't blame the destination.
@@ -163,19 +330,20 @@ async function generatePairForBucket(lang, bucket) {
         // verdict.sparse === false → destination is actually healthy, fall
         // through into normal pair-solvability flow below.
       }
-      const dist = await computeDistance(pair.origin, pair.destination, destData, lang);
+      const dist = await computeDistance(origin, destination, destData, lang);
       if (dist !== null && dist <= SOLVABLE_MAX_DIST) {
         return {
-          origin: pair.origin,
-          destination: pair.destination,
+          origin,
+          destination,
           viewRange: bucket.viewRange,
           difficulty: bucket.name,
           dist,
+          views: { origin: views.get(origin), destination: views.get(destination) },
         };
       }
     } catch (e) {
       // Rate-limited or transient. Back off briefly and retry.
-      await new Promise(r => setTimeout(r, 500 + attempt * 500));
+      await sleep(500 + attempt * 500);
     }
   }
   return null;
@@ -184,11 +352,11 @@ async function generatePairForBucket(lang, bucket) {
 async function generateTripleForBucket(lang, bucket) {
   for (let attempt = 0; attempt < MAX_ATTEMPTS_PER_SLOT; attempt++) {
     try {
-      const triple = await getRandomTriple(bucket.viewRange, lang);
-      if (!triple?.targets || triple.targets.length !== 3) continue;
+      const picked = await takeTitles(bucket, 3, lang);
+      if (!picked) return null;
       // Solvability check for tri mode: start → t1 and start → t2 must both
       // reach within SOLVABLE_MAX_DIST. We don't enforce full 3-way.
-      const [start, t1, t2] = triple.targets;
+      const [start, t1, t2] = picked;
       const dest1Data = await cacheDestination(t1, lang);
       // Backlink minimum on both downstream targets (start is given, players
       // navigate TO t1 and t2). A sparse target makes the round unwinnable.
@@ -210,13 +378,14 @@ async function generateTripleForBucket(lang, bucket) {
       const d2 = await computeDistance(start, t2, dest2Data, lang);
       if (d2 === null || d2 > SOLVABLE_MAX_DIST) continue;
       return {
-        targets: triple.targets,
+        targets: picked,
         viewRange: bucket.viewRange,
         difficulty: bucket.name,
         distances: [d1, d2],
+        views: picked.map(t => views.get(t)),
       };
     } catch (e) {
-      await new Promise(r => setTimeout(r, 500 + attempt * 500));
+      await sleep(500 + attempt * 500);
     }
   }
   return null;
@@ -224,6 +393,7 @@ async function generateTripleForBucket(lang, bucket) {
 
 async function generateForLang(lang) {
   console.log(`\n═══ Generating pool for [${lang}] ═══`);
+  console.log(`  views measured over ${WINDOWS.recent[0]}–${WINDOWS.recent[1]} (and ${WINDOWS.prior[0]}–${WINDOWS.prior[1]} before)`);
   const startTime = Date.now();
   const pool = {
     generatedAt: new Date().toISOString(),
@@ -242,8 +412,9 @@ async function generateForLang(lang) {
     // Pairs
     let got = 0;
     let slotAttempts = 0;
-    const maxSlotAttempts = PAIRS_PER_BUCKET * 3; // prevent runaway on thin buckets
-    while (got < PAIRS_PER_BUCKET && slotAttempts < maxSlotAttempts) {
+    const want = pairsWanted(bucket);
+    const maxSlotAttempts = want * 3; // prevent runaway on thin buckets
+    while (got < want && slotAttempts < maxSlotAttempts) {
       slotAttempts++;
       const entry = await generatePairForBucket(lang, bucket);
       if (!entry) continue;
@@ -252,9 +423,9 @@ async function generateForLang(lang) {
       seenPairs.add(key);
       pool.pairs.push(entry);
       got++;
-      logProgress(lang, 'pairs  ', bucket.name, got, PAIRS_PER_BUCKET);
+      logProgress(lang, 'pairs  ', bucket.name, got, want);
     }
-    if (got < PAIRS_PER_BUCKET) process.stdout.write('\n');
+    if (got < want) process.stdout.write('\n');
 
     // Triples
     got = 0;
@@ -303,6 +474,7 @@ async function generateForLang(lang) {
 // ─── Main ───
 (async () => {
   console.log(FAST ? '⚡ Fast mode (small pool, for sanity checks)' : '🏗  Full pool generation');
+  if (!WIKI_HOSTS[LANG]) throw new Error(`no Wikipedia host for ${LANG}`);
   try {
     await generateForLang(LANG);
     console.log('\nDone. Commit data/puzzlePool.en.json so the deploy ships warm.\n');
