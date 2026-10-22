@@ -1514,28 +1514,46 @@ const rejectedDailyDestinations = new Set();
 //   2. destination unique (origin may repeat)      (preserves variety where it matters most)
 //   3. origin unique (destination may repeat)
 //   4. full curated pool                            (last resort — repeats expected)
-function pickDailyPairForDate(date, usedOrigins, usedDestinations) {
+// Dailies never reuse a destination (or an origin, in that role) from the last
+// DAILY_NO_REPEAT_DAYS dailies, capped so a small curated set still leaves a
+// choice. The old rule was "never reuse, ever", which the ~30 eligible pairs
+// exhausted in a month: from then on the fallback ladder served the same 30
+// destinations over and over (163 dailies, 30 distinct destinations, one pair
+// five times). A monthly pool refresh replaces the candidates anyway.
+const DAILY_NO_REPEAT_DAYS = 60;
+
+function pickDailyPairForDate(date, recent) {
   const ymd = utcDateStr(date);
   const seed = parseInt(crypto.createHash('sha256').update(ymd).digest('hex').slice(0, 8), 16);
   const fullPool = puzzlePools.en?.pairs || [];
   // Daily curation rules:
-  //   - Destination popularity: >=100K monthly views (very-popular bucket
-  //     only — household-name destinations like Facebook, ChatGPT, Madonna)
+  //   - Destination popularity: a household name. Pools built by the current
+  //     generator carry each title's measured monthly views (`views`), so
+  //     require >= 500K real views; older pools only have the bucket label,
+  //     and there the easy bucket stands in.
   //   - Distance: >=2 hops (no trivial 1-hop puzzles)
   //   - Destination word count: <=2 words (snappy + shareable; excludes
   //     titles like "UEFA Champions League" or "2026 in film")
-  // Note: pool buckets are discrete; 100K threshold effectively keeps only
-  // the [500K, 100M] bucket. Yields ~33 pairs (>1 month unique).
+  //   - Origin and destination both clear of the content denylist.
   const wordCount = (s) => (s || '').split('_').length;
   const isBadDest = (dest) => HARDCODED_DAILY_BLACKLIST.has(dest) || rejectedDailyDestinations.has(dest);
+  const popular = (p) => p.views?.destination != null ? p.views.destination >= 500000 : p.viewRange?.[0] >= 100000;
   const curated = fullPool.filter(p =>
-    p.viewRange?.[0] >= 100000 &&
+    popular(p) &&
     p.dist >= 2 &&
     wordCount(p.destination) <= 2 &&
-    !isBadDest(p.destination) // permanent + runtime blacklist
+    !isBadDest(p.destination) && // permanent + runtime blacklist
+    !HARDCODED_DAILY_BLACKLIST.has(p.origin)
   );
   let pool = curated.length > 0 ? curated : fullPool;
-  if (usedOrigins && usedDestinations) {
+  if (recent) {
+    const window = Math.max(0, Math.min(DAILY_NO_REPEAT_DAYS, pool.length - 1));
+    const usedOrigins = new Set();
+    const usedDestinations = new Set();
+    for (const e of recent.slice(-window)) {
+      usedOrigins.add(e.origin);
+      usedDestinations.add(e.destination);
+    }
     const candidates = [
       pool.filter(p => !usedOrigins.has(p.origin) && !usedDestinations.has(p.destination)),
       pool.filter(p => !usedDestinations.has(p.destination)),
@@ -1568,22 +1586,19 @@ function getDailyChallenge(date = new Date()) {
   // and cache an entry per day: an unauthenticated CPU/memory DoS. There is no
   // daily for a day that hasn't started yet.
   if (targetMs > Date.parse(utcDateStr() + 'T00:00:00Z')) return null;
-  const usedOrigins = new Set();
-  const usedDestinations = new Set();
+  // Past dailies in order; the picker looks at the last DAILY_NO_REPEAT_DAYS.
+  const recent = [];
   let result = null;
   for (let cur = DAILY_LAUNCH_MS; cur <= targetMs; cur += DAY_MS) {
     const curDate = new Date(cur);
     const curYmd = utcDateStr(curDate);
     if (dailyChallengeCache.has(curYmd)) {
       const cached = dailyChallengeCache.get(curYmd);
-      if (cached) {
-        usedOrigins.add(cached.origin);
-        usedDestinations.add(cached.destination);
-      }
+      if (cached) recent.push(cached);
       if (curYmd === ymd) result = cached;
       continue;
     }
-    const pair = pickDailyPairForDate(curDate, usedOrigins, usedDestinations);
+    const pair = pickDailyPairForDate(curDate, recent);
     if (!pair) { dailyChallengeCache.set(curYmd, null); continue; }
     const dailyNumber = Math.max(1, Math.floor((cur - DAILY_LAUNCH_MS) / DAY_MS) + 1);
     const entry = {
@@ -1594,13 +1609,7 @@ function getDailyChallenge(date = new Date()) {
       parDist: pair.dist,
     };
     dailyChallengeCache.set(curYmd, entry);
-    // For PAST days, accumulate before processing the next day. For the
-    // requested day itself we don't add to the sets — they're a snapshot
-    // of what was used BEFORE today.
-    if (cur < targetMs) {
-      usedOrigins.add(pair.origin);
-      usedDestinations.add(pair.destination);
-    }
+    recent.push(entry);
     if (curYmd === ymd) result = entry;
   }
   return result;
@@ -1613,7 +1622,12 @@ function rangeMatches(entry, requested) {
   if (!entry.viewRange) return true;
   const [a, b] = entry.viewRange;
   const [c, d] = requested;
-  return a <= d && c <= b;
+  // Strict overlap: the pool's buckets share their edges (medium ends at
+  // 500K, easy starts there), and an inclusive test let a request for one
+  // bucket take entries of the next. The generator then labelled those picks
+  // with the requested bucket, which is how medium pairs became "easy" and
+  // reached the daily.
+  return a < d && c < b;
 }
 
 function pickFromPool(kind, lang, viewRange) {
@@ -2384,6 +2398,14 @@ async function cacheDestinationInner(destination, lang = DEFAULT_LANG) {
 
   // hop1: direct backlinks to destination.
   const hop1 = await getBacklinks(destination, 2000, lang);
+  // getBacklinks hands back a partial (often empty) Set when its fetch failed,
+  // and only caches a complete one. Taking that as hop1 made every article
+  // look 4+ hops away for the whole game: HUD arrows, closest-hops on the
+  // daily board, marathon tiers and scores. Fail instead; callers leave the
+  // badge off (classic) or retry the candidate (marathon).
+  if (cacheGet(backlinkCache, cacheKey(lang, destination)) === undefined) {
+    throw new Error(`backlinks unavailable for ${destination}`);
+  }
   console.log(`[cache:${lang}] hop1: ${hop1.size} backlinks to ${destination}`);
 
   // hop2: backlinks to the hop1 articles. Fetching ALL hop1 backlinks would
@@ -2432,6 +2454,13 @@ function sendSSE(playerId, data) {
 function broadcastToRoom(roomCode, msg) {
   const room = rooms.get(roomCode);
   if (!room) return;
+  // Remember the round's start and end so a player whose connection dropped
+  // across them gets them again on reconnect (see the /events rebind). The
+  // rebind used to send `connected` and nothing else: a player who missed
+  // game_over stayed on the game screen, and their next click was refused.
+  if (msg.type === 'game_start') { room.lastGameStart = msg; room.lastGameOver = null; }
+  else if (msg.type === 'game_over') room.lastGameOver = msg;
+  else if (msg.type === 'returned_to_lobby') { room.lastGameStart = null; room.lastGameOver = null; }
   for (const [pid] of room.players) {
     sendSSE(pid, msg);
   }
@@ -2543,7 +2572,9 @@ function startMarathonClock(room, roomCode, { reanchor = false, broadcast = fals
     endMarathonForRoom(room, roomCode).catch(e =>
       console.error('Marathon end error:', e.message));
   }, remaining);
-  if (broadcast) broadcastToRoom(roomCode, { type: 'marathon_clock_start', endsAt: m.endsAt });
+  // `now` lets the client measure the remaining time instead of comparing
+  // our clock with its own (a device 40s fast showed 0:00 with 40s to go).
+  if (broadcast) broadcastToRoom(roomCode, { type: 'marathon_clock_start', endsAt: m.endsAt, now: Date.now() });
 }
 
 async function startMarathonForRoom(room, roomCode) {
@@ -2646,6 +2677,7 @@ async function startMarathonForRoom(room, roomCode) {
     origin: startArticle,
     duration,
     endsAt: marathon.endsAt,
+    now: Date.now(), // so the client counts down from `duration`, not from our clock vs its own
     clockPending: !warmReady,
     lang,
   });
@@ -2692,6 +2724,7 @@ async function startMarathonForRoom(room, roomCode) {
 
 async function warmMarathonCandidates(room, candidates, lang) {
   const BATCH = 3;
+  const failed = [];
   for (let i = 0; i < candidates.length; i += BATCH) {
     // Abort if the room closed or switched modes mid-warm.
     if (!room.marathon || !room.started || room.mode !== 'marathon') return;
@@ -2703,8 +2736,30 @@ async function warmMarathonCandidates(room, candidates, lang) {
         if (entry) entry.data = data;
       } catch (e) {
         console.error('Marathon cache fail for', title, e.message);
+        failed.push(title);
       }
     }));
+  }
+  // More passes for candidates whose backlinks were unavailable (429s): the
+  // round has minutes left and the storm usually doesn't. Without them a bad
+  // first minute left the round with two or three targets to cycle.
+  let pending = failed;
+  for (let pass = 0; pass < 3 && pending.length; pass++) {
+    await new Promise(r => setTimeout(r, 5000 * (pass + 1)));
+    if (!room.marathon || !room.started || room.mode !== 'marathon') return;
+    const still = [];
+    for (const title of pending) {
+      if (!room.marathon || !room.started || room.mode !== 'marathon') return;
+      try {
+        const data = await cacheDestination(title, lang);
+        const entry = room.marathon?.candidates.get(normalizeArticle(title));
+        if (entry) entry.data = data;
+      } catch (e) {
+        console.error('Marathon cache retry fail for', title, e.message);
+        still.push(title);
+      }
+    }
+    pending = still;
   }
 }
 
@@ -2761,6 +2816,11 @@ async function pickMarathonTarget(room, rp, currentArticle) {
       warmed.every(e => usedTitles.has(normalizeArticle(e.title)) || normalizeArticle(e.title) === currentNorm);
     if (everyWarmedUsed) {
       usedTitles.clear();
+      // Keep the target the player just skipped (or hit) out of the recycled
+      // set when there is anything else to offer; with one warmed candidate a
+      // skip handed back the very same target and still charged for it.
+      const last = rp.marathonState?.events?.at(-1)?.title;
+      if (last && warmed.length > 1) usedTitles.add(normalizeArticle(last));
       sampled = await scan();
     }
   }
@@ -2905,6 +2965,11 @@ async function startGameForRoom(room, roomCode) {
   room.raceStartTime = null; // stamped as game_start goes out (classic/tri, below)
   room.winner = null;
   room.giveUpVotes.clear(); // Reset votes for new game
+  // The previous round's destination data must not score this one. play_again
+  // kept it, so the distance HUD/arrows pointed at the OLD destination until
+  // the new cache landed (6-30s under load).
+  room.destData = null;
+  room.triDestData = null;
   const viewRange = room.viewRange || null;
   const lang = room.lang || DEFAULT_LANG;
 
@@ -2956,6 +3021,23 @@ async function startGameForRoom(room, roomCode) {
       room.pair.destination = _d;
     }
     room.pair.destinationOriginal = origDest;
+    // One typed word plus a random half, or two titles that are the same page
+    // under different names ("USA" / "United States"), can resolve to a pair
+    // with no race in it. The client only compares the raw strings.
+    if (!room.pair.fromPool && normalizeArticle(room.pair.origin) === normalizeArticle(room.pair.destination)) {
+      const dest = room.pair.destination;
+      room.started = false;
+      room.manualArticles = null;
+      room.pair = null;
+      sendSSE(room.host, {
+        type: 'start_rejected',
+        reason: 'same_article',
+        destination: dest,
+        message: `"${dest.replace(/_/g, ' ')}" is both the start and the goal — pick a different goal.`,
+        daily: !!room.daily,
+      });
+      return;
+    }
     // Guardrail: reject manually-set destinations with too few backlinks.
     // Pool destinations are curated so we skip; live-generated fallbacks
     // would already be popular enough. The threshold of 15 is empirical:
@@ -3045,10 +3127,15 @@ async function startGameForRoom(room, roomCode) {
     // Cache destination backlinks async (don't block game start). Catch
     // errors so a Wikipedia hiccup doesn't produce an unhandled rejection;
     // the player just plays without an initial-distance badge, which is fine.
-    cacheDestination(room.pair.destination, lang)
+    const warmDestination = (attempt) => cacheDestination(room.pair.destination, lang)
       .then(async destData => {
+        // Same identity guard as above: a quick game and a play_again can
+        // start the next round before this resolves, and this data belongs
+        // to the round that launched it.
+        if (room.pair !== _pair) return;
         room.destData = destData;
         const dist = await computeDistance(room.pair.origin, room.pair.destination, destData, lang);
+        if (room.pair !== _pair) return;
         // Origin is path[0], so its distance belongs at index 0. Assign by
         // index, not push: this .then can resolve AFTER a fast player's first
         // navigate already wrote distances[1], and a push would then land the
@@ -3056,7 +3143,16 @@ async function startGameForRoom(room, roomCode) {
         for (const [, p] of room.players) p.distances[0] = dist;
         broadcastToRoom(roomCode, { type: 'distance_update', distances: getDistanceMap(room) });
       })
-      .catch(e => console.error('Classic distance-cache error:', e.message));
+      .catch(e => {
+        console.error('Classic distance-cache error:', e.message);
+        // cacheDestination refuses data built on a failed backlink fetch (a
+        // 429 storm); one more try a little later usually lands, and the
+        // badge then appears mid-game instead of never.
+        if (attempt < 1 && room.pair === _pair && room.started) {
+          setTimeout(() => { if (room.pair === _pair && room.started) warmDestination(attempt + 1); }, 8000);
+        }
+      });
+    warmDestination(0);
   } else {
     // Use manual articles if set, otherwise generate random.
     // Duplicate targets would make the game unwinnable (two visited slots map
@@ -3065,11 +3161,32 @@ async function startGameForRoom(room, roomCode) {
     const manualTargets = room.manualArticles?.targets;
     const manualOk = Array.isArray(manualTargets)
       && manualTargets.length === 3
+      && manualTargets.every(t => t) // set_articles keeps blank slots for the lobby preview
       && new Set(manualTargets.map(t => normalizeArticle(t))).size === 3;
     if (manualOk) {
       room.triple = { targets: manualTargets };
     } else {
       room.triple = await getRandomTriple(viewRange, lang);
+    }
+    // Resolve the targets to canonical titles, as classic does for its pair:
+    // a target that is a redirect title ("Rooster" → Chicken, or a pool title
+    // that Wikipedia has since moved, like Scrubs_season_10) could only be hit
+    // by a link spelled exactly that way, because checkWin compares titles
+    // and the player lands on the canonical page. The originals stay as
+    // aliases so a link to the old spelling still counts. Pool triples are
+    // resolved too: the pool drifts between refreshes, and redirectCache makes
+    // repeats free. Same identity guard as classic across the awaits.
+    const _triple = room.triple;
+    const originals = room.triple.targets.slice();
+    const resolved = [];
+    for (const t of originals) {
+      const r = await withWikiPriority(() => resolveRedirect(t, lang));
+      if (room.triple !== _triple) return;
+      resolved.push(r);
+    }
+    if (new Set(resolved.map(normalizeArticle)).size === 3) {
+      room.triple.targets = resolved;
+      room.triple.aliases = originals;
     }
     const startArticle = room.triple.targets[0];
     for (const [, p] of room.players) {
@@ -3186,6 +3303,13 @@ async function isLegalMove(from, target, lang = DEFAULT_LANG) {
     // voltage. resolveRedirect is cached (redirectCache), so this adds ~0ms
     // on repeat navigations.
     const fromCanonical = await resolveRedirect(from, lang);
+    // resolveRedirect returns the RAW title when its lookup failed (it only
+    // caches a real answer). If `from` is a redirect title, checking the
+    // stub's links would then reject every real click: the stub links only
+    // its target, so outLinks has one entry and the size-0 fail-open below
+    // never fires. Two days of logs had 12 of 24 rejections like that, each
+    // after an 11-31s wait inside a 429 storm. No verdict without a resolve.
+    if (cacheGet(redirectCache, cacheKey(lang, from)) === undefined) return true;
 
     // Landing page IS the target: if the player's position redirects to the
     // clicked article (they're literally reading it), allow as a no-op.
@@ -3216,9 +3340,12 @@ async function isLegalMove(from, target, lang = DEFAULT_LANG) {
     // hypothesis; this probe is the verdict. Load is negligible — it runs
     // only on would-be rejections (~400/day vs ~2.5k navigates), and real
     // cheat attempts pay one extra request to be confirmed.
+    // redirects=1 so the probe answers for the page the player is reading
+    // even if fromCanonical is still a redirect title.
     const probe = await wikiAPI({
       action: 'query',
       titles: fromCanonical.replace(/ /g, '_'),
+      redirects: '1',
       prop: 'links',
       pltitles: target.replace(/ /g, '_'),
       plnamespace: '0',
@@ -3249,12 +3376,12 @@ function checkWin(room, rp, article) {
   } else {
     // Tri mode: check if this article matches any unvisited target
     const current = normalizeArticle(article);
-    for (const t of room.triple.targets) {
-      if (normalizeArticle(t) === current && !rp.visited.includes(t)) {
-        rp.visited.push(t);
-        break;
-      }
-    }
+    const aliases = room.triple.aliases || [];
+    room.triple.targets.forEach((t, i) => {
+      if (rp.visited.includes(t)) return;
+      const names = [t, aliases[i]].filter(Boolean).map(normalizeArticle);
+      if (names.includes(current)) rp.visited.push(t);
+    });
     // Win if all 3 targets visited
     return rp.visited.length >= room.triple.targets.length;
   }
@@ -3333,6 +3460,7 @@ async function handleActionInner(playerId, msg, req = null, arrivedAt = Date.now
       const lang = normalizeLang(msg.lang);
       const player = players.get(playerId);
       if (player) {
+        if (player.roomCode) removeFromRoom(playerId, player.roomCode);
         player.name = name;
         player.roomCode = code;
       }
@@ -3359,26 +3487,7 @@ async function handleActionInner(playerId, msg, req = null, arrivedAt = Date.now
       // Leave prior room first — otherwise the player has stale state in both
       // rooms, the old host pointer dangles, and player_list broadcasts keep
       // firing for a ghost member.
-      if (player && player.roomCode && player.roomCode !== code) {
-        const oldCode = player.roomCode;
-        const oldRoom = rooms.get(oldCode);
-        if (oldRoom) {
-          oldRoom.players.delete(playerId);
-          if (oldRoom.host === playerId) {
-            const next = oldRoom.players.keys().next();
-            oldRoom.host = next.done ? null : next.value;
-          }
-          if (oldRoom.players.size === 0) {
-            rooms.delete(oldCode);
-          } else {
-            broadcastToRoom(oldCode, {
-              type: 'player_list',
-              players: [...oldRoom.players.entries()].map(([id, p]) => ({ id, name: p.name, color: p.color })),
-              host: oldRoom.host,
-            });
-          }
-        }
-      }
+      if (player && player.roomCode && player.roomCode !== code) removeFromRoom(playerId, player.roomCode);
 
       if (player) {
         player.name = name;
@@ -3440,16 +3549,25 @@ async function handleActionInner(playerId, msg, req = null, arrivedAt = Date.now
       if (!player) return { ok: false };
       const room = rooms.get(player.roomCode);
       if (!room || room.host !== playerId) return { ok: false, error: 'Only host can start' };
+      // A second start while a round is running (or still starting: the
+      // client's 15s watchdog re-enables the button during a slow
+      // countBacklinks) restarted the game under everyone: new pair, every
+      // path reset, a second game_start.
+      if (room.started) return { ok: false, error: 'Game already started' };
       // Single player or multiplayer (2+)
       if (room.singlePlayer) {
         if (room.players.size < 1) return { ok: false, error: 'Need at least 1 player' };
       } else {
         if (room.players.size < 2) return { ok: false, error: 'Need at least 2 players' };
       }
-      // Accept words from the client if provided (validated)
-      if (msg.origin && msg.destination && isValidArticle(msg.origin) && isValidArticle(msg.destination)) {
+      // Accept words from the client if provided (validated). Words the host
+      // typed but that fail validation are an error, not a silent fallback to
+      // whatever set_articles stored earlier (possibly with blank slots).
+      if (msg.origin && msg.destination) {
+        if (!isValidArticle(msg.origin) || !isValidArticle(msg.destination)) return { ok: false, error: 'Invalid article title' };
         room.manualArticles = { origin: msg.origin, destination: msg.destination };
-      } else if (Array.isArray(msg.targets) && msg.targets.length === 3 && msg.targets.every(t => isValidArticle(t))) {
+      } else if (Array.isArray(msg.targets)) {
+        if (msg.targets.length !== 3 || !msg.targets.every(t => isValidArticle(t))) return { ok: false, error: 'Invalid article title' };
         room.manualArticles = { targets: msg.targets };
       }
       startGameForRoom(room, player.roomCode);
@@ -3472,11 +3590,20 @@ async function handleActionInner(playerId, msg, req = null, arrivedAt = Date.now
           reason,
         });
         recordEvent('navigate_rejected', { playerId, roomCode: player.roomCode, meta: { article: msg.article, reason } });
-        // Tell the client its game state is stale so it can show a message
-        // and reset back to home — otherwise the user keeps clicking links
-        // that are silently dropped (the bug we saw in prod logs).
-        sendSSE(playerId, { type: 'session_lost', reason });
-        return { ok: false, error: 'session_lost' };
+        if (!room) {
+          // Tell the client its game state is stale so it can show a message
+          // and reset back to home — otherwise the user keeps clicking links
+          // that are silently dropped (the bug we saw in prod logs).
+          sendSSE(playerId, { type: 'session_lost', reason });
+          return { ok: false, error: 'session_lost' };
+        }
+        // The room is alive, the round just ended: a click that was in flight
+        // (or queued behind a slow check) when someone won, or when the
+        // marathon clock ran out. That player is on the results screen, or is
+        // about to be; session_lost here threw them to home with "Your game
+        // session expired" (13 cases in two days of logs). A plain refusal
+        // lets the client undo the optimistic move and stay where it is.
+        return { ok: false, error: 'not_started' };
       }
       const rp = room.players.get(playerId);
       if (!rp || rp.finished) {
@@ -4000,7 +4127,11 @@ async function handleActionInner(playerId, msg, req = null, arrivedAt = Date.now
         new Promise(r => setTimeout(() => r(null), COUNTRY_LOOKUP_TIMEOUT_MS)),
       ]).catch(() => null) : null;
       const player = players.get(playerId);
-      if (player) { player.name = name; player.roomCode = code; }
+      if (player) {
+        if (player.roomCode) removeFromRoom(playerId, player.roomCode);
+        player.name = name;
+        player.roomCode = code;
+      }
       const room = initRoom(code, playerId, name, 'en');
       room.singlePlayer = true;
       room.daily = true;
@@ -4028,6 +4159,7 @@ async function handleActionInner(playerId, msg, req = null, arrivedAt = Date.now
       const lang = normalizeLang(msg.lang);
       const player = players.get(playerId);
       if (player) {
+        if (player.roomCode) removeFromRoom(playerId, player.roomCode);
         player.name = name;
         player.roomCode = code;
       }
@@ -4197,6 +4329,16 @@ function handleDisconnect(playerId) {
   actionBuckets.delete(playerId);
 
   if (!roomCode) return;
+  removeFromRoom(playerId, roomCode);
+}
+
+// Take a player out of a room: on disconnect, and before they create or start
+// another one. start_single, start_daily and create_room used to just point
+// player.roomCode at the new room, so every "Play again" in single player left
+// the old room behind with its member count stuck at one, never deleted, with
+// its distance caches (thousands of titles) in memory for the life of the
+// process. join_room had this logic inline; it is shared now.
+function removeFromRoom(playerId, roomCode) {
   const room = rooms.get(roomCode);
   if (!room) return;
   room.players.delete(playerId);
@@ -4307,21 +4449,37 @@ const server = http.createServer(async (req, res) => {
   // capped at 25 entries. Cache-Control: no-store so each result-screen view
   // gets the freshest standings.
   if (parsed.pathname === '/daily/leaderboard' && req.method === 'GET') {
-    let date = (parsed.query.date && /^\d{4}-\d{2}-\d{2}$/.test(parsed.query.date))
-      ? parsed.query.date
-      : utcDateStr();
+    // The date must be a real calendar day, not just the right shape: a
+    // "2026-10-00" passes the regex and the lexical clamp below, then makes
+    // utcDateStr throw on an Invalid Date inside getLeaderboard. That left
+    // the request hanging and counted as an unhandled rejection, and 51 of
+    // them in 10s would have restarted the process (recordFatal) with every
+    // live game in it. Round-trip through Date so only real days get through.
+    let date = utcDateStr();
+    const q = parsed.query.date;
+    if (q && /^\d{4}-\d{2}-\d{2}$/.test(q)) {
+      const d = new Date(q + 'T00:00:00Z');
+      if (!isNaN(d) && utcDateStr(d) === q) date = q;
+    }
     // Clamp to [launch, today]. Fixed-width YYYY-MM-DD compares lexically, so
     // this is a safe string clamp — and it stops out-of-range dates (no board
     // exists for the future or before launch) from reaching the day-walk.
     const today = utcDateStr();
     if (date > today) date = today;
     else if (date < DAILY_LAUNCH_DATE) date = DAILY_LAUNCH_DATE;
-    const entries = getLeaderboard(date);
-    res.writeHead(200, {
-      'Content-Type': 'application/json',
-      'Cache-Control': 'no-store',
-    });
-    res.end(JSON.stringify({ date, entries, count: entries.length }));
+    try {
+      const entries = getLeaderboard(date);
+      res.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-store',
+      });
+      res.end(JSON.stringify({ date, entries, count: entries.length }));
+    } catch (e) {
+      // Never let a board lookup become an unhandled rejection: answer, log.
+      console.error('Leaderboard error:', e.message);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'leaderboard_unavailable' }));
+    }
     return;
   }
 
@@ -4703,6 +4861,22 @@ const server = http.createServer(async (req, res) => {
 
     sendSSE(playerId, { type: 'connected', playerId, csrfToken: activeCsrf, reconnectToken: activeReconnect });
 
+    // Resync a rebound player with their room: the roster (host may have
+    // changed) and the round boundary they may have missed. `resume` lets the
+    // client ignore what it already has.
+    if (existing && existing.roomCode) {
+      const room = rooms.get(existing.roomCode);
+      if (room && room.players.has(playerId)) {
+        sendSSE(playerId, {
+          type: 'player_list',
+          players: [...room.players.entries()].map(([id, p]) => ({ id, name: p.name, color: p.color })),
+          host: room.host,
+        });
+        if (room.started && room.lastGameStart) sendSSE(playerId, { ...room.lastGameStart, resume: true });
+        else if (!room.started && room.lastGameOver) sendSSE(playerId, { ...room.lastGameOver, resume: true });
+      }
+    }
+
     const keepalive = setInterval(() => {
       if (!res.writableEnded) {
         res.write(': keepalive\n\n');
@@ -4799,6 +4973,13 @@ module.exports = {
   getRandomPair,
   getRandomTriple,
   getGoodRandomArticles,
+  // The pool generator picks its own articles (getRandomPair reads the pool
+  // first, so it could never produce a new puzzle) from these.
+  getTopViewedArticles,
+  validateArticles,
+  getPageViews,
+  getPageLinks,
+  isBadTitle,
   cacheDestination,
   computeDistance,
   resolveRedirect,
