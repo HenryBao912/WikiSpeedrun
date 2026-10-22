@@ -1,27 +1,34 @@
 name: Refresh puzzle pool
 
 # Regenerate data/puzzlePool.en.json once a month so the game stays
-# topical (Wikipedia's "top viewed" shifts with current events). Writes the
-# updated pool back to this branch, which triggers a Railway redeploy.
+# topical (Wikipedia's "top viewed" shifts with current events). Opens a PR
+# with the new pool rather than pushing it: merging redeploys, which resets
+# the in-memory daily leaderboard, and a new pool reshuffles the daily
+# schedule (today's included). So merge just after the 5pm PT rollover.
+#
+# Opening the PR needs Settings → Actions → General → "Allow GitHub Actions
+# to create and approve pull requests". Without it the branch still gets
+# pushed, and the last step fails with the branch name in its log.
 #
 # You can also run this on demand: Actions tab → "Refresh puzzle pool" →
 # "Run workflow".
 
 on:
   schedule:
-    # 03:00 UTC on the 1st of each month. Late night in US, quiet enough
-    # not to interrupt most active players if the redeploy blips.
+    # 03:00 UTC on the 1st of each month.
     - cron: '0 3 1 * *'
   workflow_dispatch: {}
 
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    # Pool gen is ~47 min. Give generous headroom in case Wikipedia's rate
-    # limiter is especially grumpy on the CI IP.
-    timeout-minutes: 180
+    # English alone took 2h41m to 2h57m in Aug–Oct 2026, mostly waiting out
+    # Wikipedia 429s; 180 cut every run off before the commit step. 360 is
+    # GitHub's cap for hosted runners.
+    timeout-minutes: 360
     permissions:
       contents: write
+      pull-requests: write
 
     steps:
       - name: Checkout
@@ -32,10 +39,18 @@ jobs:
         with:
           node-version: '20'
 
+      # Fails, and so skips the PR, when the run's pool is too small to
+      # replace the committed one (see MIN_POOL_SHARE in generatePool.js).
       - name: Generate pool
         run: npm run generate-pool
+        env:
+          POOL_SUMMARY_FILE: ${{ runner.temp }}/pool-summary.md
 
-      - name: Commit and push if anything changed
+      - name: Open a PR if anything changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ github.ref_name }}
+          RUN_ID: ${{ github.run_id }}
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
@@ -45,5 +60,15 @@ jobs:
             exit 0
           fi
           TODAY=$(date -u +%Y-%m-%d)
+          BRANCH="pool-refresh-$TODAY-$RUN_ID"
+          git switch -c "$BRANCH"
           git commit -m "chore: monthly pool refresh ($TODAY)"
-          git push
+          git push origin "$BRANCH"
+          echo "Pushed $BRANCH"
+          {
+            cat "$RUNNER_TEMP/pool-summary.md"
+            echo
+            echo "Merge just after 5pm PT (00:00 UTC). Merging redeploys, which resets the day's in-memory leaderboard, and the new pool reshuffles the daily schedule, today's included."
+          } > "$RUNNER_TEMP/pr-body.md"
+          gh pr create --base "$BASE" --head "$BRANCH" \
+            --title "Monthly pool refresh ($TODAY)" --body-file "$RUNNER_TEMP/pr-body.md"

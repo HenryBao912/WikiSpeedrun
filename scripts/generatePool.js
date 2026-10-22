@@ -51,6 +51,13 @@ const SOLVABLE_MAX_DIST = 5;
 const MIN_DEST_BACKLINKS = 15;
 const sparseRejections = new Map(); // destination -> backlinks count
 
+// Smallest pool worth writing, as a share of the per-bucket targets summed.
+// A run starved by Wikipedia 429s (or with no network at all) still finishes,
+// just with a thin or empty pool. Recent full runs land near 150 pairs and 72
+// triples (easy and medium fill; expert gets ~10 of 50), so half is a floor
+// for broken runs, not a quality bar; the refresh PR shows the real counts.
+const MIN_POOL_SHARE = 0.5;
+
 // Distinguish "API returned no backlinks" from "API call failed silently".
 // cacheDestination uses getBacklinks(2000) which returns an empty Set on
 // error (rate-limit, timeout). We retry once with a small explicit limit
@@ -90,6 +97,41 @@ const OUT_DIR = path.join(__dirname, '..', 'data');
 if (!fs.existsSync(OUT_DIR)) fs.mkdirSync(OUT_DIR, { recursive: true });
 
 // ─── Helpers ───
+
+// Why this pool shouldn't replace the committed one; empty = fine to write.
+function poolProblems(pool) {
+  const problems = [];
+  const minPairs = Math.ceil(PAIRS_PER_BUCKET * BUCKETS.length * MIN_POOL_SHARE);
+  const minTriples = Math.ceil(TRIPLES_PER_BUCKET * BUCKETS.length * MIN_POOL_SHARE);
+  if (pool.pairs.length < minPairs) problems.push(`${pool.pairs.length} pairs (need ${minPairs})`);
+  if (pool.triples.length < minTriples) problems.push(`${pool.triples.length} triples (need ${minTriples})`);
+  // An empty bucket is worse than a thin one: pickFromPool falls back to any
+  // entry, so that difficulty would quietly serve puzzles from the others.
+  for (const { name } of BUCKETS) {
+    if (!pool.pairs.some(p => p.difficulty === name)) problems.push(`no ${name} pairs`);
+    if (!pool.triples.some(t => t.difficulty === name)) problems.push(`no ${name} triples`);
+  }
+  return problems;
+}
+
+// Per-bucket counts, committed pool → this run, as a Markdown table. Printed,
+// and written to $POOL_SUMMARY_FILE for the refresh workflow's PR body.
+function poolSummary(prev, pool) {
+  const count = (list, name) => (list || []).filter(e => !name || e.difficulty === name).length;
+  const cell = (key, name) => (prev ? `${count(prev[key], name)} → ` : '') + count(pool[key], name);
+  return [
+    prev ? `Committed pool: generated ${prev.generatedAt || 'at an unknown date'}.` : 'No committed pool.',
+    '',
+    '| Bucket | Pairs | Triples |',
+    '|---|---|---|',
+    ...BUCKETS.map(({ name }) => `| ${name} | ${cell('pairs', name)} | ${cell('triples', name)} |`),
+    `| total | ${cell('pairs')} | ${cell('triples')} |`,
+  ].join('\n');
+}
+
+function readPoolFile(p) {
+  try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch (_) { return null; }
+}
 
 function logProgress(lang, kind, bucket, have, want) {
   const pct = Math.round((have / want) * 100);
@@ -234,7 +276,14 @@ async function generateForLang(lang) {
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
   const outPath = path.join(OUT_DIR, `puzzlePool.${lang}.json`);
+  const summary = poolSummary(readPoolFile(outPath), pool);
+  console.log(`\n${summary}`);
+  const problems = poolProblems(pool);
+  if (problems.length > 0) {
+    throw new Error(`pool too small, kept the committed ${path.basename(outPath)} (${elapsed}s):\n  - ${problems.join('\n  - ')}`);
+  }
   fs.writeFileSync(outPath, JSON.stringify(pool, null, 2));
+  if (process.env.POOL_SUMMARY_FILE) fs.writeFileSync(process.env.POOL_SUMMARY_FILE, summary + '\n');
   console.log(`\n✓ [${lang}] Wrote ${pool.pairs.length} pairs + ${pool.triples.length} triples → ${outPath} (${elapsed}s)`);
   // Surface sparse-destination rejections so we know what the runtime
   // guardrail would have caught at gameplay time. Empty = pool quality is
@@ -256,10 +305,12 @@ async function generateForLang(lang) {
   console.log(FAST ? '⚡ Fast mode (small pool, for sanity checks)' : '🏗  Full pool generation');
   try {
     await generateForLang(LANG);
+    console.log('\nDone. Commit data/puzzlePool.en.json so the deploy ships warm.\n');
   } catch (e) {
     console.error(`\n✗ [${LANG}] Failed:`, e.message);
     process.exitCode = 1;
   }
-  console.log('\nDone. Commit data/puzzlePool.en.json so the deploy ships warm.\n');
-  process.exit(0);
+  // No argument, so a failure's exitCode = 1 survives. exit(0) used to
+  // override it, and a failed run showed green in Actions.
+  process.exit();
 })();
