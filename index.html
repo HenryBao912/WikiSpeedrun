@@ -4822,9 +4822,13 @@ async function send(msg) {
     // These rejection codes have their own user-facing feedback (move_rejected
     // toast / navigateTo rollback / session_lost screen), so don't also dump the
     // raw machine string into the #mpError slot.
-    const SILENT = new Set(['illegal_move', 'rate_limited', 'session_lost', 'finished', 'not_participant', 'no_room']);
+    const SILENT = new Set(['illegal_move', 'rate_limited', 'session_lost', 'finished', 'not_participant', 'no_room', 'not_started']);
     if (!result.ok && result.error && !SILENT.has(result.error)) {
-      showError('mpError', result.error);
+      // #mpError lives on the multiplayer setup screen. Anywhere else (a
+      // 401 "Not connected" mid-game, say) it was written where nobody could
+      // see it, and the article just flipped back with no explanation.
+      if (document.getElementById('mp-setup')?.classList.contains('active')) showError('mpError', result.error);
+      else showGlobalToast(result.error, 4000);
     }
     return result;
   } catch(e) {
@@ -5004,10 +5008,25 @@ function startDailyCountdown() {
       // Crossed midnight UTC — refresh badge for new daily number.
       setTimeout(hydrateDailyBadge, 500);
     }
+    refreshDailyIfStale();
   };
   tick();
   dailyCountdownTimer = setInterval(tick, 1000);
 }
+// A tab left open across midnight UTC rarely sees the countdown's rollover
+// tick (browsers throttle background timers to about one a minute), so
+// cachedDaily stayed on yesterday: the button said "View Leaderboard" and
+// opened yesterday's board, and today's daily never started. Compare dates
+// on every tick and when the tab comes back.
+let _dailyRefreshFor = null;
+function refreshDailyIfStale() {
+  if (!cachedDaily || !cachedDaily.date) return;
+  const today = new Date().toISOString().slice(0, 10);
+  if (cachedDaily.date === today || _dailyRefreshFor === today) return;
+  _dailyRefreshFor = today;
+  hydrateDailyBadge();
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshDailyIfStale(); });
 document.addEventListener('DOMContentLoaded', () => { hydrateDailyBadge(); startDailyCountdown(); });
 
 // Deep-link router: /daily-challenge, /multiplayer, /singleplayer are real
@@ -5035,6 +5054,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 async function startDailyFromHome(btn) {
   // If the user has already played today, route to the leaderboard view
   // instead of starting another game (their committed result is locked in).
+  // A stale cachedDaily (tab open across midnight UTC) would route by
+  // yesterday's result; refresh first.
+  if (cachedDaily && cachedDaily.date !== new Date().toISOString().slice(0, 10)) {
+    try { await hydrateDailyBadge(); } catch (_) {}
+  }
   if (cachedDaily) {
     const state = loadDailyState();
     const todayResult = getTodayResult(state, cachedDaily.date);
@@ -6331,9 +6355,39 @@ function handleServerMessage(msg) {
       showScreen('lobby');
       break;
 
-    case 'player_list':
+    case 'player_list': {
+      const wasHost = isHost;
       renderPlayerList(msg.players, msg.host);
+      // Players who left take their pill with them. playerProgress was never
+      // pruned, so a guest who closed the tab stayed on the race bar while the
+      // give-up count said "0/1 voted".
+      const present = new Set(msg.players.map(p => p.id));
+      let pruned = false;
+      for (const pid of [...playerProgress.keys()]) {
+        if (!present.has(pid)) { playerProgress.delete(pid); playerColors.delete(pid); pruned = true; }
+      }
+      // The bar also draws from the last distance_update, which lists every
+      // player the server knew at the time.
+      if (latestDistData) {
+        for (const pid of Object.keys(latestDistData)) {
+          if (!present.has(pid)) { delete latestDistData[pid]; pruned = true; }
+        }
+      }
+      if (pruned && document.getElementById('game').classList.contains('active')) renderPlayersBar(latestDistData);
+      // Promoted to host on the results screen (the old host went home or
+      // closed the tab, and the 30s grace passed): the buttons were set once
+      // at render time, so the new host sat on "Waiting for host…" with no way
+      // out but a reload.
+      if (isHost && !wasHost && document.getElementById('results').classList.contains('active')) {
+        const playAgainBtn = document.getElementById('playAgainBtn');
+        const backBtn = document.getElementById('backToHomeBtn');
+        const waitEl = document.getElementById('waitingForHost');
+        if (playAgainBtn) playAgainBtn.style.display = '';
+        if (backBtn) backBtn.style.display = '';
+        if (waitEl) waitEl.style.display = 'none';
+      }
       break;
+    }
 
     case 'mode_changed':
       mpCurrentMode = msg.mode;
@@ -6398,8 +6452,11 @@ function handleServerMessage(msg) {
     case 'marathon_clock_start':
       // The clock was deferred past game_start while warming; this is the real
       // deadline. Switch the frozen placeholder over to a live countdown.
+      // Anchor it to OUR clock: the server sends its own `now` next to endsAt,
+      // and comparing its clock with the device's showed 0:00 with time left
+      // (or time left at the buzzer) on any device whose clock is off.
       marathonClockPending = false;
-      marathonEndsAt = msg.endsAt;
+      marathonEndsAt = msg.now ? Date.now() + (msg.endsAt - msg.now) : msg.endsAt;
       break;
 
     case 'marathon_target_hit': {
@@ -6417,6 +6474,11 @@ function handleServerMessage(msg) {
     }
 
     case 'game_start':
+      // A resend after a reconnect: only useful if we missed the original
+      // (still in the lobby). If the game screen is already up this would
+      // reset the path and the clock.
+      if (msg.resume && document.getElementById('game').classList.contains('active')) break;
+      if (msg.resume && document.getElementById('results').classList.contains('active')) break;
       clearStartWatchdog(); // handshake completed — cancel the stuck-spinner timeout
       startGameUI(msg);
       // Fire a Google Analytics event so we can track game starts by
@@ -6485,6 +6547,10 @@ function handleServerMessage(msg) {
       break;
 
     case 'game_over':
+      // A resend after a reconnect: skip if the results are already showing,
+      // or if we are past them (lobby/home); it is for the player who was
+      // still on the game screen when the round ended without them hearing.
+      if (msg.resume && !document.getElementById('game').classList.contains('active')) break;
       // Daily challenge: persist the result + streak BEFORE rendering so the
       // result screen can read fresh state. Idempotent — safe if game_over
       // fires more than once for the same room.
@@ -6515,6 +6581,7 @@ function handleServerMessage(msg) {
       // Guardrail in startGameForRoom refused to start the game (e.g.,
       // destination too isolated). Show the reason and route to the right
       // recovery screen depending on context.
+      clearStartWatchdog(); // this IS the answer; without it a second "didn't start" toast followed 15s later
       showGlobalToast(msg.message || 'Game could not start. Try a different destination.', 6000);
       if (msg.daily) {
         // Daily user didn't come from SP setup — they tapped the home CTA.
@@ -6645,7 +6712,8 @@ function startGameUI(msg) {
     // marathon_clock_start with the real deadline.
     marathonClockPending = !!msg.clockPending;
     marathonDurationMs = msg.duration || 0;
-    marathonEndsAt = msg.endsAt;
+    // Same clock anchoring as marathon_clock_start.
+    marathonEndsAt = (msg.now && msg.endsAt) ? Date.now() + (msg.endsAt - msg.now) : msg.endsAt;
     marathonScore = { raw: 0, clicks: 0, skips: 0, completed: 0, bonus: 0, total: 0 };
     marathonTarget = null;
     triTargets = [];
@@ -7060,7 +7128,7 @@ async function loadArticle(title) {
     // Article HTML can be sizeable on slow networks — bump timeout to 12 s.
     const resp = await fetchWithTimeout(apiUrl, {}, 12000);
     lp.status = resp.status;
-    if (!resp.ok) throw new Error('Article not found');
+    if (!resp.ok) throw Object.assign(new Error('Article not found'), { status: resp.status });
     const html = await resp.text();
     lp.fetchMs = perfNow() - lp.t0; // response body fully read
     lp.bytes = html.length;
@@ -7124,12 +7192,29 @@ async function loadArticle(title) {
 
     // Process links: only keep Wikipedia internal article links. Namespace
     // links and external/anchor links are rendered as dead grey text.
+    const currentNorm = title.replace(/_/g, ' ').toLowerCase();
     doc.querySelectorAll('a').forEach(a => {
       const href = a.getAttribute('href') || '';
       const wikiMatch = href.match(/^\.\/([^#?]+)/) || href.match(/^\/wiki\/([^#?]+)/);
       const target = wikiMatch ? decodeURIComponent(wikiMatch[1]) : null;
       a.removeAttribute('href');
-      if (target && !isNamespaceLink(target)) {
+      // Red links point at articles that don't exist ("?action=edit&redlink=1",
+      // class "new"); the server accepts the move, Wikipedia answers 404, and
+      // the player gets an error page plus an undo. Dead text instead.
+      const redLink = a.classList.contains('new') || /[?&]redlink=1/.test(href);
+      // A link to the page itself ("§ Eclipses" on Moon) is a scroll, not a
+      // move: it cost a step and reloaded the page at the top.
+      const fragment = href.includes('#') ? href.slice(href.indexOf('#') + 1) : '';
+      const selfLink = target && target.replace(/_/g, ' ').toLowerCase() === currentNorm;
+      if (selfLink && fragment) {
+        let frag = fragment;
+        try { frag = decodeURIComponent(fragment); } catch (_) {}
+        a.setAttribute('data-scroll', frag);
+        a.setAttribute('tabindex', '0');
+        a.setAttribute('role', 'link');
+        a.style.cursor = 'pointer';
+        a.style.color = '#3366cc';
+      } else if (target && !redLink && !selfLink && !isNamespaceLink(target)) {
         a.setAttribute('data-article', target);
         // The href is gone, so without an explicit tabindex+role the link is
         // no longer focusable — keyboard and screen-reader users literally
@@ -7153,6 +7238,7 @@ async function loadArticle(title) {
         const text = h.textContent.trim();
         if (!text) return;
         const id = 'toc-section-' + i;
+        if (h.id) h.setAttribute('data-section-id', h.id); // keep Wikipedia's id for same-page "§" links
         h.id = id;
         tocItems.push(`<a class="wiki-toc-item" href="#${id}">${esc(text)}</a>`);
       });
@@ -7170,7 +7256,7 @@ async function loadArticle(title) {
     if (typeof DOMPurify === 'undefined' || !DOMPurify.sanitize) {
       throw new Error('sanitizer unavailable');
     }
-    const wikiBody = DOMPurify.sanitize(doc.body.innerHTML, { ADD_ATTR: ['data-article', 'tabindex', 'role'] });
+    const wikiBody = DOMPurify.sanitize(doc.body.innerHTML, { ADD_ATTR: ['data-article', 'data-scroll', 'data-section-id', 'tabindex', 'role'] });
     if (seq !== _loadArticleSeq) return; // a newer load superseded us — don't render stale content
     if (title === _forwardNavTitle) _forwardNavTitle = null; // forward move loaded fine — nothing to undo
     content.innerHTML = titleHtml + tocHtml + wikiBody;
@@ -7189,6 +7275,15 @@ async function loadArticle(title) {
         if (link) {
           e.preventDefault();
           navigateTo(link.getAttribute('data-article'));
+          return;
+        }
+        const scrollLink = e.target.closest('a[data-scroll]');
+        if (scrollLink) {
+          e.preventDefault();
+          const frag = scrollLink.getAttribute('data-scroll');
+          const el = document.getElementById(frag)
+            || content.querySelector(`[data-section-id="${CSS.escape(frag)}"]`);
+          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
           return;
         }
         const toc = e.target.closest('.wiki-toc-item');
@@ -7229,23 +7324,40 @@ async function loadArticle(title) {
     const p = document.createElement('p');
     p.textContent = `Could not load "${failedTitle}". This article may not exist on English Wikipedia.`;
     content.appendChild(p);
-    if (myPath.length > 1) {
-      // If this was a FORWARD navigation, the server may have accepted the move
-      // (the move was legal; only the client's article fetch failed). Tell the
-      // server to undo it so rp.path stays aligned with the client path —
-      // otherwise, under move-legality enforcement, every later click is
-      // validated against an article the player never actually saw and gets
-      // wrongly rejected. The server only undoes if its tail still matches.
-      const wasForwardNav = (title === _forwardNavTitle);
-      _forwardNavTitle = null;
+    const wasForwardNav = (title === _forwardNavTitle);
+    _forwardNavTitle = null;
+    const btnStyle = 'margin-top:16px;padding:10px 24px;background:var(--accent);color:white;border:none;border-radius:8px;cursor:pointer;font-size:1rem;';
+    if (wasForwardNav && myPath.length > 1) {
+      // A FORWARD navigation: the server may have accepted the move (the move
+      // was legal; only the client's article fetch failed). Tell the server
+      // to undo it so rp.path stays aligned with the client path — otherwise,
+      // under move-legality enforcement, every later click is validated
+      // against an article the player never actually saw and gets wrongly
+      // rejected. The server only undoes if its tail still matches.
       myPath.pop();
       const prevArticle = myPath[myPath.length - 1];
       currentArticle = prevArticle;
-      if (wasForwardNav) send({ type: 'navigate_undo', article: title });
+      send({ type: 'navigate_undo', article: title });
       const btn = document.createElement('button');
       btn.textContent = `← Go Back to ${prevArticle.replace(/_/g, ' ')}`;
-      btn.style.cssText = 'margin-top:16px;padding:10px 24px;background:var(--accent);color:white;border:none;border-radius:8px;cursor:pointer;font-size:1rem;';
+      btn.style.cssText = btnStyle;
       btn.addEventListener('click', () => loadArticle(prevArticle));
+      content.appendChild(btn);
+    } else {
+      // The origin, or a reload of the position the server already holds (a
+      // rollback, a resync): nothing to undo, and popping would move the
+      // client behind the server. Offer a retry. The origin case had no
+      // button at all: a slow first load (12s timeout) or a Wikipedia 429 left
+      // the player on an error page with the clock running.
+      // A timeout, a blocked network (school filters), or Wikipedia saying
+      // "slow down" (429 when a whole classroom starts at once) is not a
+      // missing article; say so, since the retry will usually work.
+      const unreachable = err && (err.name === 'AbortError' || err.status === 429 || err.status >= 500 || /fetch|network/i.test(String(err.message)));
+      if (unreachable) p.textContent = `Couldn’t reach Wikipedia for "${failedTitle}". Check your connection and try again.`;
+      const btn = document.createElement('button');
+      btn.textContent = '↻ Retry';
+      btn.style.cssText = btnStyle;
+      btn.addEventListener('click', () => loadArticle(title));
       content.appendChild(btn);
     }
     content.style.display = 'block';
