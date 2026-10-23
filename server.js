@@ -1509,6 +1509,8 @@ const HARDCODED_DAILY_BLACKLIST = new Set([
   'Hentai',
   'Human_penis',
   'Opposition_to_pornography',
+  // A murderer's biography: the title shape says nothing, so by name.
+  'Ed_Gein',
 ]);
 
 // In-memory blacklist of destinations the runtime guardrail has rejected

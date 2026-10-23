@@ -88,7 +88,7 @@ const MIN_POOL_SHARE = 0.5;
 // "Killing of X", "X massacre", "serial killer"; bare "murder"/"killer" would
 // also drop fiction (Murder on the Orient Express, The Killers), so the
 // crime patterns are phrase-shaped.
-const DENY_WORDS = /\b(sex|sexual|sexuality|intercourse|penis|vagina|vulva|clitoris|testicles?|scrotum|anus|genitals?|ejaculation|erection|hentai|porn|pornography|pornographic|pornstar|erotic|erotica|nude|nudity|masturbation|orgasm|fetish|bdsm|incest|strip club|strippers?|prostitution|prostitutes?|brothel|sex workers?|suicide|self-harm|rape|xnxx|xvideos|pornhub|xhamster|onlyfans|maniacs?|massacres?|torture|beheading|snuff|necrophilia|pedophilia|paedophilia|cannibalism|serial killers?|murders? of|killings? of|mass shooting|school shooting|disappearance of)\b/i;
+const DENY_WORDS = /\b(sex|sexual|sexuality|intercourse|penis|vagina|vulva|clitoris|testicles?|scrotum|anus|genitals?|ejaculation|erection|hentai|porn|pornography|pornographic|pornstar|erotic|erotica|nude|nudity|masturbation|orgasm|fetish|bdsm|incest|strip club|strippers?|prostitution|prostitutes?|brothel|sex workers?|suicide|self-harm|rape|xnxx|xvideos|pornhub|xhamster|onlyfans|brazzers|mofos|twistys|brasileirinhas|cam4|fanvue|chaturbate|stripchat|livejasmin|redtube|youporn|spankbang|bangbros|naughty america|reality kings|gang ?bang|bukkake|creampie|milf|dildo|vibrators?|sex toys?|maniacs?|massacres?|torture|beheading|snuff|necrophilia|pedophilia|paedophilia|cannibalism|serial killers?|murders? of|killings? of|mass shooting|school shooting|disappearance of)\b/i;
 function isDeniedTitle(title) {
   const spaced = title.replace(/_/g, ' ');
   return HARDCODED_DAILY_BLACKLIST.has(title) || DENY_WORDS.test(spaced)
@@ -201,21 +201,39 @@ function logProgress(lang, kind, bucket, have, want) {
 
 // Real page views (all access, human agents) for a title over [start, end],
 // YYYYMMDD. The REST pageviews host is outside server.js's action-API queue.
-function viewsBetween(title, start, end, lang) {
-  const url = `https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/${lang}.wikipedia/all-access/user/${encodeURIComponent(title)}/daily/${start}/${end}`;
+// Null = unknown (the caller drops the title). A 429 or a non-JSON reply is
+// retried with a backoff first: GitHub's runners share egress addresses and
+// Wikimedia throttles them, and a run that silently loses most measurements
+// looks like "few popular articles exist" (the Oct 23 2026 branch run got six
+// easy titles out of 2,400 list candidates). The counters feed the summary.
+const measureStats = { ok: 0, failed: 0, retried: 0, inflated: 0 };
+function viewsOnce(url) {
   return new Promise(resolve => {
     const req = https.get(url, { headers: { 'User-Agent': UA } }, res => {
       let data = '';
       res.on('data', c => data += c);
       res.on('end', () => {
-        if (res.statusCode === 404) return resolve(0); // no views recorded at all
-        try { resolve((JSON.parse(data).items || []).reduce((s, d) => s + (d.views || 0), 0)); }
-        catch (_) { resolve(null); }
+        if (res.statusCode === 404) return resolve({ views: 0 }); // no views recorded at all
+        if (res.statusCode !== 200) return resolve({ error: `http ${res.statusCode}` });
+        try { resolve({ views: (JSON.parse(data).items || []).reduce((s, d) => s + (d.views || 0), 0) }); }
+        catch (_) { resolve({ error: 'bad json' }); }
       });
     });
-    req.on('error', () => resolve(null));
-    req.setTimeout(10000, () => req.destroy());
+    req.on('error', e => resolve({ error: e.message }));
+    req.setTimeout(10000, () => req.destroy(new Error('timeout')));
   });
+}
+async function viewsBetween(title, start, end, lang, access = 'all-access') {
+  const url = `https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/${lang}.wikipedia/${access}/user/${encodeURIComponent(title)}/daily/${start}/${end}`;
+  let last;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (attempt) { measureStats.retried++; await sleep(1500 * 2 ** (attempt - 1)); }
+    last = await viewsOnce(url);
+    if (last.views !== undefined) { measureStats.ok++; return last.views; }
+  }
+  measureStats.failed++;
+  if (measureStats.failed <= 5 || measureStats.failed % 50 === 0) console.error(`\n  pageviews failed for ${title}: ${last.error} (${measureStats.failed} so far)`);
+  return null;
 }
 const ymd = d => d.toISOString().slice(0, 10).replace(/-/g, '');
 const WINDOWS = (() => {
@@ -231,12 +249,20 @@ const WINDOWS = (() => {
 // one-day news spike (the April pool had NBA_play-in_tournament and Nynetjer as
 // "easy"; by autumn they had 1-2K views a month) fails, and a steady article
 // a little below the floor last month still passes.
+// The "user" agent filter still passes automated traffic that fakes a
+// browser: Limonene, JSON-LD, RDFa and Neatsville,_Kentucky each showed
+// 0.8-2.7M views in Sept 2026 with ≤1% from mobile, where every article
+// real people read gets 30-90% of its views. A mobile share under 15% marks
+// the title as inflated (checked once it has enough views to matter).
+const MIN_MOBILE_SHARE = 0.15;
 async function measure(title, lang) {
-  const [recent, prior] = await Promise.all([
+  const [recent, prior, mobile] = await Promise.all([
     viewsBetween(title, WINDOWS.recent[0], WINDOWS.recent[1], lang),
     viewsBetween(title, WINDOWS.prior[0], WINDOWS.prior[1], lang),
+    viewsBetween(title, WINDOWS.recent[0], WINDOWS.recent[1], lang, 'mobile-web'),
   ]);
-  if (recent === null || prior === null) return null;
+  if (recent === null || prior === null || mobile === null) return null;
+  if (recent >= 50000 && mobile < recent * MIN_MOBILE_SHARE) { measureStats.inflated++; return null; }
   return { recent, prior };
 }
 function inBucket(v, bucket) {
@@ -509,7 +535,8 @@ async function generateForLang(lang) {
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
   const outPath = path.join(OUT_DIR, `puzzlePool.${lang}.json`);
-  const summary = poolSummary(readPoolFile(outPath), pool);
+  const summary = poolSummary(readPoolFile(outPath), pool)
+    + `\n\nPage views: ${measureStats.ok} measured, ${measureStats.failed} failed after retries (${measureStats.retried} retries), ${measureStats.inflated} titles dropped as inflated.`;
   console.log(`\n${summary}`);
   const problems = poolProblems(pool);
   if (problems.length > 0) {
