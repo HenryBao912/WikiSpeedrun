@@ -88,7 +88,7 @@ const MIN_POOL_SHARE = 0.5;
 // "Killing of X", "X massacre", "serial killer"; bare "murder"/"killer" would
 // also drop fiction (Murder on the Orient Express, The Killers), so the
 // crime patterns are phrase-shaped.
-const DENY_WORDS = /\b(sex|sexual|sexuality|intercourse|penis|vagina|genitals?|hentai|porn|pornography|pornographic|erotic|erotica|nude|nudity|masturbation|orgasm|fetish|bdsm|incest|suicide|self-harm|rape|xnxx|xvideos|pornhub|xhamster|onlyfans|maniacs?|massacre|torture|beheading|snuff|necrophilia|pedophilia|paedophilia|cannibalism|serial killers?|murders? of|killings? of|mass shooting|school shooting|disappearance of)\b/i;
+const DENY_WORDS = /\b(sex|sexual|sexuality|intercourse|penis|vagina|vulva|clitoris|testicles?|scrotum|anus|genitals?|ejaculation|erection|hentai|porn|pornography|pornographic|pornstar|erotic|erotica|nude|nudity|masturbation|orgasm|fetish|bdsm|incest|strip club|strippers?|prostitution|prostitutes?|brothel|sex workers?|suicide|self-harm|rape|xnxx|xvideos|pornhub|xhamster|onlyfans|maniacs?|massacres?|torture|beheading|snuff|necrophilia|pedophilia|paedophilia|cannibalism|serial killers?|murders? of|killings? of|mass shooting|school shooting|disappearance of)\b/i;
 function isDeniedTitle(title) {
   const spaced = title.replace(/_/g, ' ');
   return HARDCODED_DAILY_BLACKLIST.has(title) || DENY_WORDS.test(spaced)
