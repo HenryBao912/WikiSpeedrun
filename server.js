@@ -1526,6 +1526,11 @@ const HARDCODED_DAILY_BLACKLIST = new Set([
   'Charles_Manson',
   'Ted_Kaczynski',
   'Osama_bin_Laden',
+  'Khalid_Sheikh_Mohammed',
+  'Luigi_Mangione',
+  'Andrea_Yates',
+  // An adult performer.
+  'Bonnie_Blue',
 ]);
 
 // In-memory blacklist of destinations the runtime guardrail has rejected
@@ -1582,7 +1587,14 @@ function pickDailyPairForDate(date, recent) {
   );
   let pool = curated.length > 0 ? curated : fullPool;
   if (recent) {
-    const window = Math.max(0, Math.min(DAILY_NO_REPEAT_DAYS, pool.length - 1));
+    // The window is capped by the number of distinct destinations, not pairs:
+    // with 56 destinations and a 60-day window the strict step runs dry on
+    // day 57 and the ladder's "origin unique" step then serves whichever
+    // few pairs are left, so one destination came up six times in 120 days.
+    // Capped at destinations-1, every destination comes round about once per
+    // cycle, which is the most variety the pool allows.
+    const destinations = new Set(pool.map(p => p.destination)).size;
+    const window = Math.max(0, Math.min(DAILY_NO_REPEAT_DAYS, destinations - 1));
     const usedOrigins = new Set();
     const usedDestinations = new Set();
     for (const e of recent.slice(-window)) {

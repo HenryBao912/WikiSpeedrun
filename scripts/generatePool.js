@@ -292,6 +292,7 @@ function inBucket(v, bucket) {
 // whichever bucket its views fit, not only the one being filled: the easy
 // sampler measures plenty of 200-500K articles, which are medium's.
 const seenTitles = new Set();
+const measuredTitles = new Set(); // canonical titles whose views were looked up
 const queues = new Map(BUCKETS.map(b => [b.name, []]));
 const bucketTitles = new Map(BUCKETS.map(b => [b.name, []])); // every title measured into the bucket
 const useCount = new Map(); // title -> puzzles it was handed to
@@ -378,11 +379,18 @@ async function refill(bucket, lang) {
     const measured = await mapLimit(valid, 4, async (t) => {
       const canon = await resolveRedirect(t, lang);
       if (canon !== t && (seenTitles.has(canon) || isBadTitle(canon) || isDeniedTitle(canon))) return null;
+      // The hub sampler's links are lowercase ("facebook"), so the seen check
+      // on the sampled spelling misses a title the list sampler already
+      // measured as "Facebook"; validation canonicalises it, and without this
+      // guard it was queued twice (Facebook | Facebook | Sydney_Sweeney).
+      if (measuredTitles.has(canon)) return null;
+      measuredTitles.add(canon);
       seenTitles.add(canon);
       const v = await measure(canon, lang);
       if (v === undefined) {
         // Unknown, not unfit: the list sampler offers the title again next
         // round (it only skips seen titles).
+        measuredTitles.delete(canon);
         seenTitles.delete(canon);
         seenTitles.delete(t);
         failed++;
@@ -417,9 +425,9 @@ async function refill(bucket, lang) {
 async function takeTitles(bucket, n, lang) {
   const q = queues.get(bucket.name);
   if (q.length < n) await refill(bucket, lang);
-  const picked = q.splice(0, Math.min(n, q.length));
+  const picked = [...new Set(q.splice(0, Math.min(n, q.length)))];
   if (picked.length < n) {
-    const all = bucketTitles.get(bucket.name).filter(t => !picked.includes(t));
+    const all = [...new Set(bucketTitles.get(bucket.name))].filter(t => !picked.includes(t));
     if (picked.length + all.length < n) { q.push(...picked); return null; }
     shuffle(all).sort((a, b) => useCount.get(a) - useCount.get(b));
     picked.push(...all.slice(0, n - picked.length));
