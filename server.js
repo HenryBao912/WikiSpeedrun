@@ -735,12 +735,13 @@ function isBadTitle(title) {
 // Validate articles via API: check they're real content pages (not disambig/stubs)
 // Biographies get a stricter threshold — only very famous people are fun to play with
 // opts: minBioLength (bytes a biography needs to count as a real article) and
-// bioRatio (biographies kept per other article). The defaults suit random
-// play; the pool generator loosens both, since the popular lists are mostly
-// people.
+// bioRatio (biographies kept per other article; null = no cap). The defaults
+// suit random play; the pool generator loosens the length and drops the cap,
+// since the popular lists are mostly people: with the cap a batch of twenty
+// celebrities and no other article came back as one title.
 async function validateArticles(titles, lang = DEFAULT_LANG, opts = {}) {
   const minBioLength = opts.minBioLength ?? 100000;
-  const bioRatio = opts.bioRatio ?? 0.5;
+  const bioRatio = opts.bioRatio === undefined ? 0.5 : opts.bioRatio;
   if (titles.length === 0) return [];
   try {
     const params = {
@@ -795,7 +796,7 @@ async function validateArticles(titles, lang = DEFAULT_LANG, opts = {}) {
     const bios = good.filter(g => g.isBio).map(g => g.title);
     // Shuffle bios so selection is random
     bios.sort(() => Math.random() - 0.5);
-    const maxBios = Math.max(1, Math.floor(nonBios.length * bioRatio));
+    const maxBios = bioRatio === null ? bios.length : Math.max(1, Math.floor(nonBios.length * bioRatio));
     return [...nonBios, ...bios.slice(0, maxBios)];
   } catch (e) {
     console.error('Error validating articles:', e.message);

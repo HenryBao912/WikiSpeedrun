@@ -333,8 +333,8 @@ async function popularList(lang) {
     for (const a of await topMonthly(lang, d.getUTCFullYear(), d.getUTCMonth() + 1)) add(a.title, a.views);
   }
   for (const a of await getTopViewedArticles(lang)) add(a.title, a.views); // ×30 of one day
-  listCache = shuffle([...best].map(([title, views]) => ({ title, views })));
-  console.log(`\n  popular lists: ${listCache.length} distinct titles`);
+  listCache = shuffle([...best].map(([title, views]) => ({ title, views })).filter(a => !isBadTitle(a.title) && !isDeniedTitle(a.title)));
+  console.log(`\n  popular lists: ${listCache.length} distinct titles (${listCache.filter(a => a.views >= 400000).length} at 400K+)`);
   return listCache;
 }
 let hubCache = null;
@@ -356,16 +356,22 @@ async function refill(bucket, lang) {
   for (let round = 0; round < 6 && queues.get(bucket.name).length < 4; round++) {
     let titles;
     try { titles = await sampleTitles(bucket, lang); } catch (e) { console.error('\n  sample failed:', e.message); continue; }
-    titles = titles.filter(t => !seenTitles.has(t) && !isBadTitle(t) && !isDeniedTitle(t));
+    titles = titles.filter(t => !seenTitles.has(t));
+    // Every sampled title counts as seen, rejected ones included: the list
+    // sampler walks the list in order and skips seen titles only, so an
+    // unmarked reject would sit at the front of every later sample (the Oct
+    // 23 2026 run's easy samples were 40 titles with 5 new ones by round 5).
     titles.forEach(t => seenTitles.add(t));
+    titles = titles.filter(t => !isBadTitle(t) && !isDeniedTitle(t));
     if (!titles.length) continue;
     // Real content pages only (no disambiguation, no stubs). The default
     // biography rule (100KB+, at most half as many as other articles) is
     // made for random play; the popular lists are mostly people, and a
-    // famous person is a fine easy destination. The API takes 20 at a time.
+    // famous person is a fine easy destination, so no cap on biographies.
+    // The API takes 20 at a time.
     let valid = [];
     for (let i = 0; i < titles.length; i += 20) {
-      try { valid.push(...await validateArticles(titles.slice(i, i + 20), lang, { minBioLength: 40000, bioRatio: 2 })); } catch (_) { /* next chunk */ }
+      try { valid.push(...await validateArticles(titles.slice(i, i + 20), lang, { minBioLength: 40000, bioRatio: null })); } catch (_) { /* next chunk */ }
     }
     valid = valid.filter(t => !isBadTitle(t) && !isDeniedTitle(t)); // the API's canonical spelling may differ
     let failed = 0;
