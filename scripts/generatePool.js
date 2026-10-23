@@ -244,30 +244,66 @@ function inBucket(v, bucket) {
   return v.recent >= min && v.recent <= max && v.prior >= min / 2;
 }
 
-// Per-bucket queues of measured, canonical, validated titles, refilled from a
-// sampler as they drain. Titles are never offered twice in a run.
+// Per-bucket queues of measured, canonical, validated titles, refilled from
+// the samplers as they drain. A title is measured once per run and lands in
+// whichever bucket its views fit, not only the one being filled: the easy
+// sampler measures plenty of 200-500K articles, which are medium's.
 const seenTitles = new Set();
 const queues = new Map(BUCKETS.map(b => [b.name, []]));
+const bucketTitles = new Map(BUCKETS.map(b => [b.name, []])); // every title measured into the bucket
+const useCount = new Map(); // title -> puzzles it was handed to
 const views = new Map(); // title -> recent views
 
-// Easy and medium come from the day's top-1000 (≥ ~230K/month at the bottom);
+// Easy and medium come from the monthly top-1000 lists of the last three full
+// months (the bottom of a month's list is ~220K views) plus the day's list;
 // hard and expert from the outgoing links of random popular articles, which
 // land mostly in the 5K-500K range and are well connected by construction.
 // The old random-article sampler found a 5K-50K article in roughly one of
-// fifty draws, and the top list had no fallback that wasn't famous.
-let topCache = null;
+// fifty draws. A single day's list was too thin for easy and medium (the
+// Oct 23 2026 run got 12 easy and 13 medium pairs): a day's top-1000 is
+// mostly that day's news, and the steady articles it holds run out fast.
+// When the lists are exhausted the hub-link sampler takes over for every
+// bucket.
+function topMonthly(lang, y, m) {
+  const url = `https://wikimedia.org/api/rest_v1/metrics/pageviews/top/${lang}.wikipedia/all-access/${y}/${String(m).padStart(2, '0')}/all-days`;
+  return new Promise(resolve => {
+    const req = https.get(url, { headers: { 'User-Agent': UA } }, res => {
+      let data = '';
+      res.on('data', c => data += c);
+      res.on('end', () => {
+        try { resolve((JSON.parse(data).items?.[0]?.articles || []).map(a => ({ title: a.article, views: a.views }))); }
+        catch (_) { resolve([]); }
+      });
+    });
+    req.on('error', () => resolve([]));
+    req.setTimeout(15000, () => req.destroy());
+  });
+}
+let listCache = null; // [{ title, views }] with a title's best month, shuffled
+async function popularList(lang) {
+  if (listCache) return listCache;
+  const best = new Map();
+  const add = (title, v) => { if (!/^(Main_Page|Special:|Wikipedia:|Portal:|Help:|File:|Talk:|Category:|Template:)/.test(title)) best.set(title, Math.max(best.get(title) || 0, v)); };
+  const d = new Date(); d.setUTCDate(1);
+  for (let i = 1; i <= 3; i++) {
+    d.setUTCMonth(d.getUTCMonth() - 1);
+    for (const a of await topMonthly(lang, d.getUTCFullYear(), d.getUTCMonth() + 1)) add(a.title, a.views);
+  }
+  for (const a of await getTopViewedArticles(lang)) add(a.title, a.views); // ×30 of one day
+  listCache = shuffle([...best].map(([title, views]) => ({ title, views })));
+  console.log(`\n  popular lists: ${listCache.length} distinct titles`);
+  return listCache;
+}
+let hubCache = null;
 async function sampleTitles(bucket, lang) {
-  if (!topCache) {
-    topCache = (await getTopViewedArticles(lang)).map(a => a.title);
-    shuffle(topCache);
-  }
   if (bucket.viewRange[0] >= 50000) {
-    // The ×30 proxy is only a pre-filter; measure() decides.
+    // A list month's views are only a pre-filter; measure() decides.
     const [min, max] = bucket.viewRange;
-    const top = await getTopViewedArticles(lang);
-    return shuffle(top.filter(a => a.views >= min / 2 && a.views <= max * 2).map(a => a.title)).slice(0, 40);
+    const list = (await popularList(lang)).filter(a => a.views >= min * 0.8 && a.views <= max * 1.5 && !seenTitles.has(a.title));
+    if (list.length) return list.slice(0, 40).map(a => a.title);
   }
-  const hub = topCache[Math.floor(Math.random() * topCache.length)];
+  if (!hubCache) hubCache = shuffle((await getTopViewedArticles(lang)).map(a => a.title));
+  const hub = hubCache[Math.floor(Math.random() * hubCache.length)];
   if (!hub) return [];
   const links = [...await getPageLinks(hub, lang)].map(t => t.replace(/ /g, '_'));
   return shuffle(links).slice(0, 40);
@@ -280,31 +316,52 @@ async function refill(bucket, lang) {
     titles = titles.filter(t => !seenTitles.has(t) && !isBadTitle(t) && !isDeniedTitle(t));
     titles.forEach(t => seenTitles.add(t));
     if (!titles.length) continue;
-    // Real content pages only (no disambiguation, no stubs, few biographies).
-    let valid;
-    try { valid = await validateArticles(titles.slice(0, 20), lang); } catch (_) { continue; }
+    // Real content pages only (no disambiguation, no stubs). The default
+    // biography rule (100KB+, at most half as many as other articles) is
+    // made for random play; the popular lists are mostly people, and a
+    // famous person is a fine easy destination. The API takes 20 at a time.
+    let valid = [];
+    for (let i = 0; i < titles.length; i += 20) {
+      try { valid.push(...await validateArticles(titles.slice(i, i + 20), lang, { minBioLength: 40000, bioRatio: 2 })); } catch (_) { /* next chunk */ }
+    }
     valid = valid.filter(t => !isBadTitle(t) && !isDeniedTitle(t)); // the API's canonical spelling may differ
     const measured = await mapLimit(valid, 4, async (t) => {
       const canon = await resolveRedirect(t, lang);
       if (canon !== t && (seenTitles.has(canon) || isBadTitle(canon) || isDeniedTitle(canon))) return null;
       seenTitles.add(canon);
       const v = await measure(canon, lang);
-      return v && inBucket(v, bucket) ? { title: canon, recent: v.recent } : null;
+      const fits = v && BUCKETS.find(b => inBucket(v, b));
+      return fits ? { title: canon, recent: v.recent, bucket: fits.name } : null;
     });
     for (const m of measured) {
       if (!m) continue;
       views.set(m.title, m.recent);
-      queues.get(bucket.name).push(m.title);
+      useCount.set(m.title, 0);
+      queues.get(m.bucket).push(m.title);
+      bucketTitles.get(m.bucket).push(m.title);
     }
   }
 }
 
-// Take n distinct measured titles for a bucket (null if the samplers ran dry).
+// Take n distinct measured titles for a bucket: fresh ones while the samplers
+// find them, then the bucket's least-used titles again. Steady 500K+/month
+// articles are rare (a few hundred exist, fewer pass validation), so easy
+// cannot fill 80 pairs and 25 triples from distinct titles; what the game
+// needs is distinct puzzles (the pair/triple dedup below) and, for the
+// daily, as many distinct destinations as possible, which least-used-first
+// gives. Null when the bucket has fewer than n titles in all.
 async function takeTitles(bucket, n, lang) {
   const q = queues.get(bucket.name);
   if (q.length < n) await refill(bucket, lang);
-  if (q.length < n) return null;
-  return q.splice(0, n);
+  const picked = q.splice(0, Math.min(n, q.length));
+  if (picked.length < n) {
+    const all = bucketTitles.get(bucket.name).filter(t => !picked.includes(t));
+    if (picked.length + all.length < n) { q.push(...picked); return null; }
+    shuffle(all).sort((a, b) => useCount.get(a) - useCount.get(b));
+    picked.push(...all.slice(0, n - picked.length));
+  }
+  picked.forEach(t => useCount.set(t, useCount.get(t) + 1));
+  return picked;
 }
 
 // ─── Puzzle building ───
