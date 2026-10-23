@@ -708,6 +708,9 @@ function isBadTitle(title) {
   // Lists, indexes, outlines, drafts
   if (/^(list of|lists of|index of|outline of|draft:|wikipedia:|template:|category:|portal:|module:|wikipedia)/.test(lower)) return true;
   if (lower === 'wikipedia') return true;
+  // Year chronicles ("Deaths in 2026", "2026 in film") are lists too, and
+  // the monthly top lists are full of them.
+  if (/^(deaths in \d{4}|\d{4} in )/.test(lower)) return true;
   // Disambiguation and parenthetical qualifiers — these are hard to reach via links
   // e.g. "Mario Bros. (Game & Watch)", "Paris (Texas)", "Mercury (planet)"
   if (lower.includes('(')) return true;
@@ -1509,8 +1512,19 @@ const HARDCODED_DAILY_BLACKLIST = new Set([
   'Hentai',
   'Human_penis',
   'Opposition_to_pornography',
-  // A murderer's biography: the title shape says nothing, so by name.
+  // Biographies of murderers, terrorists and a sex offender: the title shape
+  // says nothing, so by name. The autumn 2026 top lists carry several (a TV
+  // series about serial killers).
   'Ed_Gein',
+  'Jeffrey_Epstein',
+  'Jeffrey_Dahmer',
+  'Aileen_Wuornos',
+  'Christa_Pike',
+  'Lizzie_Borden',
+  'Ted_Bundy',
+  'Charles_Manson',
+  'Ted_Kaczynski',
+  'Osama_bin_Laden',
 ]);
 
 // In-memory blacklist of destinations the runtime guardrail has rejected
@@ -1547,15 +1561,17 @@ function pickDailyPairForDate(date, recent) {
   // Daily curation rules:
   //   - Destination popularity: a household name. Pools built by the current
   //     generator carry each title's measured monthly views (`views`), so
-  //     require >= 500K real views; older pools only have the bucket label,
-  //     and there the easy bucket stands in.
+  //     require >= 250K real views (about 8K a day: Zendaya, Cleopatra,
+  //     India). Only ~57 articles hold 500K+ month after month, which capped
+  //     the daily at ~40 destinations; ~220 hold 250K+. Older pools only
+  //     have the bucket label, and there the easy bucket stands in.
   //   - Distance: >=2 hops (no trivial 1-hop puzzles)
   //   - Destination word count: <=2 words (snappy + shareable; excludes
   //     titles like "UEFA Champions League" or "2026 in film")
   //   - Origin and destination both clear of the content denylist.
   const wordCount = (s) => (s || '').split('_').length;
   const isBadDest = (dest) => HARDCODED_DAILY_BLACKLIST.has(dest) || rejectedDailyDestinations.has(dest);
-  const popular = (p) => p.views?.destination != null ? p.views.destination >= 500000 : p.viewRange?.[0] >= 100000;
+  const popular = (p) => p.views?.destination != null ? p.views.destination >= 250000 : p.viewRange?.[0] >= 100000;
   const curated = fullPool.filter(p =>
     popular(p) &&
     p.dist >= 2 &&
