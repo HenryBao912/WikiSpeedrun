@@ -1493,6 +1493,16 @@ const HARDCODED_DAILY_BLACKLIST = new Set([
   'Suicide_methods',
   'Suicide',
   'Self-harm',
+  // The April pool (pre-denylist generator) carries these as daily-eligible
+  // origins/destinations; the Oct 23 2026 daily landed on the murder case.
+  // The generator's own denylist (scripts/generatePool.js) includes this set,
+  // so later pools never contain them.
+  'Dnepropetrovsk_maniacs',
+  'Sexual_intercourse',
+  'Sex',
+  'Hentai',
+  'Human_penis',
+  'Opposition_to_pornography',
 ]);
 
 // In-memory blacklist of destinations the runtime guardrail has rejected
