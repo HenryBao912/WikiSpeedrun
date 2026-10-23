@@ -1053,20 +1053,6 @@
       }
     },
     {
-      "origin": "Mandaadi",
-      "destination": "Mandaadi",
-      "viewRange": [
-        500000,
-        100000000
-      ],
-      "difficulty": "easy",
-      "dist": 0,
-      "views": {
-        "origin": 512168,
-        "destination": 512168
-      }
-    },
-    {
       "origin": "Slow_Horses",
       "destination": "Michael_Jackson",
       "viewRange": [
@@ -1372,20 +1358,6 @@
       "views": {
         "origin": 127274,
         "destination": 439278
-      }
-    },
-    {
-      "origin": "Andrea_Yates",
-      "destination": "Bonnie_Tyler",
-      "viewRange": [
-        50000,
-        500000
-      ],
-      "difficulty": "medium",
-      "dist": 3,
-      "views": {
-        "origin": 67285,
-        "destination": 70313
       }
     },
     {
@@ -1739,20 +1711,6 @@
       }
     },
     {
-      "origin": "Elliot_Page",
-      "destination": "Luigi_Mangione",
-      "viewRange": [
-        50000,
-        500000
-      ],
-      "difficulty": "medium",
-      "dist": 3,
-      "views": {
-        "origin": 216011,
-        "destination": 188977
-      }
-    },
-    {
       "origin": "Zara_Larsson",
       "destination": "Spain",
       "viewRange": [
@@ -1806,20 +1764,6 @@
       "views": {
         "origin": 105639,
         "destination": 161536
-      }
-    },
-    {
-      "origin": "Jason_Voorhees",
-      "destination": "Khalid_Sheikh_Mohammed",
-      "viewRange": [
-        50000,
-        500000
-      ],
-      "difficulty": "medium",
-      "dist": 3,
-      "views": {
-        "origin": 222804,
-        "destination": 96365
       }
     },
     {
@@ -3331,27 +3275,6 @@
     },
     {
       "targets": [
-        "Artificial_intelligence",
-        "Artificial_intelligence",
-        "Matthew_Rhys"
-      ],
-      "viewRange": [
-        500000,
-        100000000
-      ],
-      "difficulty": "easy",
-      "distances": [
-        0,
-        3
-      ],
-      "views": [
-        545695,
-        545695,
-        517164
-      ]
-    },
-    {
-      "targets": [
         "2026_Iran_war",
         "Matthew_McConaughey",
         "Donald_Trump"
@@ -3537,27 +3460,6 @@
         535838,
         727019,
         693135
-      ]
-    },
-    {
-      "targets": [
-        "Hayden_Panettiere",
-        "Facebook",
-        "Facebook"
-      ],
-      "viewRange": [
-        500000,
-        100000000
-      ],
-      "difficulty": "easy",
-      "distances": [
-        2,
-        2
-      ],
-      "views": [
-        542783,
-        593935,
-        593935
       ]
     },
     {
