@@ -731,7 +731,13 @@ function isBadTitle(title) {
 
 // Validate articles via API: check they're real content pages (not disambig/stubs)
 // Biographies get a stricter threshold — only very famous people are fun to play with
-async function validateArticles(titles, lang = DEFAULT_LANG) {
+// opts: minBioLength (bytes a biography needs to count as a real article) and
+// bioRatio (biographies kept per other article). The defaults suit random
+// play; the pool generator loosens both, since the popular lists are mostly
+// people.
+async function validateArticles(titles, lang = DEFAULT_LANG, opts = {}) {
+  const minBioLength = opts.minBioLength ?? 100000;
+  const bioRatio = opts.bioRatio ?? 0.5;
   if (titles.length === 0) return [];
   try {
     const params = {
@@ -773,7 +779,7 @@ async function validateArticles(titles, lang = DEFAULT_LANG) {
 
       if (isBio) {
         // Biographies need 100KB+ — only the most famous people (Obama, etc.)
-        if (page.length && page.length < 100000) continue;
+        if (page.length && page.length < minBioLength) continue;
         good.push({ title: page.title.replace(/ /g, '_'), isBio: true });
       } else {
         // Normal articles: skip stubs under 5KB
@@ -786,7 +792,7 @@ async function validateArticles(titles, lang = DEFAULT_LANG) {
     const bios = good.filter(g => g.isBio).map(g => g.title);
     // Shuffle bios so selection is random
     bios.sort(() => Math.random() - 0.5);
-    const maxBios = Math.max(1, Math.floor(nonBios.length * 0.5));
+    const maxBios = Math.max(1, Math.floor(nonBios.length * bioRatio));
     return [...nonBios, ...bios.slice(0, maxBios)];
   } catch (e) {
     console.error('Error validating articles:', e.message);
@@ -1493,6 +1499,16 @@ const HARDCODED_DAILY_BLACKLIST = new Set([
   'Suicide_methods',
   'Suicide',
   'Self-harm',
+  // The April pool (pre-denylist generator) carries these as daily-eligible
+  // origins/destinations; the Oct 23 2026 daily landed on the murder case.
+  // The generator's own denylist (scripts/generatePool.js) includes this set,
+  // so later pools never contain them.
+  'Dnepropetrovsk_maniacs',
+  'Sexual_intercourse',
+  'Sex',
+  'Hentai',
+  'Human_penis',
+  'Opposition_to_pornography',
 ]);
 
 // In-memory blacklist of destinations the runtime guardrail has rejected
