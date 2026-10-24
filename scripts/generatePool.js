@@ -88,7 +88,7 @@ const MIN_POOL_SHARE = 0.5;
 // "Killing of X", "X massacre", "serial killer"; bare "murder"/"killer" would
 // also drop fiction (Murder on the Orient Express, The Killers), so the
 // crime patterns are phrase-shaped.
-const DENY_WORDS = /\b(sex|sexual|sexuality|intercourse|penis|vagina|vulva|clitoris|testicles?|scrotum|anus|genitals?|ejaculation|erection|hentai|porn|pornography|pornographic|pornstar|erotic|erotica|nude|nudity|masturbation|orgasm|fetish|bdsm|incest|strip club|strippers?|prostitution|prostitutes?|brothel|sex workers?|suicide|self-harm|rape|xnxx|xvideos|pornhub|xhamster|onlyfans|maniacs?|massacres?|torture|beheading|snuff|necrophilia|pedophilia|paedophilia|cannibalism|serial killers?|murders? of|killings? of|mass shooting|school shooting|disappearance of)\b/i;
+const DENY_WORDS = /\b(sex|sexual|sexuality|intercourse|penis|vagina|vulva|clitoris|testicles?|scrotum|anus|genitals?|ejaculation|erection|hentai|porn|pornography|pornographic|pornstar|erotic|erotica|nude|nudity|masturbation|orgasm|fetish|bdsm|incest|strip club|strippers?|prostitution|prostitutes?|brothel|sex workers?|suicide|self-harm|rape|xnxx|xvideos|pornhub|xhamster|onlyfans|brazzers|mofos|twistys|brasileirinhas|cam4|fanvue|chaturbate|stripchat|livejasmin|redtube|youporn|spankbang|bangbros|naughty america|reality kings|gang ?bang|bukkake|creampie|milf|dildo|vibrators?|sex toys?|maniacs?|massacres?|torture|beheading|snuff|necrophilia|pedophilia|paedophilia|cannibalism|serial killers?|murders? of|killings? of|mass shooting|school shooting|disappearance of|attacks|rule 34)\b/i;
 function isDeniedTitle(title) {
   const spaced = title.replace(/_/g, ' ');
   return HARDCODED_DAILY_BLACKLIST.has(title) || DENY_WORDS.test(spaced)
@@ -201,21 +201,54 @@ function logProgress(lang, kind, bucket, have, want) {
 
 // Real page views (all access, human agents) for a title over [start, end],
 // YYYYMMDD. The REST pageviews host is outside server.js's action-API queue.
-function viewsBetween(title, start, end, lang) {
-  const url = `https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/${lang}.wikipedia/all-access/user/${encodeURIComponent(title)}/daily/${start}/${end}`;
+// Null = unknown (the caller puts the title back for a later round). GitHub's
+// runners share egress addresses and Wikimedia throttles them in bursts, so
+// every request waits for a slot (spaced PV_SPACING_MS apart, all callers
+// together) and a 429 pauses every caller for PV_PAUSE_MS before the retry.
+// Without that, a run silently lost most measurements during a burst and
+// looked like "few popular articles exist": the Oct 23 2026 branch runs got
+// six, then five, easy titles out of 2,400 list candidates, because each
+// failed title was also marked seen. The counters feed the summary.
+const measureStats = { ok: 0, failed: 0, retried: 0, inflated: 0 };
+const PV_SPACING_MS = 150;
+const PV_PAUSE_MS = 8000;
+let pvNextAt = 0;
+let pvPauseUntil = 0;
+async function pvSlot() {
+  const now = Date.now();
+  const at = Math.max(now, pvNextAt, pvPauseUntil);
+  pvNextAt = at + PV_SPACING_MS;
+  if (at > now) await sleep(at - now);
+}
+function viewsOnce(url) {
   return new Promise(resolve => {
     const req = https.get(url, { headers: { 'User-Agent': UA } }, res => {
       let data = '';
       res.on('data', c => data += c);
       res.on('end', () => {
-        if (res.statusCode === 404) return resolve(0); // no views recorded at all
-        try { resolve((JSON.parse(data).items || []).reduce((s, d) => s + (d.views || 0), 0)); }
-        catch (_) { resolve(null); }
+        if (res.statusCode === 404) return resolve({ views: 0 }); // no views recorded at all
+        if (res.statusCode !== 200) return resolve({ error: `http ${res.statusCode}` });
+        try { resolve({ views: (JSON.parse(data).items || []).reduce((s, d) => s + (d.views || 0), 0) }); }
+        catch (_) { resolve({ error: 'bad json' }); }
       });
     });
-    req.on('error', () => resolve(null));
-    req.setTimeout(10000, () => req.destroy());
+    req.on('error', e => resolve({ error: e.message }));
+    req.setTimeout(10000, () => req.destroy(new Error('timeout')));
   });
+}
+async function viewsBetween(title, start, end, lang, access = 'all-access') {
+  const url = `https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/${lang}.wikipedia/${access}/user/${encodeURIComponent(title)}/daily/${start}/${end}`;
+  let last;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    if (attempt) { measureStats.retried++; await sleep(Math.min(15000, 1500 * 2 ** (attempt - 1))); }
+    await pvSlot();
+    last = await viewsOnce(url);
+    if (last.views !== undefined) { measureStats.ok++; return last.views; }
+    if (last.error === 'http 429') pvPauseUntil = Math.max(pvPauseUntil, Date.now() + PV_PAUSE_MS);
+  }
+  measureStats.failed++;
+  if (measureStats.failed <= 5 || measureStats.failed % 50 === 0) console.error(`\n  pageviews failed for ${title}: ${last.error} (${measureStats.failed} so far)`);
+  return null;
 }
 const ymd = d => d.toISOString().slice(0, 10).replace(/-/g, '');
 const WINDOWS = (() => {
@@ -231,12 +264,22 @@ const WINDOWS = (() => {
 // one-day news spike (the April pool had NBA_play-in_tournament and Nynetjer as
 // "easy"; by autumn they had 1-2K views a month) fails, and a steady article
 // a little below the floor last month still passes.
+// The "user" agent filter still passes automated traffic that fakes a
+// browser: Limonene, JSON-LD, RDFa and Neatsville,_Kentucky each showed
+// 0.8-2.7M views in Sept 2026 with ≤1% from mobile, where every article
+// real people read gets 30-90% of its views. A mobile share under 15% marks
+// the title as inflated (checked once it has enough views to matter).
+// Returns { recent, prior }, null for an inflated title, or undefined when a
+// lookup failed (the title is not judged either way).
+const MIN_MOBILE_SHARE = 0.15;
 async function measure(title, lang) {
-  const [recent, prior] = await Promise.all([
+  const [recent, prior, mobile] = await Promise.all([
     viewsBetween(title, WINDOWS.recent[0], WINDOWS.recent[1], lang),
     viewsBetween(title, WINDOWS.prior[0], WINDOWS.prior[1], lang),
+    viewsBetween(title, WINDOWS.recent[0], WINDOWS.recent[1], lang, 'mobile-web'),
   ]);
-  if (recent === null || prior === null) return null;
+  if (recent === null || prior === null || mobile === null) return undefined;
+  if (recent >= 50000 && mobile < recent * MIN_MOBILE_SHARE) { measureStats.inflated++; return null; }
   return { recent, prior };
 }
 function inBucket(v, bucket) {
@@ -249,6 +292,7 @@ function inBucket(v, bucket) {
 // whichever bucket its views fit, not only the one being filled: the easy
 // sampler measures plenty of 200-500K articles, which are medium's.
 const seenTitles = new Set();
+const measuredTitles = new Set(); // canonical titles whose views were looked up
 const queues = new Map(BUCKETS.map(b => [b.name, []]));
 const bucketTitles = new Map(BUCKETS.map(b => [b.name, []])); // every title measured into the bucket
 const useCount = new Map(); // title -> puzzles it was handed to
@@ -290,8 +334,8 @@ async function popularList(lang) {
     for (const a of await topMonthly(lang, d.getUTCFullYear(), d.getUTCMonth() + 1)) add(a.title, a.views);
   }
   for (const a of await getTopViewedArticles(lang)) add(a.title, a.views); // ×30 of one day
-  listCache = shuffle([...best].map(([title, views]) => ({ title, views })));
-  console.log(`\n  popular lists: ${listCache.length} distinct titles`);
+  listCache = shuffle([...best].map(([title, views]) => ({ title, views })).filter(a => !isBadTitle(a.title) && !isDeniedTitle(a.title)));
+  console.log(`\n  popular lists: ${listCache.length} distinct titles (${listCache.filter(a => a.views >= 400000).length} at 400K+)`);
   return listCache;
 }
 let hubCache = null;
@@ -313,23 +357,45 @@ async function refill(bucket, lang) {
   for (let round = 0; round < 6 && queues.get(bucket.name).length < 4; round++) {
     let titles;
     try { titles = await sampleTitles(bucket, lang); } catch (e) { console.error('\n  sample failed:', e.message); continue; }
-    titles = titles.filter(t => !seenTitles.has(t) && !isBadTitle(t) && !isDeniedTitle(t));
+    titles = titles.filter(t => !seenTitles.has(t));
+    // Every sampled title counts as seen, rejected ones included: the list
+    // sampler walks the list in order and skips seen titles only, so an
+    // unmarked reject would sit at the front of every later sample (the Oct
+    // 23 2026 run's easy samples were 40 titles with 5 new ones by round 5).
     titles.forEach(t => seenTitles.add(t));
+    titles = titles.filter(t => !isBadTitle(t) && !isDeniedTitle(t));
     if (!titles.length) continue;
     // Real content pages only (no disambiguation, no stubs). The default
     // biography rule (100KB+, at most half as many as other articles) is
     // made for random play; the popular lists are mostly people, and a
-    // famous person is a fine easy destination. The API takes 20 at a time.
+    // famous person is a fine easy destination, so no cap on biographies.
+    // The API takes 20 at a time.
     let valid = [];
     for (let i = 0; i < titles.length; i += 20) {
-      try { valid.push(...await validateArticles(titles.slice(i, i + 20), lang, { minBioLength: 40000, bioRatio: 2 })); } catch (_) { /* next chunk */ }
+      try { valid.push(...await validateArticles(titles.slice(i, i + 20), lang, { minBioLength: 40000, bioRatio: null })); } catch (_) { /* next chunk */ }
     }
     valid = valid.filter(t => !isBadTitle(t) && !isDeniedTitle(t)); // the API's canonical spelling may differ
+    let failed = 0;
     const measured = await mapLimit(valid, 4, async (t) => {
       const canon = await resolveRedirect(t, lang);
       if (canon !== t && (seenTitles.has(canon) || isBadTitle(canon) || isDeniedTitle(canon))) return null;
+      // The hub sampler's links are lowercase ("facebook"), so the seen check
+      // on the sampled spelling misses a title the list sampler already
+      // measured as "Facebook"; validation canonicalises it, and without this
+      // guard it was queued twice (Facebook | Facebook | Sydney_Sweeney).
+      if (measuredTitles.has(canon)) return null;
+      measuredTitles.add(canon);
       seenTitles.add(canon);
       const v = await measure(canon, lang);
+      if (v === undefined) {
+        // Unknown, not unfit: the list sampler offers the title again next
+        // round (it only skips seen titles).
+        measuredTitles.delete(canon);
+        seenTitles.delete(canon);
+        seenTitles.delete(t);
+        failed++;
+        return null;
+      }
       const fits = v && BUCKETS.find(b => inBucket(v, b));
       return fits ? { title: canon, recent: v.recent, bucket: fits.name } : null;
     });
@@ -339,6 +405,12 @@ async function refill(bucket, lang) {
       useCount.set(m.title, 0);
       queues.get(m.bucket).push(m.title);
       bucketTitles.get(m.bucket).push(m.title);
+    }
+    if (failed && !measured.some(Boolean)) {
+      // Everything failed: the API is throttling us. Let it cool down before
+      // the same titles come round again.
+      console.error(`\n  page views: ${failed} lookups failed in a row, pausing 30s`);
+      await sleep(30000);
     }
   }
 }
@@ -353,9 +425,9 @@ async function refill(bucket, lang) {
 async function takeTitles(bucket, n, lang) {
   const q = queues.get(bucket.name);
   if (q.length < n) await refill(bucket, lang);
-  const picked = q.splice(0, Math.min(n, q.length));
+  const picked = [...new Set(q.splice(0, Math.min(n, q.length)))];
   if (picked.length < n) {
-    const all = bucketTitles.get(bucket.name).filter(t => !picked.includes(t));
+    const all = [...new Set(bucketTitles.get(bucket.name))].filter(t => !picked.includes(t));
     if (picked.length + all.length < n) { q.push(...picked); return null; }
     shuffle(all).sort((a, b) => useCount.get(a) - useCount.get(b));
     picked.push(...all.slice(0, n - picked.length));
@@ -509,7 +581,8 @@ async function generateForLang(lang) {
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
   const outPath = path.join(OUT_DIR, `puzzlePool.${lang}.json`);
-  const summary = poolSummary(readPoolFile(outPath), pool);
+  const summary = poolSummary(readPoolFile(outPath), pool)
+    + `\n\nPage views: ${measureStats.ok} measured, ${measureStats.failed} failed after retries (${measureStats.retried} retries), ${measureStats.inflated} titles dropped as inflated.`;
   console.log(`\n${summary}`);
   const problems = poolProblems(pool);
   if (problems.length > 0) {

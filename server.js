@@ -708,6 +708,9 @@ function isBadTitle(title) {
   // Lists, indexes, outlines, drafts
   if (/^(list of|lists of|index of|outline of|draft:|wikipedia:|template:|category:|portal:|module:|wikipedia)/.test(lower)) return true;
   if (lower === 'wikipedia') return true;
+  // Year chronicles ("Deaths in 2026", "2026 in film") are lists too, and
+  // the monthly top lists are full of them.
+  if (/^(deaths in \d{4}|\d{4} in )/.test(lower)) return true;
   // Disambiguation and parenthetical qualifiers — these are hard to reach via links
   // e.g. "Mario Bros. (Game & Watch)", "Paris (Texas)", "Mercury (planet)"
   if (lower.includes('(')) return true;
@@ -732,12 +735,13 @@ function isBadTitle(title) {
 // Validate articles via API: check they're real content pages (not disambig/stubs)
 // Biographies get a stricter threshold — only very famous people are fun to play with
 // opts: minBioLength (bytes a biography needs to count as a real article) and
-// bioRatio (biographies kept per other article). The defaults suit random
-// play; the pool generator loosens both, since the popular lists are mostly
-// people.
+// bioRatio (biographies kept per other article; null = no cap). The defaults
+// suit random play; the pool generator loosens the length and drops the cap,
+// since the popular lists are mostly people: with the cap a batch of twenty
+// celebrities and no other article came back as one title.
 async function validateArticles(titles, lang = DEFAULT_LANG, opts = {}) {
   const minBioLength = opts.minBioLength ?? 100000;
-  const bioRatio = opts.bioRatio ?? 0.5;
+  const bioRatio = opts.bioRatio === undefined ? 0.5 : opts.bioRatio;
   if (titles.length === 0) return [];
   try {
     const params = {
@@ -792,7 +796,7 @@ async function validateArticles(titles, lang = DEFAULT_LANG, opts = {}) {
     const bios = good.filter(g => g.isBio).map(g => g.title);
     // Shuffle bios so selection is random
     bios.sort(() => Math.random() - 0.5);
-    const maxBios = Math.max(1, Math.floor(nonBios.length * bioRatio));
+    const maxBios = bioRatio === null ? bios.length : Math.max(1, Math.floor(nonBios.length * bioRatio));
     return [...nonBios, ...bios.slice(0, maxBios)];
   } catch (e) {
     console.error('Error validating articles:', e.message);
@@ -1509,6 +1513,24 @@ const HARDCODED_DAILY_BLACKLIST = new Set([
   'Hentai',
   'Human_penis',
   'Opposition_to_pornography',
+  // Biographies of murderers, terrorists and a sex offender: the title shape
+  // says nothing, so by name. The autumn 2026 top lists carry several (a TV
+  // series about serial killers).
+  'Ed_Gein',
+  'Jeffrey_Epstein',
+  'Jeffrey_Dahmer',
+  'Aileen_Wuornos',
+  'Christa_Pike',
+  'Lizzie_Borden',
+  'Ted_Bundy',
+  'Charles_Manson',
+  'Ted_Kaczynski',
+  'Osama_bin_Laden',
+  'Khalid_Sheikh_Mohammed',
+  'Luigi_Mangione',
+  'Andrea_Yates',
+  // An adult performer.
+  'Bonnie_Blue',
 ]);
 
 // In-memory blacklist of destinations the runtime guardrail has rejected
@@ -1545,15 +1567,17 @@ function pickDailyPairForDate(date, recent) {
   // Daily curation rules:
   //   - Destination popularity: a household name. Pools built by the current
   //     generator carry each title's measured monthly views (`views`), so
-  //     require >= 500K real views; older pools only have the bucket label,
-  //     and there the easy bucket stands in.
+  //     require >= 250K real views (about 8K a day: Zendaya, Cleopatra,
+  //     India). Only ~57 articles hold 500K+ month after month, which capped
+  //     the daily at ~40 destinations; ~220 hold 250K+. Older pools only
+  //     have the bucket label, and there the easy bucket stands in.
   //   - Distance: >=2 hops (no trivial 1-hop puzzles)
   //   - Destination word count: <=2 words (snappy + shareable; excludes
   //     titles like "UEFA Champions League" or "2026 in film")
   //   - Origin and destination both clear of the content denylist.
   const wordCount = (s) => (s || '').split('_').length;
   const isBadDest = (dest) => HARDCODED_DAILY_BLACKLIST.has(dest) || rejectedDailyDestinations.has(dest);
-  const popular = (p) => p.views?.destination != null ? p.views.destination >= 500000 : p.viewRange?.[0] >= 100000;
+  const popular = (p) => p.views?.destination != null ? p.views.destination >= 250000 : p.viewRange?.[0] >= 100000;
   const curated = fullPool.filter(p =>
     popular(p) &&
     p.dist >= 2 &&
@@ -1563,7 +1587,14 @@ function pickDailyPairForDate(date, recent) {
   );
   let pool = curated.length > 0 ? curated : fullPool;
   if (recent) {
-    const window = Math.max(0, Math.min(DAILY_NO_REPEAT_DAYS, pool.length - 1));
+    // The window is capped by the number of distinct destinations, not pairs:
+    // with 56 destinations and a 60-day window the strict step runs dry on
+    // day 57 and the ladder's "origin unique" step then serves whichever
+    // few pairs are left, so one destination came up six times in 120 days.
+    // Capped at destinations-1, every destination comes round about once per
+    // cycle, which is the most variety the pool allows.
+    const destinations = new Set(pool.map(p => p.destination)).size;
+    const window = Math.max(0, Math.min(DAILY_NO_REPEAT_DAYS, destinations - 1));
     const usedOrigins = new Set();
     const usedDestinations = new Set();
     for (const e of recent.slice(-window)) {
