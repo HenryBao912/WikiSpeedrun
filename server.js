@@ -1559,6 +1559,11 @@ const rejectedDailyDestinations = new Set();
 // destinations over and over (163 dailies, 30 distinct destinations, one pair
 // five times). A monthly pool refresh replaces the candidates anyway.
 const DAILY_NO_REPEAT_DAYS = 60;
+// Steady monthly views a daily destination needs (see pickDailyPairForDate).
+// On the Oct 23 2026 pool, 200K turned 56 destinations into 48: 12 spikes out
+// (Julia_Stiles, Theranos, Nathan_Fielder), 4 steady ones in (Shakira,
+// Spain). Kim_Kardashian (214K) and Dolly_Parton (232K) sit just above it.
+const DAILY_MIN_STEADY_VIEWS = 200000;
 
 function pickDailyPairForDate(date, recent) {
   const ymd = utcDateStr(date);
@@ -1566,18 +1571,21 @@ function pickDailyPairForDate(date, recent) {
   const fullPool = puzzlePools.en?.pairs || [];
   // Daily curation rules:
   //   - Destination popularity: a household name. Pools built by the current
-  //     generator carry each title's measured monthly views (`views`), so
-  //     require >= 250K real views (about 8K a day: Zendaya, Cleopatra,
-  //     India). Only ~57 articles hold 500K+ month after month, which capped
-  //     the daily at ~40 destinations; ~220 hold 250K+. Older pools only
-  //     have the bucket label, and there the easy bucket stands in.
+  //     generator carry each destination's steady views (the quietest of
+  //     three 30-day windows), which must reach DAILY_MIN_STEADY_VIEWS. The
+  //     single-window number let a news spike through: Julia_Stiles measured
+  //     693K and was daily #168, though her usual month is 80-130K. Pools
+  //     without the steady number fall back to that one window (>= 250K),
+  //     and older ones still to the bucket label (easy).
   //   - Distance: >=2 hops (no trivial 1-hop puzzles)
   //   - Destination word count: <=2 words (snappy + shareable; excludes
   //     titles like "UEFA Champions League" or "2026 in film")
   //   - Origin and destination both clear of the content denylist.
   const wordCount = (s) => (s || '').split('_').length;
   const isBadDest = (dest) => HARDCODED_DAILY_BLACKLIST.has(dest) || rejectedDailyDestinations.has(dest);
-  const popular = (p) => p.views?.destination != null ? p.views.destination >= 250000 : p.viewRange?.[0] >= 100000;
+  const popular = (p) => p.views?.destinationSteady != null ? p.views.destinationSteady >= DAILY_MIN_STEADY_VIEWS
+    : p.views?.destination != null ? p.views.destination >= 250000
+    : p.viewRange?.[0] >= 100000;
   const curated = fullPool.filter(p =>
     popular(p) &&
     p.dist >= 2 &&
@@ -5039,6 +5047,7 @@ module.exports = {
   countBacklinks,
   getDailyChallenge,
   HARDCODED_DAILY_BLACKLIST,
+  DAILY_MIN_STEADY_VIEWS,
   WIKI_HOSTS,
   DEFAULT_LANG,
   // Marathon scoring (pure — safe to unit test)
