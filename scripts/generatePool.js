@@ -31,6 +31,7 @@ const {
   computeDistance,
   normalizeArticle,
   HARDCODED_DAILY_BLACKLIST,
+  DAILY_MIN_STEADY_VIEWS,
   WIKI_HOSTS,
 } = require('..' + path.sep + 'server.js');
 
@@ -255,8 +256,13 @@ const WINDOWS = (() => {
   const end = new Date(); end.setUTCDate(end.getUTCDate() - 1); // yesterday: today is partial
   const mid = new Date(end); mid.setUTCDate(mid.getUTCDate() - 30);
   const start = new Date(mid); start.setUTCDate(start.getUTCDate() - 30);
+  const oldest = new Date(start); oldest.setUTCDate(oldest.getUTCDate() - 30);
   const dayAfter = d => { const x = new Date(d); x.setUTCDate(x.getUTCDate() + 1); return x; };
-  return { recent: [ymd(dayAfter(mid)), ymd(end)], prior: [ymd(dayAfter(start)), ymd(mid)] };
+  return {
+    recent: [ymd(dayAfter(mid)), ymd(end)],
+    prior: [ymd(dayAfter(start)), ymd(mid)],
+    older: [ymd(dayAfter(oldest)), ymd(start)],
+  };
 })();
 
 // Two windows: the last 30 days and the 30 before. The recent one places the
@@ -269,8 +275,13 @@ const WINDOWS = (() => {
 // 0.8-2.7M views in Sept 2026 with ≤1% from mobile, where every article
 // real people read gets 30-90% of its views. A mobile share under 15% marks
 // the title as inflated (checked once it has enough views to matter).
-// Returns { recent, prior }, null for an inflated title, or undefined when a
-// lookup failed (the title is not judged either way).
+// `steady` is the quietest of three 30-day windows, what the daily judges a
+// destination by: a news spike lifts one window, so Julia_Stiles measured
+// 693K and became daily #168 while her usual month is 80-130K. The third
+// window is only looked up for titles whose two windows could clear the
+// daily bar; for the rest, the lower of the two is already below it.
+// Returns { recent, prior, steady }, null for an inflated title, or undefined
+// when a lookup failed (the title is not judged either way).
 const MIN_MOBILE_SHARE = 0.15;
 async function measure(title, lang) {
   const [recent, prior, mobile] = await Promise.all([
@@ -280,7 +291,13 @@ async function measure(title, lang) {
   ]);
   if (recent === null || prior === null || mobile === null) return undefined;
   if (recent >= 50000 && mobile < recent * MIN_MOBILE_SHARE) { measureStats.inflated++; return null; }
-  return { recent, prior };
+  let steady = Math.min(recent, prior);
+  if (steady >= DAILY_MIN_STEADY_VIEWS) {
+    const older = await viewsBetween(title, WINDOWS.older[0], WINDOWS.older[1], lang);
+    if (older === null) return undefined;
+    steady = Math.min(steady, older);
+  }
+  return { recent, prior, steady };
 }
 function inBucket(v, bucket) {
   const [min, max] = bucket.viewRange;
@@ -297,6 +314,7 @@ const queues = new Map(BUCKETS.map(b => [b.name, []]));
 const bucketTitles = new Map(BUCKETS.map(b => [b.name, []])); // every title measured into the bucket
 const useCount = new Map(); // title -> puzzles it was handed to
 const views = new Map(); // title -> recent views
+const steadyViews = new Map(); // title -> quietest window (see measure)
 
 // Easy and medium come from the monthly top-1000 lists of the last three full
 // months (the bottom of a month's list is ~220K views) plus the day's list;
@@ -397,11 +415,12 @@ async function refill(bucket, lang) {
         return null;
       }
       const fits = v && BUCKETS.find(b => inBucket(v, b));
-      return fits ? { title: canon, recent: v.recent, bucket: fits.name } : null;
+      return fits ? { title: canon, recent: v.recent, steady: v.steady, bucket: fits.name } : null;
     });
     for (const m of measured) {
       if (!m) continue;
       views.set(m.title, m.recent);
+      steadyViews.set(m.title, m.steady);
       useCount.set(m.title, 0);
       queues.get(m.bucket).push(m.title);
       bucketTitles.get(m.bucket).push(m.title);
@@ -472,7 +491,11 @@ async function generatePairForBucket(lang, bucket) {
           viewRange: bucket.viewRange,
           difficulty: bucket.name,
           dist,
-          views: { origin: views.get(origin), destination: views.get(destination) },
+          views: {
+            origin: views.get(origin),
+            destination: views.get(destination),
+            destinationSteady: steadyViews.get(destination),
+          },
         };
       }
     } catch (e) {
@@ -527,7 +550,7 @@ async function generateTripleForBucket(lang, bucket) {
 
 async function generateForLang(lang) {
   console.log(`\n═══ Generating pool for [${lang}] ═══`);
-  console.log(`  views measured over ${WINDOWS.recent[0]}–${WINDOWS.recent[1]} (and ${WINDOWS.prior[0]}–${WINDOWS.prior[1]} before)`);
+  console.log(`  views measured over ${WINDOWS.recent[0]}–${WINDOWS.recent[1]} (and ${WINDOWS.prior[0]}–${WINDOWS.prior[1]}, ${WINDOWS.older[0]}–${WINDOWS.older[1]} before)`);
   const startTime = Date.now();
   const pool = {
     generatedAt: new Date().toISOString(),
