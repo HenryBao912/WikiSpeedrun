@@ -192,6 +192,7 @@
   .home-footer:hover { opacity: 0.95; }
   /* Crawlable mode links — own line above the credits. */
   .home-footer .footer-nav { display: block; margin-bottom: 5px; }
+  .home-footer .footer-legal { display: block; margin-top: 5px; font-size: 0.85em; opacity: 0.8; }
   .home-footer .footer-nav a { color: var(--text2); }
   .home-footer .heart {
     display: inline-block;
@@ -216,7 +217,7 @@
   }
   .home-footer a:hover { color: var(--accent2); border-bottom-color: var(--accent2); }
   @media (max-width: 600px) {
-    .home-footer { font-size: 0.72rem; bottom: 14px; }
+    .home-footer { font-size: 0.72rem; bottom: 14px; padding: 0 12px; box-sizing: border-box; }
     .home-footer .dot { margin: 0 6px; }
   }
   /* Landscape phones (low height + wide) — the home content competes with
@@ -1016,7 +1017,7 @@
     border: 1px solid rgba(255, 255, 255, 0.1);
   }
   .name-modal-btns .save {
-    background: linear-gradient(135deg, #a855f7, #ec4899);
+    background: var(--accent);
     color: #fff;
   }
   .name-modal-btns button:hover { transform: translateY(-1px); }
@@ -3168,7 +3169,15 @@
     gap: 8px;
     color: white;
   }
-  .player-list li.host::before { content: '👑'; }
+  /* Host marker: a small crown drawn in the brand gold (was a 👑 emoji). */
+  .player-list li.host::before {
+    content: '';
+    width: 16px; height: 16px;
+    flex-shrink: 0;
+    background: var(--gold);
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3 7l4.5 4L12 4l4.5 7L21 7l-2 12H5L3 7z'/%3E%3C/svg%3E") center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3 7l4.5 4L12 4l4.5 7L21 7l-2 12H5L3 7z'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
   .waiting-text { color: var(--text2); animation: pulse 2s infinite; }
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
 
@@ -4238,13 +4247,14 @@
     <a href="https://github.com/HenryBao912/WikiSpeedrun" target="_blank" rel="noopener">source</a>
     <span class="dot">·</span>
     <a href="https://ko-fi.com/wikispeedrunio" target="_blank" rel="noopener">support</a>
+    <span class="footer-legal">Not affiliated with the Wikimedia Foundation. Article text from <a href="https://www.wikipedia.org" target="_blank" rel="noopener">Wikipedia</a>, <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a>.</span>
   </footer>
 </div>
 
 <!-- ─── Single Player Setup Screen ─── -->
 <div id="sp-setup" class="screen">
   <button class="back-btn" onclick="showScreen('home')">← Back</button>
-  <h1 class="setup-title">Single Player</h1>
+  <h1 class="setup-title">Singleplayer</h1>
   <div class="setup-form">
     <div class="form-group">
       <label class="form-label">Mode</label>
@@ -4254,7 +4264,7 @@
           <span class="mode-desc">A → B</span>
         </div>
         <div class="mode-btn" id="spModeTri" onclick="setSinglePlayerMode('tri')">
-          <span class="mode-label">Tri Speedrun</span>
+          <span class="mode-label">Tri</span>
           <span class="mode-desc">Visit all 3</span>
         </div>
         <div class="mode-btn marathon-mode-btn" id="spModeMarathon" onclick="setSinglePlayerMode('marathon')">
@@ -4335,11 +4345,11 @@
   <div class="form-group">
     <div class="mode-selector" id="mpModeSelector">
       <div class="mode-btn active" id="mpModeClassic" onclick="setMultiplayerMode('classic')">
-        <span class="mode-label">Classic Mode</span>
+        <span class="mode-label">Classic</span>
         <span class="mode-desc">A → B</span>
       </div>
       <div class="mode-btn" id="mpModeTri" onclick="setMultiplayerMode('tri')">
-        <span class="mode-label">Tri<br>Mode</span>
+        <span class="mode-label">Tri</span>
         <span class="mode-desc">Visit all 3</span>
       </div>
       <div class="mode-btn marathon-mode-btn" id="mpModeMarathon" onclick="setMultiplayerMode('marathon')">
