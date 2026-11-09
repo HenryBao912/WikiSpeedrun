@@ -596,7 +596,24 @@ const PAGE_ROUTES = {
     title: 'Singleplayer Wikipedia Speedrun — WikiSpeedrun',
     desc: 'Practice Wikipedia speedrunning solo — classic races, Tri mode, or Marathon against the clock. No signup · no downloads · no ads.',
   },
+  // Landing pages for the head search terms ("wikipedia game", "wiki race"),
+  // where the site didn't rank. Each opens the normal home screen, but with
+  // its own title, description and visible tagline so it isn't a duplicate
+  // of / in Google's eyes.
+  '/wikipedia-game': {
+    title: 'The Wikipedia Game — Race Between Articles | WikiSpeedrun',
+    desc: 'Play the Wikipedia game free in your browser: start on one article and reach another using only the links. Daily challenge, solo, or live with friends. No signup · no downloads · no ads.',
+    tagline: 'The Wikipedia game: race article to article',
+  },
+  '/wiki-race': {
+    title: 'Wiki Race — Race Friends Across Wikipedia | WikiSpeedrun',
+    desc: 'Wikiracing with friends: share a room code and race live from one Wikipedia article to another. First to the target wins. No signup · no downloads · no ads.',
+    tagline: 'Wiki race: first to the target article wins',
+  },
 };
+// The home screen's visible tagline; routes with a `tagline` swap it.
+// Must stay byte-identical to the <p class="logo-sub"> text in index.html.
+const BASE_TAGLINE = 'Navigate Wikipedia | Race to destination';
 
 // pathname -> { raw, gz, br, etag } built once at boot.
 const pageVariants = new Map();
@@ -629,6 +646,11 @@ function loadIndexHtml() {
         .split(BASE_TITLE).join(meta.title)
         .split(BASE_DESC).join(meta.desc)
         .split('https://wikispeedrun.io/"').join(`https://wikispeedrun.io${route}"`);
+      if (meta.tagline) {
+        const from = `<p class="logo-sub">${BASE_TAGLINE}</p>`;
+        if (!html.includes(from)) throw new Error('BASE_TAGLINE no longer matches index.html');
+        html = html.split(from).join(`<p class="logo-sub">${meta.tagline}</p>`);
+      }
     }
     pageVariants.set(route, buildPageVariant(html));
   }
