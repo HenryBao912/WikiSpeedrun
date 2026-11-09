@@ -5858,33 +5858,33 @@ async function startSinglePlayer(btn) {
     const destEl = document.getElementById('spRwDest');
     const origin = originEl?.value.trim();
     const dest = destEl?.value.trim();
-    if (!origin || !dest) {
-      if (!origin) shakeInput(originEl);
-      if (!dest) shakeInput(destEl);
-      return;
-    }
-    if (origin.toLowerCase() === dest.toLowerCase()) {
+    // Empty boxes mean "pick for me": the server fills in whichever article
+    // is missing (respecting the difficulty slider), so Start never dead-ends.
+    if (origin && dest && origin.toLowerCase() === dest.toLowerCase()) {
       shakeInput(originEl);
       shakeInput(destEl);
       return;
     }
-    payload.origin = origin;
-    payload.destination = dest;
+    if (origin) payload.origin = origin;
+    if (dest) payload.destination = dest;
   } else {
     const els = [1, 2, 3].map(n => document.getElementById(`spRwTarget${n}`));
     const targets = els.map(el => el?.value.trim());
-    if (targets.some(t => !t)) {
+    // All three empty: let the server pick the set. Partly filled still
+    // shakes the empty ones, since the server needs all three or none.
+    const allEmpty = targets.every(t => !t);
+    if (!allEmpty && targets.some(t => !t)) {
       els.forEach((el, i) => { if (!targets[i]) shakeInput(el); });
       return;
     }
     const lowers = targets.map(t => t.toLowerCase());
     const dupes = new Set();
     lowers.forEach((t, i) => { lowers.forEach((t2, j) => { if (i !== j && t === t2) { dupes.add(i); dupes.add(j); } }); });
-    if (dupes.size > 0) {
+    if (!allEmpty && dupes.size > 0) {
       els.forEach((el, i) => { if (dupes.has(i)) shakeInput(el); });
       return;
     }
-    payload.targets = [targets[1], targets[0], targets[2]];
+    if (!allEmpty) payload.targets = [targets[1], targets[0], targets[2]];
   }
   // Validation passed — show the spinner. Marathon's first target can take
   // a few seconds while the server warms candidates; classic/tri are usually
