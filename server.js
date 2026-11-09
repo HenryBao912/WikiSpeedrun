@@ -337,6 +337,13 @@ function recordEvent(event, { visitorId, playerId = null, lang = null, mode = nu
   }
 }
 
+// Who/what a game was, for the analytics meta: a daily run, and whether the
+// room had one human (solo) or several. Lets queries split the daily from
+// free play and multiplayer from solo without guessing from room codes.
+function gameFlags(room) {
+  return { daily: !!room.daily, solo: !!room.singlePlayer };
+}
+
 // Record a room-level event once PER participant: a Postgres row keyed by that
 // player's visitorId, and (when mirror) a GA4 hit keyed by their GA client id —
 // so multiplayer games count every distinct human and GA4 sees one event/user.
@@ -2743,7 +2750,7 @@ async function startMarathonForRoom(room, roomCode) {
     durationKey: durKey,
     origin: startArticle,
   });
-  recordRoomEvent(room, roomCode, 'game_started', { mirror: true, lang, mode: 'marathon', meta: { durationKey: durKey } });
+  recordRoomEvent(room, roomCode, 'game_started', { mirror: true, lang, mode: 'marathon', meta: { durationKey: durKey, ...gameFlags(room) } });
 
   if (warmReady) {
     startMarathonClock(room, roomCode); // common path — identical timing to before
@@ -2972,7 +2979,7 @@ async function endMarathonForRoom(room, roomCode) {
     topScore: results[0]?.total || 0,
     playerCount: results.length,
   });
-  recordRoomEvent(room, roomCode, 'game_over', { mirror: true, mode: 'marathon', meta: { gaveUp: false, durationKey: room.marathon.durationKey } });
+  recordRoomEvent(room, roomCode, 'game_over', { mirror: true, mode: 'marathon', meta: { gaveUp: false, durationKey: room.marathon.durationKey, ...gameFlags(room) } });
 }
 
 // ─── Game Logic ───
@@ -3178,7 +3185,7 @@ async function startGameForRoom(room, roomCode) {
       destination: room.pair.destination,
       manual: !!room.manualArticles,
     });
-    recordRoomEvent(room, roomCode, 'game_started', { mirror: true, lang, mode: 'classic' });
+    recordRoomEvent(room, roomCode, 'game_started', { mirror: true, lang, mode: 'classic', meta: gameFlags(room) });
     // Cache destination backlinks async (don't block game start). Catch
     // errors so a Wikipedia hiccup doesn't produce an unhandled rejection;
     // the player just plays without an initial-distance badge, which is fine.
@@ -3265,7 +3272,7 @@ async function startGameForRoom(room, roomCode) {
       targets: room.triple.targets,
       manual: !!room.manualArticles,
     });
-    recordRoomEvent(room, roomCode, 'game_started', { mirror: true, lang, mode: 'tri' });
+    recordRoomEvent(room, roomCode, 'game_started', { mirror: true, lang, mode: 'tri', meta: gameFlags(room) });
     // Cache destination data for unvisited tri targets (targets[1] and targets[2])
     room.triDestData = {};
     for (const t of room.triple.targets.slice(1)) {
@@ -3815,7 +3822,7 @@ async function handleActionInner(playerId, msg, req = null, arrivedAt = Date.now
             daily: !!room.daily,
             dailyMeta: room.dailyMeta || null,
           });
-          recordRoomEvent(room, player.roomCode, 'game_over', { mirror: true, mode: room.mode, lang: room.lang || DEFAULT_LANG, winnerId: room.winner, meta: { gaveUp: false, winnerId: room.winner } });
+          recordRoomEvent(room, player.roomCode, 'game_over', { mirror: true, mode: room.mode, lang: room.lang || DEFAULT_LANG, winnerId: room.winner, meta: { gaveUp: false, winnerId: room.winner, ...gameFlags(room) } });
           logEvent('game_over', {
             roomCode: player.roomCode,
             mode: room.mode,
@@ -4354,7 +4361,7 @@ function finalizeGiveUp(room, roomCode) {
     daily: !!room.daily,
     dailyMeta: room.dailyMeta || null,
   });
-  recordRoomEvent(room, roomCode, 'game_over', { mirror: true, mode: room.mode, lang: room.lang || DEFAULT_LANG, meta: { gaveUp: true } });
+  recordRoomEvent(room, roomCode, 'game_over', { mirror: true, mode: room.mode, lang: room.lang || DEFAULT_LANG, meta: { gaveUp: true, ...gameFlags(room) } });
   logEvent('game_over', {
     roomCode,
     mode: room.mode,
@@ -4584,8 +4591,17 @@ const server = http.createServer(async (req, res) => {
       const visitorId = sanitizeVid(data.vid);
       const gaClientId = sanitizeGaClientId(data.gacid) || visitorId;
       const page = typeof data.page === 'string' ? data.page.slice(0, 200) : null;
+      // Where the visitor came from. `ref` is the referring site's hostname
+      // only (never a path or query), `src` an explicit ?ref= / ?utm_source=
+      // tag. Both are client-supplied, so keep them to a tight charset.
+      const ref = typeof data.ref === 'string' && /^[a-z0-9.-]{1,100}$/i.test(data.ref) ? data.ref.toLowerCase() : null;
+      const src = typeof data.src === 'string' && /^[a-z0-9_.-]{1,40}$/i.test(data.src) ? data.src.toLowerCase() : null;
+      const pvMeta = {};
+      if (page) pvMeta.page = page;
+      if (ref) pvMeta.ref = ref;
+      if (src) pvMeta.src = src;
       // Each self-gates on its own id; recordEvent needs a vid, sendGA4 a clientId.
-      recordEvent('page_view', { visitorId, meta: page ? { page } : null });
+      recordEvent('page_view', { visitorId, meta: Object.keys(pvMeta).length ? pvMeta : null });
       sendGA4({ clientId: gaClientId, name: 'page_view', params: {} });
     } catch (_) { /* malformed — ignore, never error a logging endpoint */ }
     res.writeHead(204);

@@ -4723,7 +4723,13 @@ function sendPageView() {
     try { const m = document.cookie.match(/_ga=GA\d\.\d\.(\d+\.\d+)/); if (m) myGaClientId = m[1]; } catch (e) {}
   }
   try {
-    const payload = JSON.stringify({ vid: myVisitorId, gacid: myGaClientId || '', page: location.pathname });
+    // Referrer: hostname of another site only (no path/query kept). `src`
+    // is an explicit ?ref= or ?utm_source= tag, e.g. on shared daily links.
+    let refHost = '';
+    try { const u = new URL(document.referrer); if (u.hostname && u.hostname !== location.hostname) refHost = u.hostname; } catch (e) {}
+    let srcTag = '';
+    try { const q = new URLSearchParams(location.search); srcTag = (q.get('ref') || q.get('utm_source') || '').slice(0, 40); } catch (e) {}
+    const payload = JSON.stringify({ vid: myVisitorId, gacid: myGaClientId || '', page: location.pathname, ref: refHost, src: srcTag });
     if (navigator.sendBeacon) {
       navigator.sendBeacon('/pageview', new Blob([payload], { type: 'application/json' }));
     } else {
@@ -5519,7 +5525,7 @@ function buildDailyShareText(result, streak) {
     lines.push(shown.map(d => DAILY_SQUARE_EMOJI[dailyStepTier(d)]).join('') + (result.dists.length > DAILY_SQUARE_MAX ? '…' : ''));
   }
   if (streak > 0) lines.push(`🔥 ${streak} day streak`);
-  lines.push('https://wikispeedrun.io');
+  lines.push('https://wikispeedrun.io/?ref=share');
   return lines.join('\n');
 }
 
