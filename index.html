@@ -3367,6 +3367,26 @@
     transition: opacity 0.2s;
   }
   .surrender-btn:hover { opacity: 0.9; cursor: pointer; }
+  /* Safe mode switch (multiplayer lobby, solo setup). */
+  .safe-toggle {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 420px; /* same column as the mode buttons and difficulty slider */
+    padding: 10px 14px;
+    margin: 0 auto 14px;
+    background: var(--surface);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    cursor: pointer;
+    text-align: left;
+  }
+  .safe-toggle input { margin-top: 3px; width: 16px; height: 16px; accent-color: var(--green); flex-shrink: 0; }
+  .safe-toggle .safe-title { font-weight: 700; font-size: 0.9rem; }
+  .safe-toggle .safe-desc { display: block; color: var(--text2); font-size: 0.75rem; margin-top: 2px; }
+  .safe-toggle.locked { opacity: 0.6; cursor: default; }
   /* Host-only: ends the round when someone idle is stalling the surrender vote. */
   .end-round-btn {
     background: none;
@@ -4312,6 +4332,10 @@
   <button class="back-btn" onclick="showScreen('home')">← Back</button>
   <h1 class="setup-title">Singleplayer</h1>
   <div class="setup-form">
+    <label class="safe-toggle" id="spSafeRow">
+      <input type="checkbox" id="spSafeToggle" onchange="setSoloSafeMode(this.checked)">
+      <span><span class="safe-title">Safe mode</span><span class="safe-desc">Blocks adult articles. Good for classrooms.</span></span>
+    </label>
     <div class="form-group">
       <label class="form-label">Mode</label>
       <div class="mode-selector">
@@ -4409,6 +4433,10 @@
     <ul class="player-list" id="playerList"></ul>
     <p class="waiting-text" id="waitingText">Waiting for players...</p>
   </div>
+  <label class="safe-toggle" id="mpSafeRow">
+    <input type="checkbox" id="mpSafeToggle" onchange="setSafeMode(this.checked)">
+    <span><span class="safe-title">Safe mode</span><span class="safe-desc">Blocks adult articles: they can't be a start or target, and their links won't open. Good for classrooms.</span></span>
+  </label>
   <div class="form-group">
     <div class="mode-selector" id="mpModeSelector">
       <div class="mode-btn active" id="mpModeClassic" onclick="setMultiplayerMode('classic')">
@@ -4720,7 +4748,7 @@ function enhanceClickableControls() {
   });
 }
 
-document.addEventListener('DOMContentLoaded', () => { initBgWords(); initHeroLinks(); renderSpRoundWords(); enhanceClickableControls(); });
+document.addEventListener('DOMContentLoaded', () => { initBgWords(); initHeroLinks(); renderSpRoundWords(); enhanceClickableControls(); syncSafeToggles(); });
 
 // ─── Real-user tracking IDs ───
 // myVisitorId: persistent per browser (localStorage), identifies one human over
@@ -4845,6 +4873,38 @@ let prevPositions = new Map();
 // Player ids currently one link from the target (drives the one-shot
 // "X is 1 link away!" toast in renderPlayersBar).
 const podWasClose = new Set();
+
+// ─── Safe mode ───
+// The server sends the pattern for titles to block (safe_mode_changed); links
+// matching it are refused here before the article loads, and again on the
+// server. The choice is remembered per browser, so a teacher's rooms and solo
+// games start with it on.
+const SAFE_MODE_KEY = 'wsr_safe_mode';
+let safeModeEnabled = false;
+let safeRe = null;
+function savedSafeMode() { try { return localStorage.getItem(SAFE_MODE_KEY) === '1'; } catch (e) { return false; } }
+function saveSafeMode(on) { try { localStorage.setItem(SAFE_MODE_KEY, on ? '1' : '0'); } catch (e) {} }
+function isBlockedBySafeMode(title) {
+  return !!(safeModeEnabled && safeRe && safeRe.test(String(title).replace(/_/g, ' ')));
+}
+function applySafeMode(on, pattern) {
+  safeModeEnabled = !!on;
+  try { safeRe = on && pattern ? new RegExp(pattern, 'i') : null; } catch (e) { safeRe = null; }
+  const lobby = document.getElementById('mpSafeToggle');
+  if (lobby) lobby.checked = safeModeEnabled;
+}
+// Host, in the lobby.
+function setSafeMode(on) {
+  if (!isHost) { applySafeMode(safeModeEnabled, null); const el = document.getElementById('mpSafeToggle'); if (el) el.checked = safeModeEnabled; return; }
+  saveSafeMode(on);
+  send({ type: 'set_safe_mode', on });
+}
+// Solo setup: just remembered; start_single carries it.
+function setSoloSafeMode(on) { saveSafeMode(on); }
+function syncSafeToggles() {
+  const sp = document.getElementById('spSafeToggle');
+  if (sp) sp.checked = savedSafeMode();
+}
 let resultsAnimationTimeouts = [];
 
 // Single player difficulty state
@@ -5045,7 +5105,7 @@ async function send(msg) {
     // These rejection codes have their own user-facing feedback (move_rejected
     // toast / navigateTo rollback / session_lost screen), so don't also dump the
     // raw machine string into the #mpError slot.
-    const SILENT = new Set(['illegal_move', 'rate_limited', 'session_lost', 'finished', 'not_participant', 'no_room', 'not_started']);
+    const SILENT = new Set(['illegal_move', 'safe_mode', 'rate_limited', 'session_lost', 'finished', 'not_participant', 'no_room', 'not_started']);
     if (!result.ok && result.error && !SILENT.has(result.error)) {
       // #mpError lives on the multiplayer setup screen. Anywhere else (a
       // 401 "Not connected" mid-game, say) it was written where nobody could
@@ -5698,6 +5758,7 @@ async function quickPlay(btn) {
       // Quick Play skews popular: 10K–1M monthly views filters out the obscure
       // long-tail so newcomers don't get stuck on an article with few links.
       viewRange: [10000, 1000000],
+      safeMode: savedSafeMode(),
     });
     if (result.ok) {
       currentRoomCode = result.code;
@@ -5930,6 +5991,7 @@ async function startSinglePlayer(btn) {
     name: 'Single Player',
     mode: currentGameMode,
     viewRange: spDifficulty,
+    safeMode: savedSafeMode(),
   };
   if (currentGameMode === 'marathon') {
     payload.duration = marathonDurationKey;
@@ -6731,6 +6793,10 @@ function handleServerMessage(msg) {
       break;
     }
 
+    case 'safe_mode_changed':
+      applySafeMode(msg.on, msg.pattern);
+      break;
+
     case 'room_created':
       currentRoomCode = msg.code;
       isHost = true;
@@ -6738,6 +6804,8 @@ function handleServerMessage(msg) {
       isSinglePlayer = msg.singlePlayer || false;
       document.getElementById('codeText').textContent = msg.code;
       renderInviteLink();
+      applySafeMode(false, null); // a new room starts off; the host's saved choice is re-sent below
+      if (!isSinglePlayer && !msg.daily && savedSafeMode()) send({ type: 'set_safe_mode', on: true });
       // Daily indicator pill on the in-game header — show only for daily
       // rooms. Hidden by default + reset on every new room creation so a
       // prior daily session's pill doesn't leak into a regular game.
@@ -7038,6 +7106,10 @@ function applyHostLobbyControls(host) {
   const diff = document.getElementById('mpDiffSection');
   if (sel) { sel.style.opacity = host ? '1' : '0.5'; sel.style.pointerEvents = host ? 'auto' : 'none'; }
   if (diff) { diff.style.opacity = host ? '1' : '0.5'; diff.style.pointerEvents = host ? 'auto' : 'none'; }
+  const safeRow = document.getElementById('mpSafeRow');
+  const safeBox = document.getElementById('mpSafeToggle');
+  if (safeRow) safeRow.classList.toggle('locked', !host);
+  if (safeBox) safeBox.disabled = !host;
 }
 
 function renderPlayerList(players, hostId) {
@@ -7696,7 +7768,9 @@ async function loadArticle(title) {
         const link = e.target.closest('a[data-article]');
         if (link) {
           e.preventDefault();
-          navigateTo(link.getAttribute('data-article'));
+          const title = link.getAttribute('data-article');
+          if (isBlockedBySafeMode(title)) { showGlobalToast('Safe mode: that article is blocked.', 2500); return; }
+          navigateTo(title);
           return;
         }
         const scrollLink = e.target.closest('a[data-scroll]');
@@ -7824,6 +7898,7 @@ function navigateTo(article) {
       updateBreadcrumbs();
     }
     if (result.error === 'rate_limited') showGlobalToast('Slow down a moment — try again.', 2500);
+    if (result.error === 'safe_mode') showGlobalToast('Safe mode: that article is blocked.', 2500);
   });
 }
 

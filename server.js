@@ -7,6 +7,7 @@ const url = require('url');
 const zlib = require('zlib');
 const { AsyncLocalStorage } = require('async_hooks');
 const { cleanPlayerName } = require('./nameFilter');
+const { EXPLICIT_RE, isExplicitTitle } = require('./safeTitles');
 
 // ─── Game State ───
 const rooms = new Map();
@@ -448,8 +449,25 @@ function recordEvent(event, { visitorId, playerId = null, lang = null, mode = nu
 // room had one human (solo) or several. Lets queries split the daily from
 // free play and multiplayer from solo without guessing from room codes.
 function gameFlags(room) {
-  return { daily: !!room.daily, solo: !!room.singlePlayer };
+  return { daily: !!room.daily, solo: !!room.singlePlayer, ...(safeModeOn(room) && { safe: true }) };
 }
+
+// Safe mode (host toggle in the lobby, a checkbox in solo setup): the round's
+// start and targets can't be adult titles, and no one can follow a link to
+// one. Dailies ignore it: the day's puzzle and board are the same for all.
+function safeModeOn(room) {
+  return !!room && room.safeMode && !room.daily;
+}
+// Tell a player whether Safe mode is on, with the pattern the client uses to
+// block links before it loads them (the server enforces it on navigate too).
+function safeModeMessage(room) {
+  return { type: 'safe_mode_changed', on: !!room.safeMode, pattern: room.safeMode ? EXPLICIT_RE.source : null };
+}
+// The first explicit title among `titles`, or null.
+function firstExplicitTitle(titles) {
+  return titles.find(t => t && isExplicitTitle(t)) || null;
+}
+const SAFE_MODE_ARTICLE_ERROR = t => `Safe mode is on: "${String(t).replace(/_/g, ' ')}" isn't allowed. Pick another article.`;
 
 // Record a room-level event once PER participant: a Postgres row keyed by that
 // player's visitorId, and (when mirror) a GA4 hit keyed by their GA client id —
@@ -1712,6 +1730,24 @@ async function getRandomPair(viewRange, lang = DEFAULT_LANG) {
   }
   // Last-resort hardcoded fallback.
   return { origin: 'Pizza', destination: 'Moon' };
+}
+
+// Safe mode rooms: redraw while the pick holds an adult title. The curated pool
+// is clean already (the generator denylist), so this only matters for live
+// generation, the fallback when the pool has nothing for the difficulty.
+async function getSafeRandomPair(room, viewRange, lang) {
+  let pair = await getRandomPair(viewRange, lang);
+  for (let i = 0; i < 4 && safeModeOn(room) && firstExplicitTitle([pair.origin, pair.destination]); i++) {
+    pair = await getRandomPair(viewRange, lang);
+  }
+  return pair;
+}
+async function getSafeRandomTriple(room, viewRange, lang) {
+  let triple = await getRandomTriple(viewRange, lang);
+  for (let i = 0; i < 4 && safeModeOn(room) && firstExplicitTitle(triple.targets); i++) {
+    triple = await getRandomTriple(viewRange, lang);
+  }
+  return triple;
 }
 
 async function getRandomTriple(viewRange, lang = DEFAULT_LANG) {
@@ -3064,6 +3100,7 @@ function initRoom(code, hostId, hostName, lang = DEFAULT_LANG) {
     destData: null, // { hop1: Set, hop2: Set, aliases: Set } for distance calc
     viewRange: null, // [minViews, maxViews] for difficulty filtering
     manualArticles: null, // { origin, destination } or { targets: [a,b,c] }
+    safeMode: false, // host's classroom toggle: no adult articles (see safeModeOn)
     giveUpVotes: new Set(), // set of playerIds who voted to give up
     singlePlayer: false, // true if room is single-player only
     colorIndex: 1, // next color index (host already took 0)
@@ -3124,13 +3161,13 @@ async function startGameForRoom(room, roomCode) {
     if (ma.origin && ma.destination) {
       room.pair = { origin: ma.origin, destination: ma.destination };
     } else if (ma.origin || ma.destination) {
-      const randomPair = await getRandomPair(viewRange, lang);
+      const randomPair = await getSafeRandomPair(room, viewRange, lang);
       room.pair = {
         origin: ma.origin || randomPair.origin,
         destination: ma.destination || randomPair.destination,
       };
     } else {
-      room.pair = await getRandomPair(viewRange, lang);
+      room.pair = await getSafeRandomPair(room, viewRange, lang);
     }
     // Re-entrancy guard. startGameForRoom is async and fire-and-forget from its
     // callers, so a concurrent return_to_lobby / play_again / second start can null
@@ -3303,7 +3340,7 @@ async function startGameForRoom(room, roomCode) {
     if (manualOk) {
       room.triple = { targets: manualTargets };
     } else {
-      room.triple = await getRandomTriple(viewRange, lang);
+      room.triple = await getSafeRandomTriple(room, viewRange, lang);
     }
     // Resolve the targets to canonical titles, as classic does for its pair:
     // a target that is a redirect title ("Rooster" → Chicken, or a pool title
@@ -3647,11 +3684,30 @@ async function handleActionInner(playerId, msg, req = null, arrivedAt = Date.now
       room.colorIndex++;
       sendSSE(playerId, { type: 'room_joined', code, playerId, lang: room.lang || DEFAULT_LANG });
       sendSSE(playerId, { type: 'mode_changed', mode: room.mode });
+      sendSSE(playerId, safeModeMessage(room));
       broadcastToRoom(code, {
         type: 'player_list',
         players: [...room.players.entries()].map(([id, p]) => ({ id, name: p.name, color: p.color })),
         host: room.host,
       });
+      return { ok: true };
+    }
+
+    case 'set_safe_mode': {
+      const player = players.get(playerId);
+      if (!player) return { ok: false };
+      const room = rooms.get(player.roomCode);
+      if (!room || room.host !== playerId) return { ok: false, error: 'Only host can change Safe mode' };
+      if (room.started) return { ok: false, error: 'Cannot change Safe mode during a game' };
+      room.safeMode = !!msg.on;
+      if (room.safeMode) {
+        // Articles the host already typed may now be off limits.
+        const m = room.manualArticles;
+        const bad = m && firstExplicitTitle([m.origin, m.destination, ...(m.targets || [])]);
+        if (bad) room.manualArticles = null;
+        if (bad) broadcastToRoom(player.roomCode, { type: 'articles_updated', manualArticles: null });
+      }
+      broadcastToRoom(player.roomCode, safeModeMessage(room));
       return { ok: true };
     }
 
@@ -3708,6 +3764,11 @@ async function handleActionInner(playerId, msg, req = null, arrivedAt = Date.now
       } else if (Array.isArray(msg.targets)) {
         if (msg.targets.length !== 3 || !msg.targets.every(t => isValidArticle(t))) return { ok: false, error: 'Invalid article title' };
         room.manualArticles = { targets: msg.targets };
+      }
+      if (safeModeOn(room) && room.manualArticles) {
+        const m = room.manualArticles;
+        const bad = firstExplicitTitle([m.origin, m.destination, ...(m.targets || [])]);
+        if (bad) { room.manualArticles = null; return { ok: false, error: SAFE_MODE_ARTICLE_ERROR(bad) }; }
       }
       startGameForRoom(room, player.roomCode);
       return { ok: true };
@@ -3775,6 +3836,12 @@ async function handleActionInner(playerId, msg, req = null, arrivedAt = Date.now
 
       const article = msg.article;
       if (!isValidArticle(article)) return { ok: false, error: 'Invalid article' };
+      // Safe mode: the client already refuses these links; this stops a
+      // modified client. `from` snaps the caller back to where the server has them.
+      if (safeModeOn(room) && isExplicitTitle(article)) {
+        logEvent('navigate_rejected', { playerId, roomCode: player.roomCode, article, reason: 'safe_mode' });
+        return { ok: false, error: 'safe_mode', from: rp.path[rp.path.length - 1] };
+      }
 
       // Core anti-cheat: the move is only legal if `article` is actually linked
       // from the page the player is on. Without this the path (and the Daily
@@ -4241,6 +4308,10 @@ async function handleActionInner(playerId, msg, req = null, arrivedAt = Date.now
       if (origin !== undefined && origin !== '' && !isValidArticle(origin)) return { ok: false, error: 'Invalid origin' };
       if (destination !== undefined && destination !== '' && !isValidArticle(destination)) return { ok: false, error: 'Invalid destination' };
       if (targets && !targets.every(t => t === '' || isValidArticle(t))) return { ok: false, error: 'Invalid target' };
+      if (safeModeOn(room)) {
+        const bad = firstExplicitTitle([origin, destination, ...(targets || [])]);
+        if (bad) return { ok: false, error: SAFE_MODE_ARTICLE_ERROR(bad) };
+      }
       room.manualArticles = {
         origin: origin || undefined,
         destination: destination || undefined,
@@ -4322,6 +4393,12 @@ async function handleActionInner(playerId, msg, req = null, arrivedAt = Date.now
     }
 
     case 'start_single': {
+      // Safe mode: refuse adult titles before anything is set up, so the
+      // player keeps their current state and can pick again.
+      if (msg.safeMode) {
+        const bad = firstExplicitTitle([msg.origin, msg.destination, ...(Array.isArray(msg.targets) ? msg.targets : [])]);
+        if (bad) return { ok: false, error: SAFE_MODE_ARTICLE_ERROR(bad) };
+      }
       const code = generateRoomCode();
       const name = cleanPlayerName(msg.name, 'Single Player', MAX_NAME_LEN);
       const lang = normalizeLang(msg.lang);
@@ -4333,6 +4410,7 @@ async function handleActionInner(playerId, msg, req = null, arrivedAt = Date.now
       }
       const room = initRoom(code, playerId, name, lang);
       room.singlePlayer = true;
+      room.safeMode = !!msg.safeMode;
       // Apply mode and difficulty from client
       room.mode = msg.mode === 'tri' ? 'tri' : msg.mode === 'marathon' ? 'marathon' : 'classic';
       const parsedRange = parseViewRange(msg.viewRange);
@@ -4361,6 +4439,7 @@ async function handleActionInner(playerId, msg, req = null, arrivedAt = Date.now
       }
       rooms.set(code, room);
       sendSSE(playerId, { type: 'room_created', code, playerId, singlePlayer: true, lang });
+      sendSSE(playerId, safeModeMessage(room));
       startGameForRoom(room, code);
       return { ok: true, code };
     }
