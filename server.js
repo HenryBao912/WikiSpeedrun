@@ -4527,6 +4527,22 @@ async function handleActionInner(playerId, msg, req = null, arrivedAt = Date.now
       return { ok: true };
     }
 
+    case 'end_round': {
+      // Host ends a classic/tri round for everyone. The surrender vote needs
+      // every player, so one idle or AFK player in a big room could stall it
+      // forever; this gives the host a way out (same result as a unanimous
+      // surrender: game_over with gaveUp, no winner).
+      const player = players.get(playerId);
+      if (!player) return { ok: false };
+      const room = rooms.get(player.roomCode);
+      if (!room || !room.started) return { ok: false, error: 'Game not in progress' };
+      if (room.host !== playerId) return { ok: false, error: 'Only host can end the round' };
+      if (room.mode === 'marathon') return { ok: false, error: 'Marathon ends on the timer' };
+      logEvent('round_ended_by_host', { roomCode: player.roomCode, playerCount: room.players.size, voted: room.giveUpVotes.size });
+      finalizeGiveUp(room, player.roomCode);
+      return { ok: true };
+    }
+
     case 'back_to_lobby': {
       const player = players.get(playerId);
       if (!player) return { ok: false };

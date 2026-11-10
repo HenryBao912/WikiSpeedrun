@@ -3367,6 +3367,20 @@
     transition: opacity 0.2s;
   }
   .surrender-btn:hover { opacity: 0.9; cursor: pointer; }
+  /* Host-only: ends the round when someone idle is stalling the surrender vote. */
+  .end-round-btn {
+    background: none;
+    border: none;
+    padding: 6px 0 0;
+    color: var(--text2);
+    font: inherit;
+    font-size: 0.75rem;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+  }
+  .end-round-btn:hover { color: var(--text); }
+  .end-round-btn.armed { color: #ffa38c; text-decoration: none; font-weight: 700; }
   .give-up-status {
     font-size: 0.75rem;
     color: var(--text2);
@@ -4474,6 +4488,7 @@
       <span>Time: <span class="stat-val" id="timerDisplay">0:00</span></span>
       <button class="surrender-btn" onclick="sendGiveUpVote()">Surrender</button>
       <div class="give-up-status" id="giveUpStatus"></div>
+      <button type="button" class="end-round-btn" id="endRoundBtn" onclick="endRoundForAll(this)" style="display:none;">End round for everyone</button>
     </div>
   </div>
   <div class="breadcrumb-bar" id="breadcrumbs"></div>
@@ -6562,6 +6577,34 @@ window.addEventListener('beforeunload', (e) => {
 });
 
 // ─── Game ───
+// Host only, multiplayer classic/tri: ends the round for everyone, since the
+// surrender vote needs every player and one idle tab stalls it. Two taps, so a
+// stray click can't end a room's round.
+function updateEndRoundBtn() {
+  const btn = document.getElementById('endRoundBtn');
+  if (!btn) return;
+  const show = isHost && !isSinglePlayer && !!currentRoomCode && currentGameMode !== 'marathon'
+    && document.getElementById('game').classList.contains('active');
+  btn.style.display = show ? '' : 'none';
+  if (!show) resetEndRoundBtn(btn);
+}
+function resetEndRoundBtn(btn) {
+  clearTimeout(btn._t);
+  btn.classList.remove('armed');
+  btn.textContent = 'End round for everyone';
+}
+function endRoundForAll(btn) {
+  if (!btn.classList.contains('armed')) {
+    btn.classList.add('armed');
+    btn.textContent = 'Tap again to end it for everyone';
+    clearTimeout(btn._t);
+    btn._t = setTimeout(() => resetEndRoundBtn(btn), 4000);
+    return;
+  }
+  resetEndRoundBtn(btn);
+  send({ type: 'end_round' });
+}
+
 function sendGiveUpVote() {
   send({ type: 'give_up_vote' });
   const btn = document.querySelector('.surrender-btn');
@@ -6748,6 +6791,7 @@ function handleServerMessage(msg) {
         }
       }
       if (pruned && document.getElementById('game').classList.contains('active')) renderPlayersBar(latestDistData);
+      updateEndRoundBtn(); // a new host mid-round gets the button
       // Promoted to host on the results screen (the old host went home or
       // closed the tab, and the 30s grace passed): the buttons were set once
       // at render time, so the new host sat on "Waiting for host…" with no way
@@ -7119,6 +7163,7 @@ function startGameUI(msg) {
   podWasClose.clear();
   document.getElementById('lbRiders').innerHTML = '';
   showScreen('game');
+  updateEndRoundBtn();
   const playersBar = document.getElementById('playersBar');
   playersBar.style.display = 'flex';
   playersBar.classList.toggle('tri-mode', currentGameMode === 'tri');
