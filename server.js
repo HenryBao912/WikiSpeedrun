@@ -3919,7 +3919,11 @@ async function handleActionInner(playerId, msg, req = null, arrivedAt = Date.now
       // through (the check already fails open on errors); the check still
       // finishes in the background and a late "illegal" verdict is logged.
       let legal = true;
-      if (fromArticle) {
+      // Solo free play has no leaderboard and nobody to cheat against, so the
+      // check only costs the player wait and Wikipedia requests: skip it. Daily
+      // and multiplayer rooms still verify every move.
+      const needsMoveCheck = !(room.singlePlayer && !room.daily);
+      if (fromArticle && needsMoveCheck) {
         const check = withWikiPriority(() => isLegalMove(fromArticle, article, room.lang || DEFAULT_LANG));
         // Daily runs keep the full wait: their leaderboard is public, so the
         // check must finish (it still fails open on Wikipedia errors).

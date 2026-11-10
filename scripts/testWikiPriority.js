@@ -482,6 +482,27 @@ async function scenarioSpans() {
   ok(`marathon start: all ${mReqs.length} warm-up requests ran low (the raced five + warmMarathonCandidates' first batch)`,
     warmed(titles.slice(0, 5)) && warmed(titles.slice(5, 8)) && mReqs.every(x => !x.high));
 
+  // 3k. Solo free play skips the move check (no leaderboard, nothing to
+  // cheat); a solo daily and a multiplayer room still run it.
+  for (const [tag, flags, checked] of [['solo', { singlePlayer: true }, false], ['solo daily', { singlePlayer: true, daily: true }, true], ['multiplayer', {}, true]]) {
+    const n = `S3k ${tag.replace(' ', '')}`; // no spaces/underscores: titles must survive the server's normalising
+    fake.links.set(`${n} from`, [[`${n} next`]]);
+    seatPlayer(`s3k-${n}`, null, null);
+    const k = seatPlayer(`s3k-${n}`, `S3K${tag.length}${tag[0].toUpperCase()}`.slice(0, 5).padEnd(5, '0'), (room, rp) => {
+      Object.assign(room, flags);
+      room.mode = 'classic';
+      room.pair = { origin: `${n} from`, destination: `${n} dest` };
+      room.destData = { hop1: new Set(['nowhere']), hop2: new Set(), aliases: new Set([`${n} dest`.toLowerCase()]) };
+      rp.path = [`${n} from`];
+      rp.distances = [3];
+    });
+    const rk = await s.handleAction(`s3k-${n}`, { type: 'navigate', article: `${n} next` });
+    await settled(`3k ${tag} settled`);
+    const reqRe = new RegExp(`^links:${n} from$`);
+    ok(`${tag}: navigate accepted, move check ${checked ? 'ran' : 'skipped'} (${startsOf(reqRe).length} fetches of the from-page; reply ${JSON.stringify(rk)})`,
+      rk && rk.ok === true && (startsOf(reqRe).length > 0) === checked);
+  }
+
   // 3j. /validate-dest: the word box waits on its backlink count (high).
   const answer = await new Promise(resolve => {
     const res = {
