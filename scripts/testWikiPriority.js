@@ -33,6 +33,12 @@
 //      WIKI_MIN_INTERVAL_MS, asserted from the stub's own records.
 //   6. A retry after a 429 keeps the request's priority, including a request
 //      promoted while it was backing off.
+//   7. Bulk (marathon warm-up) sits below background: background goes first,
+//      with a starvation guard; bulk holds at most one cacheDestination slot,
+//      so a game's destination build never waits out a marathon room's list;
+//      a game that needs a destination being warmed in bulk promotes it; and
+//      a marathon room warms a few targets ahead, not its whole list, and
+//      stops once the room is gone.
 //
 // Like testWikiApi.js, this reaches internals through a patched require.
 // --server <path/to/server.js> runs against another checkout, e.g. the code
@@ -111,7 +117,7 @@ https.get = function (url, opts, cb) {
   const p = Object.fromEntries(u.searchParams);
   const c = classify(p);
   const store = s && s.wikiPriority ? s.wikiPriority.getStore() : undefined;
-  const rec = { key: c.key, t: Date.now(), queueT: s ? s.lastWikiStart() : null, high: !!(store && store.high) };
+  const rec = { key: c.key, t: Date.now(), queueT: s ? s.lastWikiStart() : null, high: !!(store && store.high), bulk: !!(store && store.bulk) };
   fake.starts.push(rec);
   fake.maxInFlight = Math.max(fake.maxInFlight, rec.inFlight = ++fake.inFlight);
   const req = new EventEmitter();
@@ -140,6 +146,7 @@ const internals = [
   'isLegalMove', 'getPageLinks', 'handleAction', 'rooms', 'players', 'initRoom', 'server',
   'cacheSet', 'cacheKey', 'redirectCache', 'withWikiPriority', 'wikiPriority',
   'WIKI_MAX_CONCURRENT', 'WIKI_MIN_INTERVAL_MS', 'WIKI_MAX_LOW_SKIPS',
+  'inWikiBulk', 'cacheDestination', 'removeFromRoom', 'MARATHON_WARM_AHEAD', 'WIKI_MAX_BULK_SKIPS',
 ];
 const patched = src.replace(/^module\.exports = \{/m, 'module.exports = {\n' +
   internals.map(n => `  ${n}: typeof ${n} === 'undefined' ? undefined : ${n},`).join('\n') +
@@ -432,8 +439,8 @@ async function scenarioSpans() {
     allLow(/^backlinks:s3g dest bl \d\/200$/) && allLow(/^links:S3g origin$/));
 
   // 3h. start_daily: the same awaited checks for today's pair (high). The
-  // daily warm it fires first (destination backlinks + origin links, for the
-  // leaderboard's fake paths), cacheDestination and the origin distance stay
+  // daily warm it fires first (destination backlinks + origin links, which
+  // the day's players need), cacheDestination and the origin distance stay
   // background. Runs before 3i, whose candidates come from the same pool.
   const daily = s.getDailyChallenge();
   const sp = t => t.replace(/_/g, ' ');
@@ -475,6 +482,27 @@ async function scenarioSpans() {
   ok(`marathon start: all ${mReqs.length} warm-up requests ran low (the raced five + warmMarathonCandidates' first batch)`,
     warmed(titles.slice(0, 5)) && warmed(titles.slice(5, 8)) && mReqs.every(x => !x.high));
 
+  // 3k. Solo free play skips the move check (no leaderboard, nothing to
+  // cheat); a solo daily and a multiplayer room still run it.
+  for (const [tag, flags, checked] of [['solo', { singlePlayer: true }, false], ['solo daily', { singlePlayer: true, daily: true }, true], ['multiplayer', {}, true]]) {
+    const n = `S3k ${tag.replace(' ', '')}`; // no spaces/underscores: titles must survive the server's normalising
+    fake.links.set(`${n} from`, [[`${n} next`]]);
+    seatPlayer(`s3k-${n}`, null, null);
+    const k = seatPlayer(`s3k-${n}`, `S3K${tag.length}${tag[0].toUpperCase()}`.slice(0, 5).padEnd(5, '0'), (room, rp) => {
+      Object.assign(room, flags);
+      room.mode = 'classic';
+      room.pair = { origin: `${n} from`, destination: `${n} dest` };
+      room.destData = { hop1: new Set(['nowhere']), hop2: new Set(), aliases: new Set([`${n} dest`.toLowerCase()]) };
+      rp.path = [`${n} from`];
+      rp.distances = [3];
+    });
+    const rk = await s.handleAction(`s3k-${n}`, { type: 'navigate', article: `${n} next` });
+    await settled(`3k ${tag} settled`);
+    const reqRe = new RegExp(`^links:${n} from$`);
+    ok(`${tag}: navigate accepted, move check ${checked ? 'ran' : 'skipped'} (${startsOf(reqRe).length} fetches of the from-page; reply ${JSON.stringify(rk)})`,
+      rk && rk.ok === true && (startsOf(reqRe).length > 0) === checked);
+  }
+
   // 3j. /validate-dest: the word box waits on its backlink count (high).
   const answer = await new Promise(resolve => {
     const res = {
@@ -504,6 +532,77 @@ async function scenarioArrivalOrder() {
   ok(`player requests started in arrival order (${order(/^links:S4a hi /).join(', ')})`, same(order(/^links:S4a hi /), highs));
   ok('the background fetches queued ahead of them started in arrival order', same(order(/^links:S4a low /), lows));
   ok('background fetches queued alone started in arrival order', same(order(/^links:S4a solo /), solo));
+}
+
+// ── 7. Bulk ──
+async function scenarioBulk() {
+  const settled = label => until(s.wikiIdle, label);
+  const pos = key => fake.starts.findIndex(x => x.key === key);
+  const firstPos = re => fake.starts.findIndex(x => re.test(x.key));
+  const lastPos = re => { let i = -1; fake.starts.forEach((x, j) => { if (re.test(x.key)) i = j; }); return i; };
+
+  // 7a. Six bulk fetches queue, then six background ones, in one burst.
+  const bulks = Array.from({ length: 6 }, (_, i) => `S7a bulk ${i}`);
+  const lows = Array.from({ length: 6 }, (_, i) => `S7a low ${i}`);
+  await Promise.all([
+    ...bulks.map(t => s.inWikiBulk(() => s.getPageLinks(t))),
+    ...lows.map(t => s.getPageLinks(t)),
+  ]);
+  const order = startsOf(/^links:S7a /).map(x => x.key.slice('links:S7a '.length));
+  ok(`background started ahead of the older bulk fetches (${order.join(', ')})`,
+    lastPos(/^links:S7a low /) < pos('links:S7a bulk 2'));
+  ok(`…but bulk wasn't starved: one went after WIKI_MAX_BULK_SKIPS=${s.WIKI_MAX_BULK_SKIPS} background starts`,
+    order.indexOf('bulk 0') === s.WIKI_MAX_BULK_SKIPS);
+  ok('bulk fetches ran as bulk, background as background',
+    startsOf(/^links:S7a bulk /).every(x => x.bulk && !x.high) && startsOf(/^links:S7a low /).every(x => !x.bulk && !x.high));
+  await settled('7a drained');
+
+  // 7b. Two bulk destination builds, then a game's. The game's build takes
+  // the second slot at once instead of queueing behind both.
+  const bA = s.inWikiBulk(() => s.cacheDestination('S7b bulk A'));
+  const bB = s.inWikiBulk(() => s.cacheDestination('S7b bulk B'));
+  await sleep(20);
+  const game = s.cacheDestination('S7b game');
+  await Promise.all([bA, bB, game]);
+  ok('a game\'s destination build started before the second bulk build',
+    pos('aliases:S7b game') < pos('aliases:S7b bulk B'));
+  ok('…while the first bulk build was still running (bulk holds one slot)',
+    pos('aliases:S7b game') < lastPos(/S7b bulk A/));
+  await settled('7b drained');
+
+  // 7c. A game needs a destination still queued for bulk: it is promoted.
+  const cA = s.inWikiBulk(() => s.cacheDestination('S7c bulk A'));
+  const cY = s.inWikiBulk(() => s.cacheDestination('S7c shared'));
+  await sleep(20);
+  const joined = s.cacheDestination('S7c shared');
+  await Promise.all([cA, cY, joined]);
+  ok('the joined destination left the bulk queue at once',
+    pos('aliases:S7c shared') < lastPos(/S7c bulk A/));
+  ok('…and its requests ran as background, not bulk', startsOf(/S7c shared/).every(x => !x.bulk));
+  await settled('7c drained');
+
+  // 7d. A 12-minute marathon (40 candidates) warms a few targets ahead,
+  // warms more as they are used, and stops when the room is gone.
+  const m = seatPlayer('s7d-player', null, null);
+  const started = await s.handleAction('s7d-player',
+    { type: 'start_single', name: 'Tester', mode: 'marathon', duration: '12m' });
+  await until(() => m.msgs.some(x => x.type === 'game_start'), '7d game_start');
+  const room = s.rooms.get(started.code);
+  const warmedCount = () => [...room.marathon.candidates.values()].filter(e => e.data).length;
+  await sleep(2500); await settled('7d first warm');
+  const first = warmedCount();
+  ok(`marathon warmed ${first} of ${room.marathon.candidates.size} candidates up front (ahead: ${s.MARATHON_WARM_AHEAD})`,
+    first >= s.MARATHON_WARM_AHEAD && first <= s.MARATHON_WARM_AHEAD + 2);
+  const rp = room.players.get('s7d-player');
+  for (const [key, e] of room.marathon.candidates) if (e.data && rp.marathonState.usedTitles.size < 3) rp.marathonState.usedTitles.add(key);
+  await sleep(2500); await settled('7d refill');
+  ok(`…and ${warmedCount() - first} more once three were used`, warmedCount() - first === 3);
+  const marathonReqs = () => fake.starts.filter(x => x.bulk).length;
+  s.removeFromRoom('s7d-player', started.code);
+  const atLeave = marathonReqs();
+  await sleep(4500);
+  ok(`room deleted: no bulk requests after it (${marathonReqs() - atLeave})`, !s.rooms.has(started.code) && marathonReqs() === atLeave);
+  await settled('7d drained');
 }
 
 // ── 4b. No starvation ──
@@ -675,6 +774,9 @@ async function scenarioGates() {
 
   say('── 6. Retries after a 429 keep their priority ──');
   await scenarioRetry();
+
+  say('── 7. Bulk (marathon warm-up) below background ──');
+  await scenarioBulk();
 
   say('── 5. Concurrency + interval gates (5b: every request in this run) ──');
   await scenarioFullSlots();

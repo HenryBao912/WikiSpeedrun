@@ -132,3 +132,32 @@ order by d.day;
 --     events and the server-side GA4 hits are human-only. GA4's own client tag
 --     still needs GA4 Admin > Data Settings > "Exclude known bots" enabled.
 -- ─────────────────────────────────────────────────────────────────────────
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- 6. Where visitors come from (page_view meta.ref = referring hostname,
+--    meta.src = ?ref= / ?utm_source= tag; shared daily links carry ref=share).
+--    Rows recorded before this shipped have neither and show as "(direct/unknown)".
+-- ─────────────────────────────────────────────────────────────────────────
+select
+  coalesce(nullif(meta->>'src', ''), nullif(meta->>'ref', ''), '(direct/unknown)') as source,
+  count(*) as page_views,
+  count(distinct visitor_id) as visitors
+from events
+where event = 'page_view' and ts > now() - interval '30 days'
+group by 1
+order by 2 desc
+limit 25;
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- 7. Daily vs free play, and solo vs shared rooms (game_started meta.daily /
+--    meta.solo; absent on older rows).
+-- ─────────────────────────────────────────────────────────────────────────
+select
+  coalesce(meta->>'daily', '(older)') as daily,
+  coalesce(meta->>'solo', '(older)')  as solo,
+  count(*) as games,
+  count(distinct visitor_id) as players
+from events
+where event = 'game_started' and ts > now() - interval '30 days'
+group by 1, 2
+order by 3 desc;
