@@ -5550,7 +5550,8 @@ function renderDailyResultStrip(dailyMeta, todayResult, state) {
 
 async function fetchAndRenderLeaderboard(date) {
   try {
-    const r = await fetch('/daily/leaderboard?date=' + encodeURIComponent(date), { cache: 'no-store' });
+    // The header lets the server mark our own row (isMe); it never sends anyone's id back.
+    const r = await fetch('/daily/leaderboard?date=' + encodeURIComponent(date), { cache: 'no-store', headers: { 'X-Anon-Id': getOrCreateAnonId() } });
     if (!r.ok) throw new Error('lb fetch failed');
     cachedLeaderboard = await r.json();
   } catch (e) {
@@ -5578,12 +5579,11 @@ function renderLeaderboard() {
     list.innerHTML = '<div class="dr-empty"><b>Be the first today!</b>Your result lands here once submitted</div>';
     return;
   }
-  const myAnonId = getOrCreateAnonId();
   list.innerHTML = entries.map((e, i) => {
     const rank = i + 1;
     const rankCls = rank === 1 ? 'r1' : rank === 2 ? 'r2' : rank === 3 ? 'r3' : '';
     const rankContent = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : String(rank);
-    const isMe = e.anonId === myAnonId;
+    const isMe = !!e.isMe;
     const surrendered = !e.won;
     const stepsTxt = e.won
       ? `<div class="dr-steps">${e.steps} step${e.steps === 1 ? '' : 's'}</div>`

@@ -4936,7 +4936,12 @@ const server = http.createServer(async (req, res) => {
     if (date > today) date = today;
     else if (date < DAILY_LAUNCH_DATE) date = DAILY_LAUNCH_DATE;
     try {
-      const entries = getLeaderboard(date);
+      // anonId is the player's secret per-browser key: whoever holds it can
+      // start a daily as that player (taking their slot for the day) or rename
+      // their entry. It is never sent out. The caller says who it is in the
+      // X-Anon-Id header and gets `isMe` on its own row instead.
+      const caller = String(req.headers['x-anon-id'] || '').slice(0, MAX_ANONID_LEN);
+      const entries = getLeaderboard(date).map(({ anonId, ...pub }) => ({ ...pub, isMe: !!caller && anonId === caller }));
       res.writeHead(200, {
         'Content-Type': 'application/json',
         'Cache-Control': 'no-store',
