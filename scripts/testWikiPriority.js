@@ -439,8 +439,8 @@ async function scenarioSpans() {
     allLow(/^backlinks:s3g dest bl \d\/200$/) && allLow(/^links:S3g origin$/));
 
   // 3h. start_daily: the same awaited checks for today's pair (high). The
-  // daily warm it fires first (destination backlinks + origin links, for the
-  // leaderboard's fake paths), cacheDestination and the origin distance stay
+  // daily warm it fires first (destination backlinks + origin links, which
+  // the day's players need), cacheDestination and the origin distance stay
   // background. Runs before 3i, whose candidates come from the same pool.
   const daily = s.getDailyChallenge();
   const sp = t => t.replace(/_/g, ' ');
