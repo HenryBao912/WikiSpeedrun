@@ -3130,6 +3130,37 @@
     position: relative;
     overflow-y: auto;
   }
+  /* Invite link (lobby) + invite join (setup). */
+  .invite-link-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 48px;
+    padding: 12px 24px;
+  }
+  .invite-link-text {
+    margin-top: -6px;
+    color: var(--text2);
+    font-size: 0.8rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    user-select: all;
+  }
+  .invite-join { display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; }
+  .invite-join-btn { width: 100%; min-height: 52px; font-size: 1.05rem; }
+  .invite-join-btn #inviteCodeLabel { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 2px; }
+  .invite-exit {
+    background: none;
+    border: none;
+    color: var(--text2);
+    font: inherit;
+    font-size: 0.85rem;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+    padding: 8px;
+  }
+  .invite-exit:hover { color: var(--text); }
   .room-code-display {
     font-size: 3rem;
     font-weight: 800;
@@ -3805,6 +3836,12 @@
     flex-shrink: 0;
   }
   .lb-stack-circle:first-child { margin-left: 0; }
+  .lb-stack-more {
+    margin-left: 3px;
+    color: var(--text2);
+    font-size: 0.65rem;
+    font-weight: 800;
+  }
   .lb-rider .lb-tip {
     position: absolute;
     bottom: calc(100% + 6px);
@@ -4318,9 +4355,15 @@
   <h1 class="setup-title">Multiplayer</h1>
   <div class="setup-form">
     <div class="form-group">
-      <input type="text" id="mpName" placeholder="Your Name" maxlength="20" autocomplete="off" />
+      <input type="text" id="mpName" placeholder="Your Name" maxlength="20" autocomplete="off" onkeydown="if(event.key==='Enter'&&inviteCode)joinFromInvite(document.getElementById('inviteJoinBtn'))" />
     </div>
-    <div class="mp-actions-row">
+    <!-- Shown instead of Create/Code when the page was opened from an
+         invite link (/r/<code>): one button joins that room. -->
+    <div class="invite-join" id="inviteJoin" style="display:none;">
+      <button class="btn btn-primary invite-join-btn" id="inviteJoinBtn" onclick="joinFromInvite(this)">Join room <span id="inviteCodeLabel"></span></button>
+      <button type="button" class="invite-exit" onclick="exitInviteMode()">Create your own room instead</button>
+    </div>
+    <div class="mp-actions-row" id="mpActionsRow">
       <button class="btn btn-primary" onclick="createMultiplayerRoom()">Create Room</button>
       <div class="divider-vertical"></div>
       <input type="text" id="mpRoomCode" placeholder="CODE" class="mp-code-input" maxlength="5" inputmode="latin" lang="en" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" pattern="[A-Z0-9]*" oninput="autoJoinRoom(event)" />
@@ -4332,13 +4375,18 @@
 <!-- ─── Lobby Screen ─── -->
 <div id="lobby" class="screen">
   <button class="back-btn" onclick="backToMultiplayerSetup()">← Back</button>
-  <p style="color:var(--text2)">Share this room code with friends:</p>
+  <p style="color:var(--text2)">Send friends the invite link, or share the code:</p>
+  <button class="btn btn-primary invite-link-btn" id="inviteLinkBtn" onclick="shareInviteLink(this)">
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+    <span id="inviteLinkLabel">Copy invite link</span>
+  </button>
+  <div class="invite-link-text" id="inviteLinkText"></div>
   <div class="room-code-display" id="roomCodeDisplay" onclick="copyCode()">
     <span id="codeText"></span>
     <span class="copy-hint">click to copy</span>
   </div>
   <div style="text-align:center;">
-    <p style="color:var(--text2);margin-bottom:12px;">Players:</p>
+    <p style="color:var(--text2);margin-bottom:12px;" id="playerCountLabel">Players:</p>
     <ul class="player-list" id="playerList"></ul>
     <p class="waiting-text" id="waitingText">Waiting for players...</p>
   </div>
@@ -5064,7 +5112,11 @@ function selectMode(choice) {
     window.gtag?.('event', 'mode_selected', { selection: choice });
   } catch (e) { /* gtag blocked — skip */ }
   if (choice === 'singleplayer') showScreen('sp-setup');
-  else if (choice === 'multiplayer') showScreen('mp-setup');
+  else if (choice === 'multiplayer') {
+    const nameEl = document.getElementById('mpName');
+    if (nameEl && !nameEl.value) nameEl.value = getPlayerName();
+    showScreen('mp-setup');
+  }
 }
 
 // ─── Daily Challenge ───
@@ -5190,7 +5242,9 @@ document.addEventListener('DOMContentLoaded', () => { hydrateDailyBadge(); start
 // this is what makes them honest landing pages for Google sitelinks.
 document.addEventListener('DOMContentLoaded', async () => {
   const p = location.pathname;
-  if (p === '/singleplayer') selectMode('singleplayer');
+  const invite = p.match(/^\/r\/([0-9a-f]{5})\/?$/i);
+  if (invite) enterInviteMode(invite[1].toUpperCase());
+  else if (p === '/singleplayer') selectMode('singleplayer');
   else if (p === '/multiplayer') selectMode('multiplayer');
   else if (p === '/daily-challenge') {
     // Wait for /daily so the already-played check routes correctly (played →
@@ -6208,6 +6262,7 @@ function selectArticle(inputId, listId, title) {
 
 async function createMultiplayerRoom() {
   const name = document.getElementById('mpName').value.trim() || 'Player';
+  rememberMpName();
   try {
     await connectSSE();
     mpIsHost = true;
@@ -6230,6 +6285,7 @@ function shakeInput(el) {
 
 async function joinMultiplayerRoom() {
   const name = document.getElementById('mpName').value.trim() || 'Player';
+  rememberMpName();
   const codeInput = document.getElementById('mpRoomCode');
   const code = codeInput.value.trim().toUpperCase();
   if (!code) return;
@@ -6284,6 +6340,105 @@ function backToMultiplayerSetup() {
   document.querySelectorAll('.checkpoint-flash').forEach(el => el.remove());
   document.querySelectorAll('.lb-rider.checkpoint-pulse').forEach(el => el.classList.remove('checkpoint-pulse'));
   showScreen('mp-setup');
+}
+
+// ─── Invite links ───
+// wikispeedrun.io/r/<code> opens the join screen with the code filled in, so
+// friends join with one tap instead of typing a code. The server serves the
+// home document for /r/<code>; the router below reads the code.
+let inviteCode = null;
+
+function inviteUrlFor(code) {
+  return `${location.origin}/r/${code}`;
+}
+
+// Phones get the native share sheet; desktops (where navigator.share also
+// exists on Mac/Windows Chrome) just copy, which is what people expect there.
+function useShareSheet() {
+  try { return !!navigator.share && matchMedia('(pointer: coarse)').matches; } catch (e) { return false; }
+}
+
+// Name typed for multiplayer is remembered (shared with the daily
+// leaderboard name) so invite joins and repeat rooms are one tap.
+function rememberMpName() {
+  const n = document.getElementById('mpName')?.value.trim();
+  if (n) setPlayerName(n);
+}
+
+function enterInviteMode(code) {
+  inviteCode = code;
+  const nameEl = document.getElementById('mpName');
+  if (nameEl && !nameEl.value) nameEl.value = getPlayerName();
+  document.getElementById('inviteCodeLabel').textContent = code;
+  document.getElementById('inviteJoin').style.display = '';
+  document.getElementById('mpActionsRow').style.display = 'none';
+  showScreen('mp-setup');
+  // No saved name yet: put the cursor in the name box (Enter joins).
+  if (nameEl && !nameEl.value) setTimeout(() => nameEl.focus(), 50);
+}
+
+function exitInviteMode() {
+  inviteCode = null;
+  document.getElementById('inviteJoin').style.display = 'none';
+  document.getElementById('mpActionsRow').style.display = '';
+  // Drop /r/<code> from the address bar so a refresh doesn't re-open it.
+  try { history.replaceState(null, '', '/multiplayer'); } catch (e) {}
+}
+
+async function joinFromInvite(btn) {
+  if (!inviteCode || btn?.classList.contains('btn-loading')) return;
+  const name = document.getElementById('mpName').value.trim() || 'Player';
+  rememberMpName();
+  setBtnLoading(btn, true);
+  try {
+    await connectSSE();
+    const result = await send({ type: 'join_room', code: inviteCode, name });
+    if (result && result.ok) return; // room_joined switches to the lobby
+    // send() already printed the server's reason in #mpError. A room that is
+    // gone or full can't be joined by retrying: offer the normal screen.
+    if (result && (result.error === 'Room not found' || /full/i.test(result.error || ''))) exitInviteMode();
+  } catch (e) {
+    showError('mpError', 'Could not connect to server.');
+  } finally {
+    setBtnLoading(btn, false);
+  }
+}
+
+// Lobby: native share sheet where there is one (phones), else copy the link.
+async function shareInviteLink(btn) {
+  if (!currentRoomCode) return;
+  const url = inviteUrlFor(currentRoomCode);
+  const label = document.getElementById('inviteLinkLabel');
+  const flash = (text) => {
+    if (!label) return;
+    label.textContent = text;
+    clearTimeout(label._t);
+    label._t = setTimeout(() => { label.textContent = useShareSheet() ? 'Share invite link' : 'Copy invite link'; }, 1800);
+  };
+  if (useShareSheet()) {
+    try { await navigator.share({ title: 'WikiSpeedrun', text: 'Race me on WikiSpeedrun', url }); return; }
+    catch (e) { if (e && e.name === 'AbortError') return; /* fall through to copy */ }
+  }
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error('no clipboard');
+    await navigator.clipboard.writeText(url);
+    flash('Link copied!');
+  } catch (e) {
+    const ta = document.createElement('textarea');
+    ta.value = url; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (_) {}
+    document.body.removeChild(ta);
+    flash(ok ? 'Link copied!' : 'Copy the link below');
+  }
+}
+
+function renderInviteLink() {
+  const textEl = document.getElementById('inviteLinkText');
+  const label = document.getElementById('inviteLinkLabel');
+  if (textEl) textEl.textContent = currentRoomCode ? inviteUrlFor(currentRoomCode).replace(/^https?:\/\//, '') : '';
+  if (label) label.textContent = useShareSheet() ? 'Share invite link' : 'Copy invite link';
 }
 
 function copyCode() {
@@ -6534,6 +6689,7 @@ function handleServerMessage(msg) {
       mpIsHost = true;
       isSinglePlayer = msg.singlePlayer || false;
       document.getElementById('codeText').textContent = msg.code;
+      renderInviteLink();
       // Daily indicator pill on the in-game header — show only for daily
       // rooms. Hidden by default + reset on every new room creation so a
       // prior daily session's pill doesn't leak into a regular game.
@@ -6562,6 +6718,7 @@ function handleServerMessage(msg) {
       isHost = false;
       mpIsHost = false;
       document.getElementById('codeText').textContent = msg.code;
+      renderInviteLink();
       applyHostLobbyControls(false);
       renderRoundWords();
       showScreen('lobby');
@@ -6861,6 +7018,8 @@ function renderPlayerList(players, hostId) {
     return li;
   }));
   document.getElementById('waitingText').style.display = players.length < 2 ? '' : 'none';
+  const countLabel = document.getElementById('playerCountLabel');
+  if (countLabel) countLabel.textContent = `Players (${players.length}):`;
   const canStart = isHost && players.length >= 2;
   document.getElementById('mpStartBtn').style.display = canStart ? '' : 'none';
   // Marathon's Start button lives inside the setup box. Keep it visible for
@@ -7843,17 +8002,28 @@ function renderPlayersBar(distData) {
       dot.replaceChildren();
       const stack = document.createElement('div');
       stack.className = 'lb-stack';
-      for (const e of group) {
+      // Big rooms: a stack of 20 circles would sprawl across the track, so
+      // draw at most 5 (me first) and count the rest.
+      const STACK_MAX = 5;
+      const ordered = [...group].sort((a, b) => (b.pid === myPlayerId) - (a.pid === myPlayerId));
+      for (const e of ordered.slice(0, STACK_MAX)) {
         const c = document.createElement('span');
         c.className = 'lb-stack-circle';
         c.style.background = e.color;
         stack.appendChild(c);
       }
+      if (group.length > STACK_MAX) {
+        const more = document.createElement('span');
+        more.className = 'lb-stack-more';
+        more.textContent = `+${group.length - STACK_MAX}`;
+        stack.appendChild(more);
+      }
       dot.appendChild(stack);
       const tip = document.createElement('div');
       tip.className = 'lb-tip';
       tip.style.cssText = 'background:var(--surface);flex-direction:column;gap:4px;padding:8px 12px;';
-      for (const e of group) {
+      const TIP_MAX = 10;
+      for (const e of ordered.slice(0, TIP_MAX)) {
         let dHtml = '';
         if (currentGameMode === 'tri' && e.triDists) {
           const distVals = Object.values(e.triDists).filter(v => v !== null && v !== undefined);
@@ -7895,6 +8065,12 @@ function renderPlayersBar(distData) {
         stepsSpan.textContent = String(e.steps) + (e.triInfo || '');
         row.appendChild(stepsSpan);
         tip.appendChild(row);
+      }
+      if (group.length > TIP_MAX) {
+        const moreRow = document.createElement('div');
+        moreRow.style.cssText = 'color:var(--text2);font-size:0.68rem;';
+        moreRow.textContent = `and ${group.length - TIP_MAX} more`;
+        tip.appendChild(moreRow);
       }
       dot.appendChild(tip);
       dot.style.left = avgLeft + '%';

@@ -3029,7 +3029,16 @@ function initRoom(code, hostId, hostName, lang = DEFAULT_LANG) {
 }
 
 // Player colors — assigned in join order per room
-const PLAYER_COLORS = ['#7c6fad', '#5a9e8f', '#b07850', '#5a8ab5', '#a86060', '#8a6aaa', '#508f80', '#b08a55'];
+// Muted fills that all carry white text. 16 so a full classroom room still
+// gets mostly distinct colours; beyond that they repeat (names tell apart).
+const PLAYER_COLORS = [
+  '#7c6fad', '#5a9e8f', '#b07850', '#5a8ab5', '#a86060', '#8a6aaa', '#508f80', '#b08a55',
+  '#9a6a8f', '#6a8f4f', '#b56a7a', '#4f7fa0', '#a0884a', '#7a7ab5', '#5f9aa8', '#9a7560',
+];
+// Room size cap. Was 8; raised so a class or a streamer's chat fits in one
+// room. Every navigate costs server-side Wikipedia lookups through the shared
+// WIKI_MAX_CONCURRENT queue, so raise this further only with that in mind.
+const MAX_ROOM_PLAYERS = 30;
 
 function newPlayerState(name, roomColorIndex) {
   const color = PLAYER_COLORS[(roomColorIndex || 0) % PLAYER_COLORS.length];
@@ -3564,7 +3573,7 @@ async function handleActionInner(playerId, msg, req = null, arrivedAt = Date.now
       const room = rooms.get(code);
       if (!room) return { ok: false, error: 'Room not found' };
       if (room.started) return { ok: false, error: 'Game already in progress' };
-      if (room.players.size >= 8) return { ok: false, error: 'Room is full (max 8)' };
+      if (room.players.size >= MAX_ROOM_PLAYERS) return { ok: false, error: `Room is full (max ${MAX_ROOM_PLAYERS})` };
 
       const name = (msg.name || 'Player').slice(0, 20);
       const player = players.get(playerId);
@@ -3583,7 +3592,8 @@ async function handleActionInner(playerId, msg, req = null, arrivedAt = Date.now
       // cycles wrapped back to 0 and collided with the host's color.
       const usedColors = new Set();
       for (const [, p] of room.players) usedColors.add(p.color);
-      let pickedColorIdx = 0;
+      // Every colour taken: spread the repeats instead of all reusing #0.
+      let pickedColorIdx = room.players.size % PLAYER_COLORS.length;
       for (let i = 0; i < PLAYER_COLORS.length; i++) {
         if (!usedColors.has(PLAYER_COLORS[i])) { pickedColorIdx = i; break; }
       }
@@ -4727,7 +4737,12 @@ const server = http.createServer(async (req, res) => {
   // HEAD gets the same status and headers as GET (Node drops the body itself);
   // uptime monitors and link checkers send HEAD, and it used to fall through
   // to the 404.
-  const pageVariant = pageVariants.get(parsed.pathname === '/index.html' ? '/' : parsed.pathname);
+  // Invite links (/r/<room code>) serve the home document; the client reads
+  // the code from the path and opens the join screen. Codes are 5 hex chars.
+  const isInvitePath = /^\/r\/[0-9a-f]{5}\/?$/i.test(parsed.pathname);
+  const pageVariant = pageVariants.get(
+    (parsed.pathname === '/index.html' || isInvitePath) ? '/' : parsed.pathname
+  );
   if (pageVariant && (req.method === 'GET' || req.method === 'HEAD')) {
     // Honor If-None-Match: send 304 instead of re-shipping the body when
     // the client has the same version cached. Saves ~330KB raw / ~65KB br
