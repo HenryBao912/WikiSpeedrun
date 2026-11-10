@@ -576,10 +576,11 @@ const INDEX_HTML_PATH = path.join(__dirname, 'index.html');
 // Apostrophes are typographic (’, U+2019), never ASCII ': Google's snippet
 // pipeline escaped the plain one and showed "today&#39;s" literally in results.
 // BASE_DESC must stay byte-identical to index.html's meta copy (split/join below).
-// The home <title> (the browser tab, and Google's headline) is the bare brand;
+// The home <title> (the browser tab, and Google's headline) is the brand plus
+// "Wikipedia Racing Game" so it matches the "wikipedia game/race" searches;
 // BASE_TITLE is the og:/twitter: share title. Each route swaps its own title
 // into all three.
-const HOME_TITLE = 'WikiSpeedrun';
+const HOME_TITLE = 'WikiSpeedrun – Wikipedia Racing Game';
 const BASE_TITLE = 'WikiSpeedrun — Free Multiplayer Wikipedia Racing Game';
 const BASE_DESC = "No signup · no downloads · no ads. Race friends from one Wikipedia article to another, or play solo and take on today’s Daily Challenge.";
 const PAGE_ROUTES = {
