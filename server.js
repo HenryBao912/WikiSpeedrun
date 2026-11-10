@@ -4952,6 +4952,7 @@ const server = http.createServer(async (req, res) => {
       'Allow: /\n' +
       'Disallow: /events\n' +
       'Disallow: /action\n' +
+      'Disallow: /r/\n' +
       'Sitemap: https://wikispeedrun.io/sitemap.xml\n'
     );
     return;
