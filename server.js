@@ -1959,9 +1959,10 @@ function coalesceWiki(key, fn) {
   const existing = inFlightWiki.get(key);
   if (existing) {
     if (caller?.high) existing.ctx.high = true;
+    if (!caller?.bulk) existing.ctx.bulk = false; // a real game now needs it
     return existing.promise;
   }
-  const ctx = { high: !!caller?.high };
+  const ctx = { high: !!caller?.high, bulk: !caller?.high && !!caller?.bulk };
   const promise = wikiPriority.run(ctx, async () => {
     try { return await fn(); }
     finally { inFlightWiki.delete(key); }
@@ -2037,6 +2038,14 @@ let wikiPumpScheduled = false;
 const wikiPriority = new AsyncLocalStorage();
 function withWikiPriority(fn) { return wikiPriority.run({ high: true }, fn); }
 function inWikiBackground(fn) { return wikiPriority.run(undefined, fn); }
+// Bulk: below background. Marathon's candidate warm-up is the one user. A
+// marathon room warms up to 40 destinations (~35 requests each), and as plain
+// background that queued FIFO ahead of every other room's background work:
+// with one marathon running, a classic game's destination cache (its pods'
+// distances) and a daily start waited behind it for half a minute. Bulk
+// starts only when no other background request is waiting, with the same
+// kind of starvation guard as background behind high (WIKI_MAX_BULK_SKIPS).
+function inWikiBulk(fn) { return wikiPriority.run({ high: false, bulk: true }, fn); }
 
 // One arrival-ordered list. Each waiter holds the context object it was queued
 // under, live, so coalesceWiki can promote it while it waits. The pump starts
@@ -2048,6 +2057,8 @@ function inWikiBackground(fn) { return wikiPriority.run(undefined, fn); }
 // guard rarely fires.)
 const WIKI_MAX_LOW_SKIPS = 4;
 let wikiLowSkips = 0;
+const WIKI_MAX_BULK_SKIPS = 4;
+let wikiBulkSkips = 0;
 let wikiPumpImmediate = false;
 const wikiWaiters = []; // { ctx, start }
 function acquireWikiSlot() {
@@ -2093,7 +2104,14 @@ function nextWikiWaiter() {
   const hi = wikiWaiters.findIndex(w => w.ctx?.high);
   if (Date.now() < wikiLowPausedUntil) return hi; // -1 = nothing may start yet
   if (hi > 0 && wikiLowSkips < WIKI_MAX_LOW_SKIPS) { wikiLowSkips++; return hi; }
-  if (hi !== 0) wikiLowSkips = 0; // the oldest waiter is low, and it starts now
+  if (hi === 0) return 0;
+  wikiLowSkips = 0; // a background (or bulk) waiter starts now
+  // Among background waiters, plain background goes before bulk, up to
+  // WIKI_MAX_BULK_SKIPS in a row while an older bulk waiter sits there.
+  if (!wikiWaiters[0].ctx?.bulk) return 0;
+  const lo = wikiWaiters.findIndex(w => !w.ctx?.high && !w.ctx?.bulk);
+  if (lo > 0 && wikiBulkSkips < WIKI_MAX_BULK_SKIPS) { wikiBulkSkips++; return lo; }
+  wikiBulkSkips = 0;
   return 0;
 }
 function pumpWikiQueue() {
@@ -2514,25 +2532,37 @@ async function computeDistance(currentArticle, destination, destData, lang = DEF
 // starting simultaneously) reliably trips Wikipedia's rate limiter. With 2
 // in flight, peak is ~30 concurrent requests — well under the threshold.
 const CACHE_DEST_CONCURRENCY = 2;
+// Marathon warm-up (bulk) may hold only one of the two slots and queues
+// behind every non-bulk caller, so a classic, tri or daily start always has
+// a slot within one destination build instead of waiting out a marathon
+// room's whole candidate list.
+const CACHE_DEST_BULK_MAX = 1;
 let cacheDestInflight = 0;
-const cacheDestQueue = [];
-function acquireCacheSlot() {
+let cacheDestBulkInflight = 0;
+const cacheDestQueue = []; // waiters: { bulk, grant }
+function cacheSlotFree(bulk) {
+  return cacheDestInflight < CACHE_DEST_CONCURRENCY && (!bulk || cacheDestBulkInflight < CACHE_DEST_BULK_MAX);
+}
+// `waiter.bulk` may be cleared while it queues (a real game joined it).
+function acquireCacheSlot(waiter = { bulk: false }) {
   return new Promise(resolve => {
-    const tryAcquire = () => {
-      if (cacheDestInflight < CACHE_DEST_CONCURRENCY) {
-        cacheDestInflight++;
-        resolve();
-      } else {
-        cacheDestQueue.push(tryAcquire);
-      }
+    waiter.grant = () => {
+      cacheDestInflight++;
+      if (waiter.bulk) { waiter.heldBulk = true; cacheDestBulkInflight++; }
+      resolve();
     };
-    tryAcquire();
+    if (cacheSlotFree(waiter.bulk)) waiter.grant();
+    else cacheDestQueue.push(waiter);
   });
 }
-function releaseCacheSlot() {
+function releaseCacheSlot(waiter) {
   cacheDestInflight--;
-  const next = cacheDestQueue.shift();
-  if (next) next();
+  if (waiter?.heldBulk) cacheDestBulkInflight--;
+  // Non-bulk waiters first (arrival order), then bulk if a bulk slot is free.
+  if (!cacheDestQueue.length) return;
+  let i = cacheDestQueue.findIndex(w => !w.bulk);
+  if (i < 0) i = 0; // only bulk waiters
+  if (cacheSlotFree(cacheDestQueue[i].bulk)) cacheDestQueue.splice(i, 1)[0].grant();
 }
 
 // Coalesce the entire cacheDestination pipeline. Without this, two games
@@ -2540,19 +2570,35 @@ function releaseCacheSlot() {
 // + hop1 + 30 hop2 sample fetches + distance Map building). The inner wiki
 // fetches dedupe via coalesceWiki, but the hop2 sampling + Set assembly
 // still runs twice. With this map, the second caller awaits the first.
-const cacheDestInFlight = new Map(); // lang|destination -> Promise<destData>
+const cacheDestInFlight = new Map(); // lang|destination -> { promise: Promise<destData>, waiter, ctx }
 
 async function cacheDestination(destination, lang = DEFAULT_LANG) {
   const key = cacheKey(lang, destination);
+  const bulk = !!wikiPriority.getStore()?.bulk;
   const existing = cacheDestInFlight.get(key);
-  if (existing) return existing;
-  const p = (async () => {
-    await acquireCacheSlot();
+  if (existing) {
+    // A real game wants a destination a marathon room is warming in bulk:
+    // move it up to background, in the slot queue and the request queue.
+    if (!bulk && existing.waiter.bulk) {
+      existing.waiter.bulk = false;
+      existing.ctx.bulk = false;
+      if (cacheDestQueue.includes(existing.waiter) && cacheSlotFree(false)) {
+        cacheDestQueue.splice(cacheDestQueue.indexOf(existing.waiter), 1);
+        existing.waiter.grant();
+      }
+    }
+    return existing.promise;
+  }
+  const waiter = { bulk };
+  // Its own context object, so the promotion above reaches its requests.
+  const ctx = { high: !!wikiPriority.getStore()?.high, bulk };
+  const promise = wikiPriority.run(ctx, async () => {
+    await acquireCacheSlot(waiter);
     try { return await cacheDestinationInner(destination, lang); }
-    finally { releaseCacheSlot(); }
-  })().finally(() => cacheDestInFlight.delete(key));
-  cacheDestInFlight.set(key, p);
-  return p;
+    finally { releaseCacheSlot(waiter); }
+  }).finally(() => cacheDestInFlight.delete(key));
+  cacheDestInFlight.set(key, { promise, waiter, ctx });
+  return promise;
 }
 
 async function cacheDestinationInner(destination, lang = DEFAULT_LANG) {
@@ -2822,10 +2868,7 @@ async function startMarathonForRoom(room, roomCode) {
   // candidates keep warming in the background; client falls back to polling.
   const warmFirst = candidates.slice(0, 5);
   const warmRest = candidates.slice(5);
-  const warmOne = (title) => cacheDestination(title, lang).then(data => {
-    const entry = marathon.candidates.get(normalizeArticle(title));
-    if (entry) entry.data = data;
-  }).catch(e => {
+  const warmOne = (title) => warmMarathonCandidate(marathon, title, lang).catch(e => {
     console.error('Marathon initial warm fail for', title, e.message);
     throw e;
   });
@@ -2892,48 +2935,85 @@ async function startMarathonForRoom(room, roomCode) {
     });
   }
 
-  // Warm remaining candidates in the background.
-  warmMarathonCandidates(room, warmRest, lang);
+  // Warm the remaining candidates in bulk, a few at a time as targets get used.
+  inWikiBulk(() => warmMarathonCandidates(room, roomCode, warmRest, lang));
 }
 
-async function warmMarathonCandidates(room, candidates, lang) {
+// How many warmed-or-warming targets each player should have in reserve.
+// Warming one takes ~35 Wikipedia requests (5-10s healthy), and a quick
+// player clears a target in ~20s, so 6 ahead never runs dry. It used to warm
+// the whole list (16-40 destinations) up front: a 3-minute round where a
+// player reached four targets still cost ~700 requests.
+const MARATHON_WARM_AHEAD = 6;
+function marathonSpareTargets(marathon, room) {
+  let spare = Infinity;
+  for (const [, p] of room.players) {
+    const used = p.marathonState?.usedTitles || new Set();
+    let n = 0;
+    for (const [key, e] of marathon.candidates) if ((e.data || e.warming) && !used.has(key)) n++;
+    spare = Math.min(spare, n);
+  }
+  return spare === Infinity ? 0 : spare;
+}
+
+async function warmMarathonCandidates(room, roomCode, candidates, lang) {
+  const marathon = room.marathon;
+  // Stop once this round is over: ended, replaced by a new round, or the
+  // room deleted. Deleting an empty room never cleared room.started, so the
+  // warm-up used to keep going for every candidate (and three retry passes)
+  // after the last player left: ~200 requests a minute for several minutes.
+  const alive = () => room.marathon === marathon && room.started && room.mode === 'marathon'
+    && room.players.size > 0 && rooms.get(roomCode) === room;
   const BATCH = 3;
   const failed = [];
-  for (let i = 0; i < candidates.length; i += BATCH) {
-    // Abort if the room closed or switched modes mid-warm.
-    if (!room.marathon || !room.started || room.mode !== 'marathon') return;
-    const batch = candidates.slice(i, i + BATCH);
-    await Promise.all(batch.map(async (title) => {
-      try {
-        const data = await cacheDestination(title, lang);
-        const entry = room.marathon?.candidates.get(normalizeArticle(title));
-        if (entry) entry.data = data;
-      } catch (e) {
-        console.error('Marathon cache fail for', title, e.message);
-        failed.push(title);
-      }
-    }));
+  let missesSeen = 0;
+  for (let i = 0; i < candidates.length;) {
+    if (!alive()) return;
+    const spare = marathonSpareTargets(marathon, room);
+    // A pick that found nothing (every spare is one link from where the
+    // player stands) needs more candidates whatever the count says.
+    const missed = (marathon.pickMisses || 0) > missesSeen;
+    missesSeen = marathon.pickMisses || 0;
+    if (spare >= MARATHON_WARM_AHEAD && !missed) { await new Promise(r => setTimeout(r, 2000)); continue; }
+    const batch = candidates.slice(i, i + Math.max(1, Math.min(BATCH, MARATHON_WARM_AHEAD - spare)));
+    i += batch.length;
+    await Promise.all(batch.map(title => warmMarathonCandidate(marathon, title, lang).catch(e => {
+      console.error('Marathon cache fail for', title, e.message);
+      failed.push(title);
+    })));
   }
   // More passes for candidates whose backlinks were unavailable (429s): the
   // round has minutes left and the storm usually doesn't. Without them a bad
-  // first minute left the round with two or three targets to cycle.
+  // first minute left the round with two or three targets to cycle. Only
+  // while the players are short of targets; otherwise the rest are left.
   let pending = failed;
   for (let pass = 0; pass < 3 && pending.length; pass++) {
     await new Promise(r => setTimeout(r, 5000 * (pass + 1)));
-    if (!room.marathon || !room.started || room.mode !== 'marathon') return;
     const still = [];
     for (const title of pending) {
-      if (!room.marathon || !room.started || room.mode !== 'marathon') return;
+      if (!alive()) return;
+      if (marathonSpareTargets(marathon, room) >= MARATHON_WARM_AHEAD) { still.push(title); continue; }
       try {
-        const data = await cacheDestination(title, lang);
-        const entry = room.marathon?.candidates.get(normalizeArticle(title));
-        if (entry) entry.data = data;
+        await warmMarathonCandidate(marathon, title, lang);
       } catch (e) {
         console.error('Marathon cache retry fail for', title, e.message);
         still.push(title);
       }
     }
     pending = still;
+  }
+}
+
+// Warm one candidate; `warming` counts it as a spare target while in flight.
+async function warmMarathonCandidate(marathon, title, lang) {
+  const entry = marathon.candidates.get(normalizeArticle(title));
+  if (entry) entry.warming = true;
+  try {
+    const data = await cacheDestination(title, lang);
+    if (entry) entry.data = data;
+    return data;
+  } finally {
+    if (entry) entry.warming = false;
   }
 }
 
@@ -2998,7 +3078,11 @@ async function pickMarathonTarget(room, rp, currentArticle) {
       sampled = await scan();
     }
   }
-  if (!sampled.length) return null;
+  if (!sampled.length) {
+    // Tell warmMarathonCandidates to warm more (see MARATHON_WARM_AHEAD).
+    if (room.marathon) room.marathon.pickMisses = (room.marathon.pickMisses || 0) + 1;
+    return null;
+  }
 
   // Stable sort: lowest hops first, ties broken by sample order (already shuffled).
   sampled.sort((a, b) => a.hops - b.hops);
