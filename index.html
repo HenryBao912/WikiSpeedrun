@@ -708,6 +708,8 @@
   }
   .dr-head {
     display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
     justify-content: space-between;
     align-items: center;
     padding: 12px 16px;
@@ -2076,6 +2078,7 @@
     line-height: 1.2;
     text-transform: uppercase;
   }
+  .dr-daily-pill, .dr-streak-pill { white-space: nowrap; }
   .dr-streak-pill .flame { display: inline-flex; filter: none; }
   .dr-streak-pill .flame svg { display: block; }
 
@@ -3793,6 +3796,8 @@
     line-height: 1;
   }
   .lb-rider { box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35); }
+  /* Pods get an inline z-index by distance; a hovered one (and its tooltip) still comes to the front. */
+  .lb-rider:hover { z-index: 30 !important; }
   .lb-arrow {
     display: inline-block;
     font-size: 0.65rem;
@@ -8145,6 +8150,9 @@ function renderPlayersBar(distData) {
           rider.style.transform = 'translateX(-50%)';
         }
         rider.style.left = e.leftPct + '%';
+        // On a phone, pods on neighbouring ticks overlap. Draw the one nearer
+        // the target on top so the leader's distance badge is never covered.
+        rider.style.zIndex = hasDist ? String(2 + Math.max(0, MAX_DIST - Math.min(e.d, MAX_DIST))) : '';
         rowUsed.push({ left: e.leftPct, row });
         if (prevData && prevData.distance !== null && e.d !== null && prevData.distance !== e.d && !isNew) {
           rider.classList.remove('pulse');
