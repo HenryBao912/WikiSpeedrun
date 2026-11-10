@@ -6,6 +6,7 @@ const path = require('path');
 const url = require('url');
 const zlib = require('zlib');
 const { AsyncLocalStorage } = require('async_hooks');
+const { cleanPlayerName } = require('./nameFilter');
 
 // ─── Game State ───
 const rooms = new Map();
@@ -1189,6 +1190,7 @@ function utcDateStr(d = new Date()) {
 const dailyLeaderboards = new Map(); // "YYYY-MM-DD" -> Array<entry>
 const MAX_LEADERBOARD_RETENTION_DAYS = 14;
 const MAX_NAME_LEN = 20;
+// Every name a client sends goes through cleanPlayerName (nameFilter.js).
 const MAX_ANONID_LEN = 64;
 const LEADERBOARD_TARGET_SIZE = 25; // Fakes fill out to this; real entries push fakes off the bottom.
 
@@ -3724,7 +3726,7 @@ async function handleActionInner(playerId, msg, req = null, arrivedAt = Date.now
 
     case 'create_room': {
       const code = generateRoomCode();
-      const name = (msg.name || 'Player').slice(0, 20);
+      const name = cleanPlayerName(msg.name, 'Player', MAX_NAME_LEN);
       const lang = normalizeLang(msg.lang);
       const player = players.get(playerId);
       if (player) {
@@ -3749,7 +3751,7 @@ async function handleActionInner(playerId, msg, req = null, arrivedAt = Date.now
       if (room.started) return { ok: false, error: 'Game already in progress' };
       if (room.players.size >= MAX_ROOM_PLAYERS) return { ok: false, error: `Room is full (max ${MAX_ROOM_PLAYERS})` };
 
-      const name = (msg.name || 'Player').slice(0, 20);
+      const name = cleanPlayerName(msg.name, 'Player', MAX_NAME_LEN);
       const player = players.get(playerId);
 
       // Leave prior room first — otherwise the player has stale state in both
@@ -4393,7 +4395,7 @@ async function handleActionInner(playerId, msg, req = null, arrivedAt = Date.now
       if (!room || !room.daily || !room.dailyAnonId || !room.dailyMeta) {
         return { ok: false, error: 'No active daily room' };
       }
-      const newName = (msg.name || '').toString().slice(0, MAX_NAME_LEN).trim() || 'Anonymous';
+      const newName = cleanPlayerName(msg.name, 'Anonymous', MAX_NAME_LEN);
       room.dailyName = newName;
       const board = dailyLeaderboards.get(room.dailyMeta.date);
       if (board) {
@@ -4412,7 +4414,7 @@ async function handleActionInner(playerId, msg, req = null, arrivedAt = Date.now
       // No-op if already warm; runs once per (date, server-process).
       warmDailyLinkCaches(daily);
       const code = generateRoomCode();
-      const name = (msg.name || 'Anonymous').toString().slice(0, MAX_NAME_LEN);
+      const name = cleanPlayerName(msg.name, 'Anonymous', MAX_NAME_LEN);
       // Stable per-browser identity for leaderboard dedup. Falls back to a
       // server-generated id if client didn't send one (locks down only for
       // the duration of this game; no cross-day enforcement in that case).
@@ -4453,7 +4455,7 @@ async function handleActionInner(playerId, msg, req = null, arrivedAt = Date.now
 
     case 'start_single': {
       const code = generateRoomCode();
-      const name = (msg.name || 'Single Player').slice(0, 20);
+      const name = cleanPlayerName(msg.name, 'Single Player', MAX_NAME_LEN);
       const lang = normalizeLang(msg.lang);
       const player = players.get(playerId);
       if (player) {
