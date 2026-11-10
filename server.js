@@ -98,6 +98,43 @@ function logEvent(event, data = {}) {
   }
 }
 
+// ─── Performance summary ───
+// One `perf_summary` log line every PERF_SUMMARY_MS with percentiles of what a
+// player waits on (navigate = the server's click check), the Wikipedia queue
+// wait split by priority, Wikipedia response time, 429s, and the deepest the
+// queue got. Samples are a bounded reservoir, so memory stays flat however
+// busy it gets. Nothing is logged for an idle window.
+const PERF_SUMMARY_MS = Number(process.env.PERF_SUMMARY_MS) || 10 * 60 * 1000; // env override for load tests
+const PERF_RESERVOIR = 2000;
+let perfWindow = { samples: {}, seen: {}, counts: {}, max: {} };
+function perfSample(name, ms) {
+  const w = perfWindow;
+  const arr = (w.samples[name] ||= []);
+  const seen = (w.seen[name] = (w.seen[name] || 0) + 1);
+  if (arr.length < PERF_RESERVOIR) arr.push(ms);
+  else { const i = Math.floor(Math.random() * seen); if (i < PERF_RESERVOIR) arr[i] = ms; }
+}
+function perfCount(name) { perfWindow.counts[name] = (perfWindow.counts[name] || 0) + 1; }
+function perfMax(name, v) { if (!(perfWindow.max[name] >= v)) perfWindow.max[name] = v; }
+function perfPercentiles(arr) {
+  const a = [...arr].sort((x, y) => x - y);
+  const q = (p) => a[Math.min(a.length - 1, Math.floor(p * a.length))];
+  return { n: a.length, p50: q(0.5), p95: q(0.95), p99: q(0.99), max: a[a.length - 1] };
+}
+function flushPerfSummary() {
+  const w = perfWindow;
+  perfWindow = { samples: {}, seen: {}, counts: {}, max: {} };
+  if (!Object.keys(w.samples).length && !Object.keys(w.counts).length) return null;
+  const out = { windowMin: PERF_SUMMARY_MS / 60000, ...w.counts, ...w.max };
+  for (const [name, arr] of Object.entries(w.samples)) {
+    out[name] = { ...perfPercentiles(arr), n: w.seen[name] };
+  }
+  logEvent('perf_summary', out);
+  return out;
+}
+const perfSummaryTimer = setInterval(flushPerfSummary, PERF_SUMMARY_MS);
+perfSummaryTimer.unref?.();
+
 // ─── Last-resort crash safety ───
 // Without these, a single stray throw or unhandled promise rejection takes down
 // the whole process — and with it every in-memory game + open SSE connection
@@ -2015,7 +2052,16 @@ let wikiPumpImmediate = false;
 const wikiWaiters = []; // { ctx, start }
 function acquireWikiSlot() {
   const ctx = wikiPriority.getStore();
-  return new Promise(start => { wikiWaiters.push({ ctx, start }); scheduleWikiPump(); });
+  const queuedAt = Date.now();
+  perfMax('wikiQueueDepth', wikiWaiters.length + 1);
+  return new Promise(start => {
+    wikiWaiters.push({ ctx, start: () => {
+      // Read ctx.high at start, not at queue time: coalesceWiki can promote.
+      perfSample(ctx?.high ? 'wikiWaitHighMs' : 'wikiWaitLowMs', Date.now() - queuedAt);
+      start();
+    } });
+    scheduleWikiPump();
+  });
 }
 // Acquire and release don't pump inline. They schedule one pump for after the
 // current burst of promise continuations, so choosing who starts next sees
@@ -2035,8 +2081,17 @@ function scheduleWikiPump() {
   wikiPumpImmediate = true;
   setImmediate(() => { wikiPumpImmediate = false; pumpWikiQueue(); });
 }
+// After a 429, background work holds off until Wikipedia's Retry-After (1-5s)
+// so the remaining budget goes to click checks. Without this every queued
+// background fetch kept firing into the limit: a 30-player load test logged
+// 97 429s in two minutes and click checks stalled 10-30s in the backoff.
+let wikiLowPausedUntil = 0;
+function pauseWikiBackground(ms) {
+  wikiLowPausedUntil = Math.max(wikiLowPausedUntil, Date.now() + Math.min(Math.max(ms || 1000, 1000), 5000));
+}
 function nextWikiWaiter() {
   const hi = wikiWaiters.findIndex(w => w.ctx?.high);
+  if (Date.now() < wikiLowPausedUntil) return hi; // -1 = nothing may start yet
   if (hi > 0 && wikiLowSkips < WIKI_MAX_LOW_SKIPS) { wikiLowSkips++; return hi; }
   if (hi !== 0) wikiLowSkips = 0; // the oldest waiter is low, and it starts now
   return 0;
@@ -2048,9 +2103,15 @@ function pumpWikiQueue() {
     if (!wikiPumpScheduled) { wikiPumpScheduled = true; setTimeout(() => { wikiPumpScheduled = false; pumpWikiQueue(); }, wait); }
     return;
   }
+  const idx = nextWikiWaiter();
+  if (idx < 0) {
+    // Only background waiters, and they're paused: wake when the pause ends.
+    if (!wikiPumpScheduled) { wikiPumpScheduled = true; setTimeout(() => { wikiPumpScheduled = false; pumpWikiQueue(); }, Math.max(10, wikiLowPausedUntil - Date.now())); }
+    return;
+  }
   wikiLastStart = Date.now();
   wikiInFlight++;
-  wikiWaiters.splice(nextWikiWaiter(), 1)[0].start();
+  wikiWaiters.splice(idx, 1)[0].start();
   if (wikiWaiters.length) pumpWikiQueue(); // let the interval gate the next one
 }
 function releaseWikiSlot() {
@@ -2059,7 +2120,9 @@ function releaseWikiSlot() {
 }
 
 function wikiAPIOnce(params, lang = DEFAULT_LANG) {
+  let sentAt = 0;
   return acquireWikiSlot().then(() => new Promise((resolve, reject) => {
+    sentAt = Date.now();
     const qs = new URLSearchParams({ ...params, format: 'json', origin: '*' });
     const host = WIKI_HOSTS[lang] || WIKI_HOSTS[DEFAULT_LANG];
     const reqUrl = `https://${host}/w/api.php?${qs}`;
@@ -2082,6 +2145,7 @@ function wikiAPIOnce(params, lang = DEFAULT_LANG) {
         // the caller retry with backoff rather than bubbling a parse error
         // that poisons distance caches. Attach status + Retry-After hint so
         // the retry loop can honor them.
+        if (res.statusCode === 429) { perfCount('wiki429'); pauseWikiBackground(parseRetryAfter(res.headers['retry-after'])); }
         if (res.statusCode && res.statusCode >= 400) {
           const err = new Error(`wiki http ${res.statusCode}`);
           err.status = res.statusCode;
@@ -2117,7 +2181,11 @@ function wikiAPIOnce(params, lang = DEFAULT_LANG) {
     req.setTimeout(WIKI_REQUEST_TIMEOUT_MS, () => {
       req.destroy(new Error('wiki request timeout'));
     });
-  }).finally(releaseWikiSlot));
+  }).finally(() => {
+    if (sentAt) perfSample('wikiRequestMs', Date.now() - sentAt);
+    perfCount('wikiRequests');
+    releaseWikiSlot();
+  }));
 }
 
 // Retry transient failures with short exponential backoff. Critical: user-
@@ -2322,9 +2390,26 @@ async function getRedirectsTo(title, lang = DEFAULT_LANG) {
     }
     // Only cache complete results — partial alias sets would let distance
     // checks miss redirects forever.
+    // Callers that treat the set as exhaustive (the classic win check) need to
+    // know a mid-pagination failure left it partial.
+    aliases.complete = completed;
     if (completed) cacheSet(aliasCache, key, aliases);
     return aliases;
   });
+}
+
+// Token bucket for computeDistance's background live verification (outlink
+// fetches beyond the cached hop sets): VERIFY_FETCHES_PER_MIN server-wide.
+const VERIFY_FETCHES_PER_MIN = 120;
+const verifyBucket = { tokens: VERIFY_FETCHES_PER_MIN, last: Date.now() };
+function takeVerifyBudget(want) {
+  const now = Date.now();
+  verifyBucket.tokens = Math.min(VERIFY_FETCHES_PER_MIN, verifyBucket.tokens + Math.max(0, now - verifyBucket.last) * VERIFY_FETCHES_PER_MIN / 60000);
+  verifyBucket.last = now;
+  const n = Math.max(0, Math.min(want, Math.floor(verifyBucket.tokens)));
+  verifyBucket.tokens -= n;
+  if (n < want) perfCount('verifySkipped');
+  return n;
 }
 
 async function computeDistance(currentArticle, destination, destData, lang = DEFAULT_LANG, highFetches = null) {
@@ -2393,7 +2478,11 @@ async function computeDistance(currentArticle, destination, destData, lang = DEF
   // click checks: the pick scans every warmed candidate until a 2-hop, and
   // each one left unsettled fetches up to 20 more outlinks here. Past the
   // budget the batches run as background, like every fire-and-forget caller.
-  const toFetch = uncached.slice(0, 20);
+  // Background verification draws on a server-wide budget. It was the bulk of
+  // Wikipedia traffic in a 30-player load test (two thirds of requests) and
+  // what tripped the rate limit; past the budget the badge falls back to the
+  // estimate below (4/5/6) instead of a proven 3.
+  const toFetch = uncached.slice(0, highFetches ? 20 : takeVerifyBudget(Math.min(20, uncached.length)));
   for (let i = 0; i < toFetch.length; i += 10) {
     const batch = toFetch.slice(i, i + 10);
     const fetchBatch = () => Promise.all(
@@ -3380,6 +3469,7 @@ function getDistanceMap(room) {
 // with enforced:false), so a false-reject on live traffic can be disabled
 // instantly via a config change instead of a code rollback.
 const ENFORCE_MOVE_LEGALITY = process.env.ENFORCE_MOVE_LEGALITY !== 'false';
+const LEGAL_CHECK_DEADLINE_MS = 3000;
 async function isLegalMove(from, target, lang = DEFAULT_LANG) {
   try {
     const targetNorm = normalizeArticle(target);
@@ -3740,7 +3830,28 @@ async function handleActionInner(playerId, msg, req = null, arrivedAt = Date.now
       // launches without awaiting (distance, prefetch) starts outside those
       // spans and stays background.
       const fromArticle = rp.path[rp.path.length - 1];
-      if (fromArticle && !(await withWikiPriority(() => isLegalMove(fromArticle, article, room.lang || DEFAULT_LANG)))) {
+      // The player waits on this check, and under Wikipedia rate limiting it
+      // used to take 10-30s. Past LEGAL_CHECK_DEADLINE_MS the move is let
+      // through (the check already fails open on errors); the check still
+      // finishes in the background and a late "illegal" verdict is logged.
+      let legal = true;
+      if (fromArticle) {
+        const check = withWikiPriority(() => isLegalMove(fromArticle, article, room.lang || DEFAULT_LANG));
+        // Daily runs keep the full wait: their leaderboard is public, so the
+        // check must finish (it still fails open on Wikipedia errors).
+        const verdict = room.daily
+          ? await check
+          : await Promise.race([check, new Promise(r => setTimeout(() => r('late'), LEGAL_CHECK_DEADLINE_MS))]);
+        if (verdict === 'late') {
+          perfCount('legalCheckLate');
+          check.then(ok => {
+            if (!ok) logEvent('navigate_rejected', { playerId, roomCode: player.roomCode, article, from: fromArticle, reason: 'illegal_move', enforced: false, late: true });
+          }).catch(() => {});
+        } else {
+          legal = verdict;
+        }
+      }
+      if (!legal) {
         // Log every would-be rejection (so enforcement can be monitored, and
         // shadow mode observed) — but only actually block when enforcement is on.
         logEvent('navigate_rejected', {
@@ -3819,7 +3930,11 @@ async function handleActionInner(playerId, msg, req = null, arrivedAt = Date.now
       // mode mutates rp.visited in checkWin); if nothing happened, fall
       // through to the redirect fallback below.
       const progressedBefore = won || rp.visited.length > visitedBefore;
-      if (!progressedBefore) {
+      // Classic: the destination's redirect aliases are fetched at game start
+      // (room.destData.aliases), so an article outside them can't be a
+      // redirect to the destination and the lookup can be skipped.
+      const aliasesKnown = room.mode === 'classic' && room.destData?.aliases?.complete === true;
+      if (!progressedBefore && !(aliasesKnown && !room.destData.aliases.has(normalizeArticle(article)))) {
         // Try resolving the article in case it's a redirect to the destination
         const resolved = await withWikiPriority(() => resolveRedirect(article, roomLang));
         if (normalizeArticle(resolved) !== normalizeArticle(article)) {
@@ -5048,7 +5163,10 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ ok: false, error: 'rate_limited' }));
         return;
       }
+      const actionStart = Date.now();
       const result = await handleAction(playerId, msg, req);
+      // Click checks are what a player waits on; time them separately.
+      if (msg && msg.type === 'navigate') perfSample('navigateMs', Date.now() - actionStart);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(result || { ok: true }));
     } catch (e) {
