@@ -4300,12 +4300,11 @@
     .dest-hint-bar { padding: 3px 12px; font-size: 0.72rem; }
   }
   /* Side rail (laptop and desktop). Above 1200px wide the article column is
-     capped at 900px, so ~270px of margin on each side is empty. The header
-     (route, steps, time, Surrender) and the breadcrumb trail move into a left
-     rail there, which frees about 90px of height for the article. The pod
-     track stays a full-width horizontal strip: the left-to-right race to the
-     glowing finish line is the point of it. Below 1200px (or on short
-     screens) nothing here applies and the layout is unchanged. */
+     capped at 900px, so ~270px of margin on each side is empty. The breadcrumb
+     trail moves into a left rail there, which frees a row of height for the
+     article. The top bar (route, steps, time, Surrender) and the pod race
+     track stay full-width and horizontal, in their usual order. Below 1200px
+     (or on short screens) nothing here applies and the layout is unchanged. */
   @media (min-width: 1200px) and (min-height: 600px) {
     #game.active {
       display: grid;
@@ -4314,44 +4313,11 @@
       height: 100vh;
       min-height: 0;
     }
-    #game .players-bar { grid-column: 1 / -1; grid-row: 1; }
-    #game .game-header { grid-column: 1; grid-row: 2; }
-    #game .dest-hint-bar { grid-column: 1; grid-row: 3; }
+    #game .game-header { grid-column: 1 / -1; grid-row: 1; }
+    #game .players-bar { grid-column: 1 / -1; grid-row: 2; }
+    #game .dest-hint-bar { grid-column: 1 / -1; grid-row: 3; }
     #game .breadcrumb-bar { grid-column: 1; grid-row: 4; }
-    #game .wiki-container { grid-column: 2; grid-row: 2 / 5; min-height: 0; }
-
-    #game .game-header {
-      flex-direction: column;
-      align-items: stretch;
-      justify-content: flex-start;
-      flex-wrap: nowrap;
-      gap: 12px;
-      padding: 14px 16px;
-      border-bottom: 1px solid var(--surface2);
-      border-right: 2px solid var(--surface2);
-    }
-    #game .game-header-left { flex: none; flex-direction: column; align-items: stretch; gap: 8px; }
-    #game .nav-info { flex-direction: column; align-items: stretch; gap: 2px; text-align: center; }
-    #game .nav-info .arrow { transform: rotate(90deg); line-height: 1; color: var(--text2); }
-    #game .origin-tag, #game .dest-tag { display: block; overflow-wrap: anywhere; }
-    #game #triNav { flex-direction: column; align-items: stretch; text-align: center; gap: 2px; }
-    #game #triNav:not([style*="none"]) { display: flex; }
-    #game .target-tag { display: block; overflow-wrap: anywhere; }
-    #game .target-sep { text-align: center; margin: 0; line-height: 1; }
-    #game .target-sep { display: inline-block; transform: rotate(90deg); }
-    #game .marathon-nav { flex-wrap: wrap; gap: 6px; }
-
-    #game .game-stats {
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px 12px;
-    }
-    #game .game-stats .surrender-btn { margin-left: auto; }
-    #game .game-stats .give-up-status { flex-basis: 100%; margin-top: 0; }
-    #game .game-stats .end-round-btn { flex-basis: 100%; padding-top: 0; text-align: left; }
-
-    #game .dest-hint-bar { border-right: 2px solid var(--surface2); }
+    #game .wiki-container { grid-column: 2; grid-row: 4; min-height: 0; }
 
     /* The trail reads as a vertical path: newest page at the bottom, a line
        joining the steps, scrolling inside the rail. */
