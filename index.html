@@ -4330,6 +4330,8 @@
     /* The visited-pages strip is dropped here to give the article its row back
        (updateBreadcrumbs still runs; it also feeds the step counter). */
     #game .breadcrumb-bar { display: none; }
+    /* Classic's A -> B tags are dropped here: the rail's start (top) and destination (bottom) chips say it. */
+    #game #classicNav { display: none; }
     #game .wiki-container { grid-column: 2; grid-row: 3 / 5; min-height: 0; }
 
     /* The rail: a soft green wash at the destination end (bottom) fading into the bar. */
@@ -7465,6 +7467,8 @@ function startGameUI(msg) {
   const playersBar = document.getElementById('playersBar');
   playersBar.style.display = 'flex';
   playersBar.classList.toggle('tri-mode', currentGameMode === 'tri');
+  // Laptop rail: name the track's ends right away (the top bar no longer shows the route there).
+  if (railTrackMQ.matches) updateRailEnds(document.getElementById('lbRiders'), []);
   startTimer();
   // Marathon's target loads async after game_start, so defer the hint until
   // renderMarathonTarget fires. Other modes have their destination by now.
