@@ -5,23 +5,21 @@
       <stop offset="100%" stop-color="#00b894"/>
     </linearGradient>
   </defs>
-  <!-- Circular mark, dark base, gradient W.
-       Google does NOT crop favicons to a circle — it draws the icon INSIDE a
-       white circular badge with padding around it. A square therefore always
-       reads as a sticker pasted into a circle (corners crowding the rim), which
-       is what the previous full-bleed square looked like. A circle that fills
-       the whole canvas instead sits concentrically inside Google's badge, so the
-       surrounding white reads as intentional framing rather than dead space.
-       Keeping the corners transparent also lets Google's converter emit PNG with
-       alpha rather than flattening the art to JPEG. -->
-  <circle cx="32" cy="32" r="32" fill="#1a1a24"/>
-  <!-- Gradient W on the dark base keeps the brand palette (matches the wordmark)
-       and stays legible at 16px because the contrast is glyph-vs-dark, not
-       glyph-vs-white-badge. -->
-  <text x="32" y="51"
+  <!-- A solid, full-bleed dark SQUARE, on purpose. Google Search shows favicons
+       in a 28px circle and picks one of two treatments (measured on live dark-mode
+       results, Oct 2026): an icon whose corners are all one solid colour is
+       cropped to fill the circle (how x.com and vercel.com get a full dark
+       circle); anything else is shrunk to 18px on Google's own white circle,
+       which leaves a white ring. That caught both earlier tries: the July square's
+       gradient gave it four different corners, and the Aug-Oct circle's corners
+       were transparent. So: no transparency, a flat background, every corner
+       #1a1a24, and the W kept inside the inscribed circle so the crop never
+       clips it. favicon.png is this design rendered at 192px. -->
+  <rect width="64" height="64" fill="#1a1a24"/>
+  <text x="32" y="47"
         text-anchor="middle"
         font-family="system-ui,-apple-system,Segoe UI,Roboto,sans-serif"
         font-weight="900"
-        font-size="56"
+        font-size="44"
         fill="url(#g)">W</text>
 </svg>

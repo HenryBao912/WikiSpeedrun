@@ -90,10 +90,13 @@ async function action(playerId, csrf, msg) {
 // Fetch real outgoing mainspace links for a title straight from Wikipedia.
 // The server now enforces move-legality (a navigate is only accepted if the
 // target is an actual link of the current page), so the smoke test must walk
-// real links rather than arbitrary article names.
+// real links rather than arbitrary article names. redirects=1: the walk often
+// lands on a redirect (Spain's first link is "+34" → Telephone_numbers_in_
+// Spain). Players see the target article and isLegalMove checks its links, so
+// the redirect stub's own links ("+34" → Calling_code) are rejected.
 function wikiLinks(title, lang = 'en') {
   return new Promise((resolve, reject) => {
-    const u = `https://${lang}.wikipedia.org/w/api.php?action=query&format=json&` +
+    const u = `https://${lang}.wikipedia.org/w/api.php?action=query&format=json&redirects=1&` +
       `titles=${encodeURIComponent(title.replace(/ /g, '_'))}&prop=links&pllimit=100&plnamespace=0`;
     https.get(u, { headers: { 'User-Agent': 'WikiSpeedrun-e2e/1.0' } }, res => {
       let d = ''; res.on('data', c => d += c);

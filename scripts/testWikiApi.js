@@ -14,15 +14,42 @@
 //      single link and every click on the rendered article was rejected
 //      (~2,585/week in prod logs).
 //
+// Plus one local check, no Wikipedia involved: a response cut off mid-body by
+// a clean FIN used to leave wikiAPIOnce's Promise pending forever, leaking a
+// queue slot and the coalesced entry (Oct 2026 review, reproduced on Node 22).
+// A loopback server plays that response for titles starting with CUT_PREFIX.
+//
 // These call server.js internals via a patched require (module.exports
 // doesn't expose isLegalMove), so the test re-exports what it needs.
 
 const fs = require('fs');
 const path = require('path');
+const net = require('net');
+const http = require('http');
+const https = require('https');
+
+// Headers, part of the body, then a clean close: a short Content-Length body,
+// and a chunked body missing its terminating chunk.
+const CUT_PREFIX = 'Cut_response_test_';
+const CUT_RESPONSES = {
+  short: 'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 1000\r\n\r\n{"query":{',
+  chunked: 'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\n\r\na\r\n{"query":{\r\n',
+};
+const cutServer = net.createServer(sock => sock.once('data', buf => {
+  const mode = new RegExp(`titles=${CUT_PREFIX}(\\w+)`).exec(String(buf));
+  sock.write(CUT_RESPONSES[mode && mode[1]] || CUT_RESPONSES.short);
+  setTimeout(() => sock.end(), 20);
+}));
+const realGet = https.get;
+https.get = function (url, opts, cb) {
+  const u = new URL(String(url));
+  if (!(u.searchParams.get('titles') || '').startsWith(CUT_PREFIX)) return realGet.apply(this, arguments);
+  return http.get(`http://127.0.0.1:${cutServer.address().port}${u.pathname}${u.search}`, opts, cb);
+};
 
 // Patch-export internals the test needs but server.js doesn't export.
 const src = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
-const patched = src.replace(/^module\.exports = \{/m, 'module.exports = {\n  isLegalMove, wikiAPI, linkCache, cacheSet, cacheKey,');
+const patched = src.replace(/^module\.exports = \{/m, 'module.exports = {\n  isLegalMove, wikiAPI, linkCache, cacheSet, cacheKey,\n  getPageLinks, inFlightWiki, wikiSlotsInUse: () => wikiInFlight,');
 const tmp = path.join(__dirname, '..', '_testWikiApi_patched.cjs');
 fs.writeFileSync(tmp, patched);
 const s = require(tmp);
@@ -71,8 +98,29 @@ const ok = (label, cond) => {
     s.cacheSet(s.linkCache, s.cacheKey('en', '2014_FIFA_World_Cup'), new Set(['junk entry']));
     ok('poisoned cache: real link rescued by probe', await s.isLegalMove('2014_FIFA_World_Cup', 'Brazil'));
     ok('poisoned cache: fabricated move still REJECTED', !(await s.isLegalMove('2014_FIFA_World_Cup', 'Taylor_Swift')));
+
+    console.log('── Response cut off mid-body (slot-leak regression, loopback) ──');
+    // Each cut attempt must reject so wikiAPI's retries run and give up, and
+    // every exit path must free the slot and the coalesced entry. Before the
+    // fix both callers hung past the 8s request timeout, which dies with the
+    // socket; four such responses wedged the whole queue.
+    await new Promise(r => cutServer.listen(0, '127.0.0.1', r));
+    for (const mode of Object.keys(CUT_RESPONSES)) {
+      const title = CUT_PREFIX + mode;
+      const slotsBefore = s.wikiSlotsInUse();
+      const t0 = Date.now();
+      // The second caller joins the first one's coalesced fetch.
+      const settled = await Promise.race([
+        Promise.all([s.getPageLinks(title), s.getPageLinks(title)]).then(() => true),
+        new Promise(r => setTimeout(() => r(false), 12000)),
+      ]);
+      ok(`${mode}: both callers settled after the retries (${settled ? Date.now() - t0 + 'ms' : 'still pending at 12s'})`, settled);
+      ok(`${mode}: its slot came back and the coalesced entry is gone (slots ${slotsBefore} → ${s.wikiSlotsInUse()})`,
+        s.wikiSlotsInUse() === slotsBefore && !s.inFlightWiki.has(`links:${s.cacheKey('en', title)}`));
+    }
   } finally {
     fs.unlinkSync(tmp);
+    cutServer.close();
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);

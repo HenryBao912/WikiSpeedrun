@@ -5,6 +5,9 @@ const fs = require('fs');
 const path = require('path');
 const url = require('url');
 const zlib = require('zlib');
+const { AsyncLocalStorage } = require('async_hooks');
+const { cleanPlayerName } = require('./nameFilter');
+const { EXPLICIT_RE, isExplicitTitle } = require('./safeTitles');
 
 // ─── Game State ───
 const rooms = new Map();
@@ -86,9 +89,6 @@ function isNoiseClientError(message) {
     || /__firefox__|window\.ethereum|\bDarkReader\b|EmptyRanges|runtime\.sendMessage|Distributor\.getValue/i.test(message);
 }
 
-// Wikipedia hosts per language. Add a language here + ensure the random
-// article / bio-detection heuristics below know about it and it's available
-// to rooms. Client's toggle must stay in sync.
 // Structured session logging. Each call writes a single JSON line to stdout,
 // which Railway captures and lets us grep/jq later. Free-form data field;
 // always includes ISO timestamp + event name.
@@ -99,6 +99,43 @@ function logEvent(event, data = {}) {
     console.error('logEvent failed:', e.message);
   }
 }
+
+// ─── Performance summary ───
+// One `perf_summary` log line every PERF_SUMMARY_MS with percentiles of what a
+// player waits on (navigate = the server's click check), the Wikipedia queue
+// wait split by priority, Wikipedia response time, 429s, and the deepest the
+// queue got. Samples are a bounded reservoir, so memory stays flat however
+// busy it gets. Nothing is logged for an idle window.
+const PERF_SUMMARY_MS = Number(process.env.PERF_SUMMARY_MS) || 10 * 60 * 1000; // env override for load tests
+const PERF_RESERVOIR = 2000;
+let perfWindow = { samples: {}, seen: {}, counts: {}, max: {} };
+function perfSample(name, ms) {
+  const w = perfWindow;
+  const arr = (w.samples[name] ||= []);
+  const seen = (w.seen[name] = (w.seen[name] || 0) + 1);
+  if (arr.length < PERF_RESERVOIR) arr.push(ms);
+  else { const i = Math.floor(Math.random() * seen); if (i < PERF_RESERVOIR) arr[i] = ms; }
+}
+function perfCount(name) { perfWindow.counts[name] = (perfWindow.counts[name] || 0) + 1; }
+function perfMax(name, v) { if (!(perfWindow.max[name] >= v)) perfWindow.max[name] = v; }
+function perfPercentiles(arr) {
+  const a = [...arr].sort((x, y) => x - y);
+  const q = (p) => a[Math.min(a.length - 1, Math.floor(p * a.length))];
+  return { n: a.length, p50: q(0.5), p95: q(0.95), p99: q(0.99), max: a[a.length - 1] };
+}
+function flushPerfSummary() {
+  const w = perfWindow;
+  perfWindow = { samples: {}, seen: {}, counts: {}, max: {} };
+  if (!Object.keys(w.samples).length && !Object.keys(w.counts).length) return null;
+  const out = { windowMin: PERF_SUMMARY_MS / 60000, ...w.counts, ...w.max };
+  for (const [name, arr] of Object.entries(w.samples)) {
+    out[name] = { ...perfPercentiles(arr), n: w.seen[name] };
+  }
+  logEvent('perf_summary', out);
+  return out;
+}
+const perfSummaryTimer = setInterval(flushPerfSummary, PERF_SUMMARY_MS);
+perfSummaryTimer.unref?.();
 
 // ─── Last-resort crash safety ───
 // Without these, a single stray throw or unhandled promise rejection takes down
@@ -276,6 +313,75 @@ async function initEventsTable() {
     console.error('Analytics: events table init failed:', e.message);
     logEvent('analytics_table_init_failed', { message: e.message });
   }
+  await initDailyResults();
+}
+
+// ─── Daily leaderboard persistence ───
+// One row per (date, anonId): the player's first attempt, as on the board.
+// The in-memory board stays the source for reads; this is write-through plus
+// a reload at boot. Every failure is logged and swallowed, like analytics.
+let dailyResultsReady = false;
+async function initDailyResults() {
+  if (!pgPool) return;
+  try {
+    await pgPool.query(`
+      create table if not exists daily_results (
+        date date not null,
+        anon_id text not null,
+        name text not null,
+        country text,
+        won boolean not null,
+        steps integer not null,
+        time_ms bigint,
+        closest_hops integer,
+        path jsonb not null default '[]',
+        ts timestamptz not null default now(),
+        primary key (date, anon_id)
+      )`);
+    dailyResultsReady = true;
+    const cutoff = utcDateStr(new Date(Date.now() - MAX_LEADERBOARD_RETENTION_DAYS * 24 * 60 * 60 * 1000));
+    const { rows } = await pgPool.query(
+      `select to_char(date, 'YYYY-MM-DD') as date, anon_id, name, country, won, steps, time_ms, closest_hops, path,
+              (extract(epoch from ts) * 1000)::bigint as ts
+         from daily_results where date >= $1`, [cutoff]);
+    let loaded = 0;
+    for (const r of rows) {
+      let board = dailyLeaderboards.get(r.date);
+      if (!board) { board = []; dailyLeaderboards.set(r.date, board); }
+      // A result submitted in the moments between boot and this load is
+      // already on the board (and in the table): keep that one.
+      if (board.some(e => e.anonId === r.anon_id)) continue;
+      board.push({
+        anonId: r.anon_id, name: r.name, country: r.country, won: r.won, steps: r.steps,
+        timeMs: r.time_ms == null ? null : Number(r.time_ms),
+        closestHops: r.closest_hops, path: Array.isArray(r.path) ? r.path : [], ts: Number(r.ts),
+      });
+      loaded++;
+    }
+    logEvent('daily_results_loaded', { rows: loaded });
+  } catch (e) {
+    console.error('Daily results: init/load failed:', e.message);
+    logEvent('daily_results_init_failed', { message: e.message });
+  }
+}
+// A result submitted in the second or two before the table is ready (just
+// after boot) stays memory-only.
+function persistDailyResult(date, e, updateName = false) {
+  if (!pgPool || !dailyResultsReady) return;
+  pgPool.query(
+    `insert into daily_results (date, anon_id, name, country, won, steps, time_ms, closest_hops, path, ts)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, to_timestamp($10 / 1000.0))
+     on conflict (date, anon_id) do ${updateName ? 'update set name = excluded.name' : 'nothing'}`,
+    [date, e.anonId, e.name, e.country, !!e.won, e.steps,
+      Number.isFinite(e.timeMs) ? Math.round(e.timeMs) : null,
+      Number.isFinite(e.closestHops) ? e.closestHops : null,
+      JSON.stringify(e.path || []), e.ts || Date.now()],
+  ).catch(err => logEvent('daily_result_write_failed', { message: err.message }));
+}
+// The late "enter your name" step. An upsert, not an update: the name can
+// arrive while the first insert is still in flight on another connection.
+function persistDailyName(date, e) {
+  persistDailyResult(date, e, true);
 }
 
 // visitorId is opaque and client-supplied, so validate before it ever touches a
@@ -339,6 +445,30 @@ function recordEvent(event, { visitorId, playerId = null, lang = null, mode = nu
   }
 }
 
+// Who/what a game was, for the analytics meta: a daily run, and whether the
+// room had one human (solo) or several. Lets queries split the daily from
+// free play and multiplayer from solo without guessing from room codes.
+function gameFlags(room) {
+  return { daily: !!room.daily, solo: !!room.singlePlayer, ...(safeModeOn(room) && { safe: true }) };
+}
+
+// Safe mode (host toggle in the lobby, a checkbox in solo setup): the round's
+// start and targets can't be adult titles, and no one can follow a link to
+// one. Dailies ignore it: the day's puzzle and board are the same for all.
+function safeModeOn(room) {
+  return !!room && room.safeMode && !room.daily;
+}
+// Tell a player whether Safe mode is on, with the pattern the client uses to
+// block links before it loads them (the server enforces it on navigate too).
+function safeModeMessage(room) {
+  return { type: 'safe_mode_changed', on: !!room.safeMode, pattern: room.safeMode ? EXPLICIT_RE.source : null };
+}
+// The first explicit title among `titles`, or null.
+function firstExplicitTitle(titles) {
+  return titles.find(t => t && isExplicitTitle(t)) || null;
+}
+const SAFE_MODE_ARTICLE_ERROR = t => `Safe mode is on: "${String(t).replace(/_/g, ' ')}" isn't allowed. Pick another article.`;
+
 // Record a room-level event once PER participant: a Postgres row keyed by that
 // player's visitorId, and (when mirror) a GA4 hit keyed by their GA client id —
 // so multiplayer games count every distinct human and GA4 sees one event/user.
@@ -382,6 +512,134 @@ function allowPageview(ip) {
   return true;
 }
 
+// Per-IP daily cap on RECORDED page views (DB row + GA4 hit). The bucket above
+// stops bursts but not a slow steady loop: Oct 2026, one campus IP reloaded the
+// homepage every ~12s around the clock, minting a fresh visitor id each time, and
+// inflated visitors ~20×. A shared school NAT legitimately sends a few dozen a day
+// (busiest real IP: ~12/day), so 100 leaves real users alone. Past the cap the
+// beacon still gets its 204 — it just isn't counted. Resets at UTC midnight.
+const PAGEVIEW_DAILY_CAP = 100;
+const pageviewDailyCounts = new Map(); // ip -> recorded page views today
+let pageviewDailyDay = '';
+function underPageviewDailyCap(ip) {
+  const day = new Date().toISOString().slice(0, 10);
+  if (day !== pageviewDailyDay) { pageviewDailyCounts.clear(); pageviewDailyDay = day; }
+  const n = (pageviewDailyCounts.get(ip) || 0) + 1;
+  // Bounded: past 50k distinct IPs in a day, untracked IPs are simply let through.
+  if (pageviewDailyCounts.has(ip) || pageviewDailyCounts.size < 50000) pageviewDailyCounts.set(ip, n);
+  return n <= PAGEVIEW_DAILY_CAP;
+}
+
+// Rate limits for the public /perf article-load beacon (one report per article
+// load, from ~25% of page sessions). Per IP: a sampled session reports EVERY
+// load, a fast player keeps up 20-30 loads/min through back-to-back games, and
+// a campus or NAT IP carries several sessions at once. Replaying 55h of prod
+// /action logs (Oct 16-18), the old burst 20 at 15/min would have cut reports
+// from up to 12% of sampled sessions (8% of loads, mostly fast players and
+// shared IPs); burst 40 at 30/min, ~3%. Its own bounded Map, so perf reports
+// never spend a visitor's /pageview budget. Global: per-IP limits can't bound
+// total volume (many sources, or forged leftmost X-Forwarded-For hops, each get
+// a fresh bucket), so the endpoint is capped at 30 lines/min (~43k/day at most)
+// whatever the source; the 120 burst absorbs a few sampled sessions peaking at
+// once. Expected traffic is ~3k article_load lines/day (~2/min) next to ~18k
+// app log lines/day.
+const PERF_IP_MAX = 40;
+const PERF_IP_REFILL_PER_SEC = 0.5;
+const PERF_GLOBAL_MAX = 120;
+const PERF_GLOBAL_REFILL_PER_SEC = 0.5;
+const perfBuckets = new Map(); // ip -> { tokens, last }
+const perfGlobalBucket = { tokens: PERF_GLOBAL_MAX, last: Date.now() };
+// Reports the buckets turn away, by reason. Each one is a hole in a sampled
+// session (the client's `n` shows where); these counts say whether our limits
+// made it. Logged as one article_load_dropped line per 10-minute window, and
+// only when nonzero (at most 144 lines/day). Flushed by the next /perf request
+// rather than a timer, since scripts/ require this file and must still exit,
+// so after a quiet spell a window just runs long; `since` marks its start.
+// ip_limited counts requests refused before their body is read, junk included.
+const PERF_DROP_WINDOW_MS = 10 * 60 * 1000;
+const perfDrops = { ip_limited: 0, global_limited: 0, since: Date.now() };
+function flushPerfDrops() {
+  const now = Date.now();
+  if (now - perfDrops.since < PERF_DROP_WINDOW_MS) return;
+  if (perfDrops.ip_limited || perfDrops.global_limited) {
+    logEvent('article_load_dropped', {
+      ip_limited: perfDrops.ip_limited,
+      global_limited: perfDrops.global_limited,
+      since: new Date(perfDrops.since).toISOString(),
+    });
+  }
+  perfDrops.ip_limited = 0;
+  perfDrops.global_limited = 0;
+  perfDrops.since = now;
+}
+function takeToken(b, max, refillPerSec) {
+  const now = Date.now();
+  // Clamped like allowAction: a backwards wall-clock step must not drain tokens.
+  b.tokens = Math.min(max, b.tokens + (Math.max(0, now - b.last) / 1000) * refillPerSec);
+  b.last = now;
+  if (b.tokens < 1) return false;
+  b.tokens -= 1;
+  return true;
+}
+function allowPerf(ip) {
+  // The key can come from X-Forwarded-For (up to ~16KB of header); a real IP
+  // fits in 45 chars, so cap it to keep the 5000-entry Map small.
+  const key = String(ip).slice(0, 64);
+  let b = perfBuckets.get(key);
+  if (!b) {
+    if (perfBuckets.size > 5000) { const o = perfBuckets.keys().next().value; if (o !== undefined) perfBuckets.delete(o); }
+    b = { tokens: PERF_IP_MAX, last: Date.now() };
+    perfBuckets.set(key, b);
+  }
+  if (takeToken(b, PERF_IP_MAX, PERF_IP_REFILL_PER_SEC)) return true;
+  perfDrops.ip_limited++;
+  return false;
+}
+function allowPerfGlobal() {
+  if (takeToken(perfGlobalBucket, PERF_GLOBAL_MAX, PERF_GLOBAL_REFILL_PER_SEC)) return true;
+  perfDrops.global_limited++;
+  return false;
+}
+
+// One /perf report, validated field by field. Every value is client-supplied on
+// an unauthenticated endpoint, so numbers must be finite and are clamped,
+// strings are whitelisted or pattern-checked and truncated, booleans count only
+// as literal `true`, and unknown fields are dropped. Returns null (log nothing)
+// for anything without a usable total_ms.
+const PERF_MAX_BODY = 2048; // a real report is ~300 bytes
+const PERF_MAX_MS = 10 * 60 * 1000;
+const PERF_MAX_BYTES = 50_000_000;
+const PERF_ERR_CLASSES = new Set(['timeout', 'http', 'network', 'render']);
+const PERF_NET_TYPES = new Set(['slow-2g', '2g', '3g', '4g']);
+function perfInt(v, max) {
+  return (typeof v === 'number' && Number.isFinite(v)) ? Math.min(max, Math.max(0, Math.round(v))) : null;
+}
+function sanitizeArticleLoad(d) {
+  if (!d || typeof d !== 'object') return null;
+  const total = perfInt(d.total_ms, PERF_MAX_MS);
+  if (total === null) return null;
+  const title = typeof d.title === 'string' ? d.title.slice(0, 120) : '';
+  const out = {
+    ok: d.ok === true,
+    total_ms: total,
+    fetch_ms: perfInt(d.fetch_ms, PERF_MAX_MS),
+    render_ms: perfInt(d.render_ms, PERF_MAX_MS),
+    bytes: perfInt(d.bytes, PERF_MAX_BYTES),
+    title: isValidArticle(title) ? title : null,
+    lang: (typeof d.lang === 'string' && Object.hasOwn(WIKI_HOSTS, d.lang)) ? d.lang : null,
+    first: d.first === true,
+    net: PERF_NET_TYPES.has(d.net) ? d.net : null,
+    mobile: d.mobile === true,
+    sid: (typeof d.sid === 'string' && /^[0-9a-f]{8,16}$/.test(d.sid)) ? d.sid : null,
+    n: perfInt(d.n, 1_000_000), // the session's report number: a gap is a lost report
+  };
+  if (!out.ok) {
+    out.err = PERF_ERR_CLASSES.has(d.err) ? d.err : 'other';
+    out.status = (Number.isInteger(d.status) && d.status >= 100 && d.status <= 599) ? d.status : null;
+  }
+  return out;
+}
+
 // Server-side GA4 Measurement Protocol — fires for EVERYONE, including users
 // whose ad blocker kills the client gtag, so GA4 stops undercounting. clientId
 // MUST be stable per browser (GA's own client id when we have it, else the
@@ -405,9 +663,12 @@ function sendGA4({ clientId, name, params = {} }) {
   }
 }
 
+// English-only. The zh.wikipedia mode was removed in Oct 2026: 95 of ~68k
+// games, and 51 of its 52 players also played English. The lang plumbing
+// stays (wiki helpers, cache keys, rooms and the events.lang column all
+// carry a lang), but normalizeLang resolves every value to 'en'.
 const WIKI_HOSTS = {
   en: 'en.wikipedia.org',
-  zh: 'zh.wikipedia.org',
 };
 const DEFAULT_LANG = 'en';
 // Per Wikimedia's User-Agent policy (https://meta.wikimedia.org/wiki/
@@ -437,13 +698,21 @@ const INDEX_HTML_PATH = path.join(__dirname, 'index.html');
 // reads location.pathname on boot and opens the matching screen, so these
 // deep-link for users too. Copy is tuned per intent; every description
 // carries the "No signup · no downloads · no ads" hook.
+// Apostrophes are typographic (’, U+2019), never ASCII ': Google's snippet
+// pipeline escaped the plain one and showed "today&#39;s" literally in results.
+// BASE_DESC must stay byte-identical to index.html's meta copy (split/join below).
+// The home <title> (the browser tab, and Google's headline) is the brand plus
+// "Wikipedia Racing Game" so it matches the "wikipedia game/race" searches;
+// BASE_TITLE is the og:/twitter: share title. Each route swaps its own title
+// into all three.
+const HOME_TITLE = 'WikiSpeedrun – Wikipedia Racing Game';
 const BASE_TITLE = 'WikiSpeedrun — Free Multiplayer Wikipedia Racing Game';
-const BASE_DESC = "No signup · no downloads · no ads. Race friends from one Wikipedia article to another, or play solo and take on today's Daily Challenge.";
+const BASE_DESC = "No signup · no downloads · no ads. Race friends from one Wikipedia article to another, or play solo and take on today’s Daily Challenge.";
 const PAGE_ROUTES = {
   '/': null, // base document, no rewrites
   '/daily-challenge': {
     title: 'Daily Wikipedia Challenge — WikiSpeedrun',
-    desc: "One new Wikipedia race every day — same start and goal for everyone. Keep your streak alive and climb today's leaderboard. No signup · no downloads · no ads.",
+    desc: "One new Wikipedia race every day — same start and goal for everyone. Keep your streak alive and climb today’s leaderboard. No signup · no downloads · no ads.",
   },
   '/multiplayer': {
     title: 'Multiplayer Wikipedia Race — WikiSpeedrun',
@@ -453,7 +722,24 @@ const PAGE_ROUTES = {
     title: 'Singleplayer Wikipedia Speedrun — WikiSpeedrun',
     desc: 'Practice Wikipedia speedrunning solo — classic races, Tri mode, or Marathon against the clock. No signup · no downloads · no ads.',
   },
+  // Landing pages for the head search terms ("wikipedia game", "wiki race"),
+  // where the site didn't rank. Each opens the normal home screen, but with
+  // its own title, description and visible tagline so it isn't a duplicate
+  // of / in Google's eyes.
+  '/wikipedia-game': {
+    title: 'The Wikipedia Game — Race Between Articles | WikiSpeedrun',
+    desc: 'Play the Wikipedia game free in your browser: start on one article and reach another using only the links. Daily challenge, solo, or live with friends. No signup · no downloads · no ads.',
+    tagline: 'The Wikipedia game: race article to article',
+  },
+  '/wiki-race': {
+    title: 'Wiki Race — Race Friends Across Wikipedia | WikiSpeedrun',
+    desc: 'Wikiracing with friends: share a room code and race live from one Wikipedia article to another. First to the target wins. No signup · no downloads · no ads.',
+    tagline: 'Wiki race: first to the target article wins',
+  },
 };
+// The home screen's visible tagline; routes with a `tagline` swap it.
+// Must stay byte-identical to the <p class="logo-sub"> text in index.html.
+const BASE_TAGLINE = 'Navigate Wikipedia | Race to destination';
 
 // pathname -> { raw, gz, br, etag } built once at boot.
 const pageVariants = new Map();
@@ -476,14 +762,21 @@ function loadIndexHtml() {
   for (const [route, meta] of Object.entries(PAGE_ROUTES)) {
     let html = base;
     if (meta) {
-      // Title + description appear verbatim in <title>/og/twitter triplets —
-      // replaceAll keeps every copy in sync. The canonical/og:url/JSON-LD URL
-      // all end with `.io/"`, so one pattern rewrites them to the route URL
-      // (og:image's .png URL doesn't match the pattern and stays intact).
+      // The share title and description appear verbatim in their og/twitter
+      // tags, and <title> holds HOME_TITLE — replaceAll keeps every copy in
+      // sync. The canonical/og:url/JSON-LD URL all end with `.io/"`, so one
+      // pattern rewrites them to the route URL (og:image's .png URL doesn't
+      // match the pattern and stays intact).
       html = html
+        .split(`<title>${HOME_TITLE}</title>`).join(`<title>${meta.title}</title>`)
         .split(BASE_TITLE).join(meta.title)
         .split(BASE_DESC).join(meta.desc)
         .split('https://wikispeedrun.io/"').join(`https://wikispeedrun.io${route}"`);
+      if (meta.tagline) {
+        const from = `<p class="logo-sub">${BASE_TAGLINE}</p>`;
+        if (!html.includes(from)) throw new Error('BASE_TAGLINE no longer matches index.html');
+        html = html.split(from).join(`<p class="logo-sub">${meta.tagline}</p>`);
+      }
     }
     pageVariants.set(route, buildPageVariant(html));
   }
@@ -498,9 +791,8 @@ loadIndexHtml();
 
 // DOMPurify is the sanitizer guarding all Wikipedia-HTML injection. It's served
 // from our own origin (vendored at build time) rather than a CDN: a CDN is a
-// supply-chain + availability risk — jsDelivr in particular is frequently
-// blocked in mainland China, exactly the audience for the zh.wikipedia mode —
-// and a missing sanitizer used to fall back to injecting raw HTML.
+// supply-chain + availability risk (jsDelivr in particular is blocked on some
+// networks), and a missing sanitizer used to fall back to injecting raw HTML.
 const PURIFY_PATH = path.join(__dirname, 'purify.min.js');
 let purifyRaw, purifyGz, purifyEtag;
 function loadPurify() {
@@ -509,8 +801,15 @@ function loadPurify() {
   purifyEtag = '"' + crypto.createHash('sha1').update(purifyRaw).digest('hex').slice(0, 16) + '"';
 }
 loadPurify();
-function normalizeLang(lang) {
-  return (lang && WIKI_HOSTS[lang]) ? lang : DEFAULT_LANG;
+// Every client-supplied lang resolves to 'en'. Kept as the single funnel for
+// that value because tabs opened before the zh mode was removed still send
+// lang=zh with create_room, start_single, random_word and /validate-dest.
+// They get an English game, and room_created / room_joined / game_start keep
+// echoing lang:'en', which is what switches those old clients to en.wikipedia.
+// If a language ever comes back, test Object.hasOwn(WIKI_HOSTS, lang): the old
+// WIKI_HOSTS[lang] check let inherited keys like 'constructor' through.
+function normalizeLang() {
+  return DEFAULT_LANG;
 }
 
 // Max length for a Wikipedia article title. The API docs cap at 255 bytes;
@@ -558,14 +857,15 @@ function generatePlayerId() {
 
 // ─── Random article fetching from Wikipedia ───
 
-// Quick title-based filter (no API call needed). Per-language — the English
-// heuristics (word count, non-ASCII rejection) don't apply to zh.
-function isBadTitle(title, lang = DEFAULT_LANG) {
-  if (lang === 'zh') return isBadTitleZh(title);
+// Quick title-based filter (no API call needed)
+function isBadTitle(title) {
   const lower = title.toLowerCase().replace(/_/g, ' ');
   // Lists, indexes, outlines, drafts
   if (/^(list of|lists of|index of|outline of|draft:|wikipedia:|template:|category:|portal:|module:|wikipedia)/.test(lower)) return true;
   if (lower === 'wikipedia') return true;
+  // Year chronicles ("Deaths in 2026", "2026 in film") are lists too, and
+  // the monthly top lists are full of them.
+  if (/^(deaths in \d{4}|\d{4} in )/.test(lower)) return true;
   // Disambiguation and parenthetical qualifiers — these are hard to reach via links
   // e.g. "Mario Bros. (Game & Watch)", "Paris (Texas)", "Mercury (planet)"
   if (lower.includes('(')) return true;
@@ -587,27 +887,16 @@ function isBadTitle(title, lang = DEFAULT_LANG) {
   return false;
 }
 
-// Chinese Wikipedia has different prefixes and "list" conventions. Also,
-// rejecting non-ASCII obviously doesn't work — every normal zh article is
-// non-ASCII. Rely mostly on the API validation (length, disambiguation).
-function isBadTitleZh(title) {
-  const t = title.replace(/_/g, ' ');
-  // Namespace prefixes (Wikipedia/Template/Category/Portal/Module/File in zh)
-  if (/^(维基百科|Wikipedia|模板|Template|分类|Category|门户|Portal|模块|Module|文件|File|帮助|Help|User|用户|草稿|Draft):/i.test(t)) return true;
-  // Parenthetical qualifiers (disambiguation style)
-  if (t.includes('(') || t.includes('（')) return true;
-  // Pure digits (years)
-  if (/^\d{3,4}年?$/.test(t)) return true;
-  // Single-character titles are usually too ambiguous
-  if (t.replace(/\s/g, '').length <= 1) return true;
-  // "...列表" (list-of) at the end → skip
-  if (/列表$/.test(t)) return true;
-  return false;
-}
-
 // Validate articles via API: check they're real content pages (not disambig/stubs)
 // Biographies get a stricter threshold — only very famous people are fun to play with
-async function validateArticles(titles, lang = DEFAULT_LANG) {
+// opts: minBioLength (bytes a biography needs to count as a real article) and
+// bioRatio (biographies kept per other article; null = no cap). The defaults
+// suit random play; the pool generator loosens the length and drops the cap,
+// since the popular lists are mostly people: with the cap a batch of twenty
+// celebrities and no other article came back as one title.
+async function validateArticles(titles, lang = DEFAULT_LANG, opts = {}) {
+  const minBioLength = opts.minBioLength ?? 100000;
+  const bioRatio = opts.bioRatio === undefined ? 0.5 : opts.bioRatio;
   if (titles.length === 0) return [];
   try {
     const params = {
@@ -626,50 +915,30 @@ async function validateArticles(titles, lang = DEFAULT_LANG) {
       // Skip disambiguation pages
       if (page.pageprops && 'disambiguation' in page.pageprops) continue;
 
-      // Detect biographies — check categories AND title pattern.
-      // Different categories per-language.
+      // Detect biographies — check categories AND title pattern
       const cats = (page.categories || []).map(c => c.title.toLowerCase());
-      let isBioByCat;
-      if (lang === 'zh') {
-        // zh category names: "在世人物", "XXXX年出生", "XXXX年逝世", etc.
-        isBioByCat = cats.some(c =>
-          c.includes('在世人物') ||
-          c.includes('在世人士') ||
-          /\d{1,4}年出生/.test(c) ||
-          /\d{1,4}年逝世/.test(c) ||
-          c.includes('传记') ||
-          c.includes('演员') ||
-          c.includes('歌手') ||
-          c.includes('政治家') ||
-          c.includes('作家') ||
-          c.includes('运动员')
-        );
-      } else {
-        isBioByCat = cats.some(c =>
-          c.includes('living people') ||
-          c.includes('possibly living people') ||
-          /\d{1,4} births/.test(c) ||
-          /\d{1,4} deaths/.test(c) ||
-          c.includes('biography') ||
-          c.includes('actresses') ||
-          c.includes('actors') ||
-          c.includes('politicians') ||
-          c.includes('singers') ||
-          c.includes('footballers') ||
-          c.includes('musicians')
-        );
-      }
-      // Title heuristic: Latin "Firstname Lastname" — doesn't apply to zh.
+      const isBioByCat = cats.some(c =>
+        c.includes('living people') ||
+        c.includes('possibly living people') ||
+        /\d{1,4} births/.test(c) ||
+        /\d{1,4} deaths/.test(c) ||
+        c.includes('biography') ||
+        c.includes('actresses') ||
+        c.includes('actors') ||
+        c.includes('politicians') ||
+        c.includes('singers') ||
+        c.includes('footballers') ||
+        c.includes('musicians')
+      );
+      // Title heuristic: "Firstname Lastname" pattern (2-3 capitalized words, no other stuff)
       const titleClean = page.title.replace(/_/g, ' ');
-      const isBioByTitle = lang === 'zh'
-        ? false
-        : /^[A-Z][a-z]+ [A-Z][a-z]+( [A-Z][a-z]+)?$/.test(titleClean);
+      const isBioByTitle = /^[A-Z][a-z]+ [A-Z][a-z]+( [A-Z][a-z]+)?$/.test(titleClean);
 
       const isBio = isBioByCat || isBioByTitle;
 
       if (isBio) {
         // Biographies need 100KB+ — only the most famous people (Obama, etc.)
-        if (page.length && page.length < 100000) continue;
+        if (page.length && page.length < minBioLength) continue;
         good.push({ title: page.title.replace(/ /g, '_'), isBio: true });
       } else {
         // Normal articles: skip stubs under 5KB
@@ -682,7 +951,7 @@ async function validateArticles(titles, lang = DEFAULT_LANG) {
     const bios = good.filter(g => g.isBio).map(g => g.title);
     // Shuffle bios so selection is random
     bios.sort(() => Math.random() - 0.5);
-    const maxBios = Math.max(1, Math.floor(nonBios.length * 0.5));
+    const maxBios = bioRatio === null ? bios.length : Math.max(1, Math.floor(nonBios.length * bioRatio));
     return [...nonBios, ...bios.slice(0, maxBios)];
   } catch (e) {
     console.error('Error validating articles:', e.message);
@@ -796,7 +1065,7 @@ async function getTopViewedArticles(lang = DEFAULT_LANG) {
         const t = a.article;
         if (t === 'Main_Page' || t === 'Special:Search' || t.startsWith('Special:')) return false;
         if (t.startsWith('Wikipedia:') || t.startsWith('Portal:') || t.startsWith('Help:')) return false;
-        if (isBadTitle(t, lang)) return false;
+        if (isBadTitle(t)) return false;
         return true;
       })
       .filter(a => a.views >= 1000)
@@ -876,7 +1145,7 @@ async function getGoodRandomArticles(count, viewRange, lang = DEFAULT_LANG) {
       const data = await wikiAPI(params, lang);
       const batch = (data.query?.random || [])
         .map(r => r.title.replace(/ /g, '_'))
-        .filter(t => !isBadTitle(t, lang));
+        .filter(t => !isBadTitle(t));
 
       if (batch.length === 0) continue;
       const validated = await validateArticles(batch, lang);
@@ -920,7 +1189,7 @@ async function fetchRandomArticles(count, lang = DEFAULT_LANG) {
       const data = await wikiAPI(params, lang);
       const batch = (data.query?.random || [])
         .map(r => r.title.replace(/ /g, '_'))
-        .filter(t => !isBadTitle(t, lang));
+        .filter(t => !isBadTitle(t));
       if (batch.length === 0) continue;
       const validated = await validateArticles(batch, lang);
       for (const a of validated) {
@@ -1001,13 +1270,17 @@ function utcDateStr(d = new Date()) {
 }
 
 // ─── Daily Leaderboard ───
-// In-memory store, keyed by date. Each entry: { anonId, name, won, steps,
-// timeMs, path, ts }. Lost on restart — acceptable for MVP since dailies
-// reset at midnight UTC anyway, and Railway redeploys are rare. Move to a
-// JSON file on disk or KV store when leaderboard size warrants.
+// Real results, keyed by date. Each entry: { anonId, name, country, won, steps,
+// timeMs, closestHops, path, ts }. Kept in memory for reads and written
+// through to Postgres (daily_results) so a deploy or restart doesn't wipe the
+// day's board; boot reloads the retention window. Without DATABASE_URL it is
+// memory-only. The board served to players is padded to
+// LEADERBOARD_TARGET_SIZE with generated entries (see getLeaderboard), which
+// are never stored.
 const dailyLeaderboards = new Map(); // "YYYY-MM-DD" -> Array<entry>
 const MAX_LEADERBOARD_RETENTION_DAYS = 14;
 const MAX_NAME_LEN = 20;
+// Every name a client sends goes through cleanPlayerName (nameFilter.js).
 const MAX_ANONID_LEN = 64;
 const LEADERBOARD_TARGET_SIZE = 25; // Fakes fill out to this; real entries push fakes off the bottom.
 
@@ -1029,7 +1302,9 @@ function countryFromHeaders(req) {
 function clientIpFromReq(req) {
   // Standard proxy chain: x-forwarded-for is comma-separated, leftmost is original client.
   const xff = (req.headers['x-forwarded-for'] || '').toString();
-  if (xff) return xff.split(',')[0].trim();
+  // Capped: the header can carry ~16KB, and this value keys every per-IP Map
+  // (rate limits, the 50k-entry page-view cap). A real address fits in 45 chars.
+  if (xff) return xff.split(',')[0].trim().slice(0, 64);
   return req.socket?.remoteAddress || null;
 }
 
@@ -1074,18 +1349,32 @@ async function getCountryForReq(req) {
 const dailyHop1Cache = new Map();          // date -> Array<title>
 const dailyOriginLinksCache = new Map();   // date -> Array<title>
 
+const dailyWarmInFlight = new Set();       // dates with a warm currently running
+
 function warmDailyLinkCaches(daily) {
   if (!daily) return;
-  // Fire-and-forget — runs once per (date, server-process). cacheDestination
-  // already runs synchronously when the first player starts, so this typically
-  // hits the cache instantly. We snapshot the sets into plain arrays for
-  // deterministic indexing in fake-path generation.
-  cacheDestination(daily.destination, 'en').then(destData => {
-    if (destData?.hop1?.size) dailyHop1Cache.set(daily.date, [...destData.hop1].slice(0, 200));
-  }).catch(() => {});
-  getPageLinks(daily.origin, 'en').then(links => {
-    if (links?.size) dailyOriginLinksCache.set(daily.date, [...links].slice(0, 200));
-  }).catch(() => {});
+  // Fire-and-forget, once per (date, server-process). Called from every /daily
+  // fetch (the home-screen preview) and every daily start, so without this guard
+  // each page load re-ran the warm — Oct 2026, a reload loop drove it 5k+×/day.
+  // A failed fetch leaves its pool unset, so a later call retries just that half.
+  if (dailyHop1Cache.has(daily.date) && dailyOriginLinksCache.has(daily.date)) return;
+  if (dailyWarmInFlight.has(daily.date)) return;
+  dailyWarmInFlight.add(daily.date);
+  // Only the destination's direct backlinks are needed — not the full
+  // cacheDestination pipeline, whose 30 random hop2 fetches were discarded here.
+  // Same 2000 limit as cacheDestination: backlinkCache keys ignore the limit, so
+  // a smaller fetch would be cached and truncate the game's own hop1 set.
+  // We snapshot the sets into plain arrays for deterministic indexing in
+  // fake-path generation.
+  const hop1 = dailyHop1Cache.has(daily.date) ? null
+    : getBacklinks(daily.destination, 2000, 'en').then(links => {
+        if (links?.size) dailyHop1Cache.set(daily.date, [...links].slice(0, 200));
+      }).catch(() => {});
+  const originLinks = dailyOriginLinksCache.has(daily.date) ? null
+    : getPageLinks(daily.origin, 'en').then(links => {
+        if (links?.size) dailyOriginLinksCache.set(daily.date, [...links].slice(0, 200));
+      }).catch(() => {});
+  Promise.all([hop1, originLinks]).finally(() => dailyWarmInFlight.delete(daily.date));
 }
 
 // ─── Fake leaderboard generation ───
@@ -1289,6 +1578,7 @@ function addLeaderboardEntry(date, entry) {
   // Locks in the score the user committed to (Wordle/NYT model).
   if (board.some(e => e.anonId === entry.anonId)) return false;
   board.push(entry);
+  persistDailyResult(date, entry);
   return true;
 }
 
@@ -1373,6 +1663,34 @@ const HARDCODED_DAILY_BLACKLIST = new Set([
   'Suicide_methods',
   'Suicide',
   'Self-harm',
+  // The April pool (pre-denylist generator) carries these as daily-eligible
+  // origins/destinations; the Oct 23 2026 daily landed on the murder case.
+  // The generator's own denylist (scripts/generatePool.js) includes this set,
+  // so later pools never contain them.
+  'Dnepropetrovsk_maniacs',
+  'Sexual_intercourse',
+  'Sex',
+  'Hentai',
+  'Human_penis',
+  'Opposition_to_pornography',
+  // Biographies of murderers, terrorists and a sex offender: the title shape
+  // says nothing, so by name. The autumn 2026 top lists carry several (a TV
+  // series about serial killers).
+  'Ed_Gein',
+  'Jeffrey_Epstein',
+  'Jeffrey_Dahmer',
+  'Aileen_Wuornos',
+  'Christa_Pike',
+  'Lizzie_Borden',
+  'Ted_Bundy',
+  'Charles_Manson',
+  'Ted_Kaczynski',
+  'Osama_bin_Laden',
+  'Khalid_Sheikh_Mohammed',
+  'Luigi_Mangione',
+  'Andrea_Yates',
+  // An adult performer.
+  'Bonnie_Blue',
 ]);
 
 // In-memory blacklist of destinations the runtime guardrail has rejected
@@ -1394,28 +1712,63 @@ const rejectedDailyDestinations = new Set();
 //   2. destination unique (origin may repeat)      (preserves variety where it matters most)
 //   3. origin unique (destination may repeat)
 //   4. full curated pool                            (last resort — repeats expected)
-function pickDailyPairForDate(date, usedOrigins, usedDestinations) {
+// Dailies never reuse a destination (or an origin, in that role) from the last
+// DAILY_NO_REPEAT_DAYS dailies, capped so a small curated set still leaves a
+// choice. The old rule was "never reuse, ever", which the ~30 eligible pairs
+// exhausted in a month: from then on the fallback ladder served the same 30
+// destinations over and over (163 dailies, 30 distinct destinations, one pair
+// five times). A monthly pool refresh replaces the candidates anyway.
+const DAILY_NO_REPEAT_DAYS = 60;
+// Steady monthly views a daily destination needs (see pickDailyPairForDate).
+// On the Oct 23 2026 pool, 200K turned 56 destinations into 48: 12 spikes out
+// (Julia_Stiles, Theranos, Nathan_Fielder), 4 steady ones in (Shakira,
+// Spain). Kim_Kardashian (214K) and Dolly_Parton (232K) sit just above it.
+const DAILY_MIN_STEADY_VIEWS = 200000;
+
+function pickDailyPairForDate(date, recent) {
   const ymd = utcDateStr(date);
   const seed = parseInt(crypto.createHash('sha256').update(ymd).digest('hex').slice(0, 8), 16);
   const fullPool = puzzlePools.en?.pairs || [];
   // Daily curation rules:
-  //   - Destination popularity: >=100K monthly views (very-popular bucket
-  //     only — household-name destinations like Facebook, ChatGPT, Madonna)
+  //   - Destination popularity: a household name. Pools built by the current
+  //     generator carry each destination's steady views (the quietest of
+  //     three 30-day windows), which must reach DAILY_MIN_STEADY_VIEWS. The
+  //     single-window number let a news spike through: Julia_Stiles measured
+  //     693K and was daily #168, though her usual month is 80-130K. Pools
+  //     without the steady number fall back to that one window (>= 250K),
+  //     and older ones still to the bucket label (easy).
   //   - Distance: >=2 hops (no trivial 1-hop puzzles)
   //   - Destination word count: <=2 words (snappy + shareable; excludes
   //     titles like "UEFA Champions League" or "2026 in film")
-  // Note: pool buckets are discrete; 100K threshold effectively keeps only
-  // the [500K, 100M] bucket. Yields ~33 pairs (>1 month unique).
+  //   - Origin and destination both clear of the content denylist.
   const wordCount = (s) => (s || '').split('_').length;
   const isBadDest = (dest) => HARDCODED_DAILY_BLACKLIST.has(dest) || rejectedDailyDestinations.has(dest);
+  const popular = (p) => p.views?.destinationSteady != null ? p.views.destinationSteady >= DAILY_MIN_STEADY_VIEWS
+    : p.views?.destination != null ? p.views.destination >= 250000
+    : p.viewRange?.[0] >= 100000;
   const curated = fullPool.filter(p =>
-    p.viewRange?.[0] >= 100000 &&
+    popular(p) &&
     p.dist >= 2 &&
     wordCount(p.destination) <= 2 &&
-    !isBadDest(p.destination) // permanent + runtime blacklist
+    !isBadDest(p.destination) && // permanent + runtime blacklist
+    !HARDCODED_DAILY_BLACKLIST.has(p.origin)
   );
   let pool = curated.length > 0 ? curated : fullPool;
-  if (usedOrigins && usedDestinations) {
+  if (recent) {
+    // The window is capped by the number of distinct destinations, not pairs:
+    // with 56 destinations and a 60-day window the strict step runs dry on
+    // day 57 and the ladder's "origin unique" step then serves whichever
+    // few pairs are left, so one destination came up six times in 120 days.
+    // Capped at destinations-1, every destination comes round about once per
+    // cycle, which is the most variety the pool allows.
+    const destinations = new Set(pool.map(p => p.destination)).size;
+    const window = Math.max(0, Math.min(DAILY_NO_REPEAT_DAYS, destinations - 1));
+    const usedOrigins = new Set();
+    const usedDestinations = new Set();
+    for (const e of recent.slice(-window)) {
+      usedOrigins.add(e.origin);
+      usedDestinations.add(e.destination);
+    }
     const candidates = [
       pool.filter(p => !usedOrigins.has(p.origin) && !usedDestinations.has(p.destination)),
       pool.filter(p => !usedDestinations.has(p.destination)),
@@ -1448,22 +1801,19 @@ function getDailyChallenge(date = new Date()) {
   // and cache an entry per day: an unauthenticated CPU/memory DoS. There is no
   // daily for a day that hasn't started yet.
   if (targetMs > Date.parse(utcDateStr() + 'T00:00:00Z')) return null;
-  const usedOrigins = new Set();
-  const usedDestinations = new Set();
+  // Past dailies in order; the picker looks at the last DAILY_NO_REPEAT_DAYS.
+  const recent = [];
   let result = null;
   for (let cur = DAILY_LAUNCH_MS; cur <= targetMs; cur += DAY_MS) {
     const curDate = new Date(cur);
     const curYmd = utcDateStr(curDate);
     if (dailyChallengeCache.has(curYmd)) {
       const cached = dailyChallengeCache.get(curYmd);
-      if (cached) {
-        usedOrigins.add(cached.origin);
-        usedDestinations.add(cached.destination);
-      }
+      if (cached) recent.push(cached);
       if (curYmd === ymd) result = cached;
       continue;
     }
-    const pair = pickDailyPairForDate(curDate, usedOrigins, usedDestinations);
+    const pair = pickDailyPairForDate(curDate, recent);
     if (!pair) { dailyChallengeCache.set(curYmd, null); continue; }
     const dailyNumber = Math.max(1, Math.floor((cur - DAILY_LAUNCH_MS) / DAY_MS) + 1);
     const entry = {
@@ -1474,13 +1824,7 @@ function getDailyChallenge(date = new Date()) {
       parDist: pair.dist,
     };
     dailyChallengeCache.set(curYmd, entry);
-    // For PAST days, accumulate before processing the next day. For the
-    // requested day itself we don't add to the sets — they're a snapshot
-    // of what was used BEFORE today.
-    if (cur < targetMs) {
-      usedOrigins.add(pair.origin);
-      usedDestinations.add(pair.destination);
-    }
+    recent.push(entry);
     if (curYmd === ymd) result = entry;
   }
   return result;
@@ -1493,7 +1837,12 @@ function rangeMatches(entry, requested) {
   if (!entry.viewRange) return true;
   const [a, b] = entry.viewRange;
   const [c, d] = requested;
-  return a <= d && c <= b;
+  // Strict overlap: the pool's buckets share their edges (medium ends at
+  // 500K, easy starts there), and an inclusive test let a request for one
+  // bucket take entries of the next. The generator then labelled those picks
+  // with the requested bucket, which is how medium pairs became "easy" and
+  // reached the daily.
+  return a < d && c < b;
 }
 
 function pickFromPool(kind, lang, viewRange) {
@@ -1585,9 +1934,25 @@ async function getRandomPair(viewRange, lang = DEFAULT_LANG) {
     if (any) return { origin: any.origin, destination: any.destination };
   }
   // Last-resort hardcoded fallback.
-  return lang === 'zh'
-    ? { origin: '披萨', destination: '月球' }
-    : { origin: 'Pizza', destination: 'Moon' };
+  return { origin: 'Pizza', destination: 'Moon' };
+}
+
+// Safe mode rooms: redraw while the pick holds an adult title. The curated pool
+// is clean already (the generator denylist), so this only matters for live
+// generation, the fallback when the pool has nothing for the difficulty.
+async function getSafeRandomPair(room, viewRange, lang) {
+  let pair = await getRandomPair(viewRange, lang);
+  for (let i = 0; i < 4 && safeModeOn(room) && firstExplicitTitle([pair.origin, pair.destination]); i++) {
+    pair = await getRandomPair(viewRange, lang);
+  }
+  return pair;
+}
+async function getSafeRandomTriple(room, viewRange, lang) {
+  let triple = await getRandomTriple(viewRange, lang);
+  for (let i = 0; i < 4 && safeModeOn(room) && firstExplicitTitle(triple.targets); i++) {
+    triple = await getRandomTriple(viewRange, lang);
+  }
+  return triple;
 }
 
 async function getRandomTriple(viewRange, lang = DEFAULT_LANG) {
@@ -1610,45 +1975,17 @@ async function getRandomTriple(viewRange, lang = DEFAULT_LANG) {
     const any = pickFromPool('triple', lang, null);
     if (any) return { targets: any.targets.slice() };
   }
-  return lang === 'zh'
-    ? { targets: ['月球', '恐龙', '爵士乐'] }
-    : { targets: ['Moon', 'Dinosaur', 'Jazz'] };
+  return { targets: ['Moon', 'Dinosaur', 'Jazz'] };
 }
 
 function normalizeArticle(name) {
   return (name || '').replace(/_/g, ' ').toLowerCase();
 }
 
-// Build the composite key used to store per-language cache entries. Without
-// this, `Pizza` on en.wikipedia and `Pizza` on zh.wikipedia would collide
-// and a Chinese room could get English link data (or vice versa).
+// The key every wiki cache stores entries under: `<lang>:<normalized title>`
+// (always `en:` now; see WIKI_HOSTS).
 function cacheKey(lang, title) {
   return `${lang || DEFAULT_LANG}:${normalizeArticle(title)}`;
-}
-
-// Convert a title to the wiki's display variant (e.g. Traditional → Simplified
-// for zh). Uses action=parse's displaytitle output which honors variant=zh-cn
-// even when the underlying article is canonically stored in Traditional. Used
-// at pool-generation time so the pool JSON only holds Simplified titles.
-async function toVariantTitle(title, lang = DEFAULT_LANG) {
-  if (!WIKI_VARIANTS[lang]) return title;
-  try {
-    const data = await wikiAPI({
-      action: 'parse',
-      page: title.replace(/ /g, '_'),
-      prop: 'displaytitle',
-      redirects: '1',
-    }, lang);
-    const dt = data.parse?.displaytitle || '';
-    // displaytitle is HTML. Grab the main-title span when present, otherwise
-    // strip tags and trim.
-    const mainMatch = dt.match(/<span class="mw-page-title-main">([^<]+)<\/span>/);
-    if (mainMatch && mainMatch[1]) return mainMatch[1].replace(/ /g, '_');
-    const plain = dt.replace(/<[^>]+>/g, '').trim();
-    return plain ? plain.replace(/ /g, '_') : title;
-  } catch (e) {
-    return title;
-  }
 }
 
 // Resolve Wikipedia redirects to canonical title
@@ -1717,23 +2054,33 @@ function cacheSet(cache, key, value, ttlMs = CACHE_TTL_MS) {
 // 429 burst we saw in prod logs (popular destinations like Earth/Mexico
 // fanned out simultaneously across game starts + navigates). With coalescing
 // the first caller does the fetch and the rest await the same Promise.
-const inFlightWiki = new Map(); // namespaced-key -> Promise
+//
+// Queue priority (see withWikiPriority below) belongs to the shared request,
+// not to whichever caller started it. The request runs under its own context
+// object, seeded from the first caller; a player-facing caller that joins
+// raises it to high, which promotes the waiter it already has in the queue and
+// every page and retry it issues after that. This is the common case, not an
+// edge: each click launches a background computeDistance whose first fetch is
+// getPageLinks(newArticle), and the player's next click check needs exactly
+// that set. Without promotion the click check would wait on a low-priority
+// request stuck behind all the background work queued ahead of it.
+const inFlightWiki = new Map(); // namespaced-key -> { promise, ctx }
 function coalesceWiki(key, fn) {
+  const caller = wikiPriority.getStore();
   const existing = inFlightWiki.get(key);
-  if (existing) return existing;
-  const p = (async () => {
+  if (existing) {
+    if (caller?.high) existing.ctx.high = true;
+    if (!caller?.bulk) existing.ctx.bulk = false; // a real game now needs it
+    return existing.promise;
+  }
+  const ctx = { high: !!caller?.high, bulk: !caller?.high && !!caller?.bulk };
+  const promise = wikiPriority.run(ctx, async () => {
     try { return await fn(); }
     finally { inFlightWiki.delete(key); }
-  })();
-  inFlightWiki.set(key, p);
-  return p;
+  });
+  inFlightWiki.set(key, { promise, ctx });
+  return promise;
 }
-
-// MediaWiki variant codes. Chinese wiki auto-converts Simplified ↔ Traditional
-// at display time; we always want Simplified output for now.
-const WIKI_VARIANTS = {
-  zh: 'zh-cn',
-};
 
 // Cap how long a single 429 retry can wait. Wikipedia's Retry-After can be
 // large (60s+) under heavy load — that would stall navigate handlers way
@@ -1769,9 +2116,114 @@ const WIKI_MIN_INTERVAL_MS = 100; // ≥ this between starts → ~10 req/s ceili
 let wikiInFlight = 0;
 let wikiLastStart = 0;
 let wikiPumpScheduled = false;
-const wikiWaiters = [];
+
+// Player-facing requests go first. Every server-side Wikipedia call shares the
+// gates above, and the click check a player sits waiting on (navigate →
+// isLegalMove → resolveRedirect + getPageLinks, then the win check) used to
+// queue FIFO behind background work: cacheDestination's aliases + hop1 + 30
+// hop2 backlink fetches per game start, computeDistance's live verification
+// (up to 20 getPageLinks per navigate), marathon candidate warming, the daily
+// warm. Oct 18 prod: 1.45% of /action took >3s (p99 10s, max 33s), hourly
+// slow-request counts tracked 429 counts at r=0.95, and one
+// cacheDestination('BBC') took 44s. Under 429s a click check loses time two
+// ways: backoff after its own 429s (Retry-After, clamped to 5s, up to twice
+// per call) and the wait for a slot behind the background fetches queued
+// ahead of it. Priority removes only the wait. The backoff and the 8s request
+// timeout are untouched and can reach that p99/max by themselves, so expect
+// the tail to shrink by the wait's share, not vanish. Stubbed, two 429s with
+// Retry-After: 1 behind 30 queued fetches: 3.0s of queue wait before, 0.03s
+// after, the 2s of backoff the same (scripts/testWikiPriority.js 1c).
+// Wikipedia's limit is the constraint, so the gates stay as they are; only
+// the order changes.
+//
+// Priority is an AsyncLocalStorage context { high }: withWikiPriority(fn) runs
+// fn's requests high, retries and later pages included (they read the same
+// store); no store means background. Wrap the awaited call, not the handler
+// around it: the store follows every promise and timer created inside the
+// span, so fire-and-forget work launched in it would run high too.
+// inWikiBackground drops the store for work that has to sit inside a span. It
+// uses run(undefined), not exit(): on Node 22 exit() works by disabling the
+// storage, coalesceWiki's own run() re-enables it, and from then on the rest
+// of the callback sees the caller's high store again. In a background
+// Promise.all, only the first fetch stayed low.
+const wikiPriority = new AsyncLocalStorage();
+function withWikiPriority(fn) { return wikiPriority.run({ high: true }, fn); }
+function inWikiBackground(fn) { return wikiPriority.run(undefined, fn); }
+// Bulk: below background. Marathon's candidate warm-up is the one user. A
+// marathon room warms up to 40 destinations (~35 requests each), and as plain
+// background that queued FIFO ahead of every other room's background work:
+// with one marathon running, a classic game's destination cache (its pods'
+// distances) and a daily start waited behind it for half a minute. Bulk
+// starts only when no other background request is waiting, with the same
+// kind of starvation guard as background behind high (WIKI_MAX_BULK_SKIPS).
+function inWikiBulk(fn) { return wikiPriority.run({ high: false, bulk: true }, fn); }
+
+// One arrival-ordered list. Each waiter holds the context object it was queued
+// under, live, so coalesceWiki can promote it while it waits. The pump starts
+// the oldest high waiter, else the oldest waiter: FIFO within each class.
+// Starvation guard: a high start that jumps a waiting low counts as a skip,
+// and after WIKI_MAX_LOW_SKIPS in a row the oldest low goes next, so
+// background work keeps at least one start in five however much player
+// traffic queues. (Player requests are sparse today, a few per click, so the
+// guard rarely fires.)
+const WIKI_MAX_LOW_SKIPS = 4;
+let wikiLowSkips = 0;
+const WIKI_MAX_BULK_SKIPS = 4;
+let wikiBulkSkips = 0;
+let wikiPumpImmediate = false;
+const wikiWaiters = []; // { ctx, start }
 function acquireWikiSlot() {
-  return new Promise(resolve => { wikiWaiters.push(resolve); pumpWikiQueue(); });
+  const ctx = wikiPriority.getStore();
+  const queuedAt = Date.now();
+  perfMax('wikiQueueDepth', wikiWaiters.length + 1);
+  return new Promise(start => {
+    wikiWaiters.push({ ctx, start: () => {
+      // Read ctx.high at start, not at queue time: coalesceWiki can promote.
+      perfSample(ctx?.high ? 'wikiWaitHighMs' : 'wikiWaitLowMs', Date.now() - queuedAt);
+      start();
+    } });
+    scheduleWikiPump();
+  });
+}
+// Acquire and release don't pump inline. They schedule one pump for after the
+// current burst of promise continuations, so choosing who starts next sees
+// everything that burst queued. A finished request is usually one step of a
+// chain (the click check's resolveRedirect → getPageLinks pages → the win
+// check), and the next step is queued by continuations that run just after
+// the slot is released. An inline pump gave that slot to the oldest
+// background waiter before the next step existed, so the step waited for
+// another slot to free: about a quarter of a response time per step once
+// slow responses make the concurrency cap bind. Against a stubbed Wikipedia
+// at 150-1500ms per response under steady background load, a 3-step click
+// check averaged 3.2s inline vs 2.7s deferred (2.5s floor). setImmediate runs
+// after those continuations; the gates are unchanged. Guarded by
+// scripts/testWikiPriority.js (1b).
+function scheduleWikiPump() {
+  if (wikiPumpImmediate) return;
+  wikiPumpImmediate = true;
+  setImmediate(() => { wikiPumpImmediate = false; pumpWikiQueue(); });
+}
+// After a 429, background work holds off until Wikipedia's Retry-After (1-5s)
+// so the remaining budget goes to click checks. Without this every queued
+// background fetch kept firing into the limit: a 30-player load test logged
+// 97 429s in two minutes and click checks stalled 10-30s in the backoff.
+let wikiLowPausedUntil = 0;
+function pauseWikiBackground(ms) {
+  wikiLowPausedUntil = Math.max(wikiLowPausedUntil, Date.now() + Math.min(Math.max(ms || 1000, 1000), 5000));
+}
+function nextWikiWaiter() {
+  const hi = wikiWaiters.findIndex(w => w.ctx?.high);
+  if (Date.now() < wikiLowPausedUntil) return hi; // -1 = nothing may start yet
+  if (hi > 0 && wikiLowSkips < WIKI_MAX_LOW_SKIPS) { wikiLowSkips++; return hi; }
+  if (hi === 0) return 0;
+  wikiLowSkips = 0; // a background (or bulk) waiter starts now
+  // Among background waiters, plain background goes before bulk, up to
+  // WIKI_MAX_BULK_SKIPS in a row while an older bulk waiter sits there.
+  if (!wikiWaiters[0].ctx?.bulk) return 0;
+  const lo = wikiWaiters.findIndex(w => !w.ctx?.high && !w.ctx?.bulk);
+  if (lo > 0 && wikiBulkSkips < WIKI_MAX_BULK_SKIPS) { wikiBulkSkips++; return lo; }
+  wikiBulkSkips = 0;
+  return 0;
 }
 function pumpWikiQueue() {
   if (!wikiWaiters.length || wikiInFlight >= WIKI_MAX_CONCURRENT) return;
@@ -1780,31 +2232,49 @@ function pumpWikiQueue() {
     if (!wikiPumpScheduled) { wikiPumpScheduled = true; setTimeout(() => { wikiPumpScheduled = false; pumpWikiQueue(); }, wait); }
     return;
   }
+  const idx = nextWikiWaiter();
+  if (idx < 0) {
+    // Only background waiters, and they're paused: wake when the pause ends.
+    if (!wikiPumpScheduled) { wikiPumpScheduled = true; setTimeout(() => { wikiPumpScheduled = false; pumpWikiQueue(); }, Math.max(10, wikiLowPausedUntil - Date.now())); }
+    return;
+  }
   wikiLastStart = Date.now();
   wikiInFlight++;
-  wikiWaiters.shift()();
+  wikiWaiters.splice(idx, 1)[0].start();
   if (wikiWaiters.length) pumpWikiQueue(); // let the interval gate the next one
 }
 function releaseWikiSlot() {
   wikiInFlight--;
-  pumpWikiQueue();
+  scheduleWikiPump();
 }
 
 function wikiAPIOnce(params, lang = DEFAULT_LANG) {
+  let sentAt = 0;
   return acquireWikiSlot().then(() => new Promise((resolve, reject) => {
-    const finalParams = { ...params, format: 'json', origin: '*' };
-    if (WIKI_VARIANTS[lang]) finalParams.variant = WIKI_VARIANTS[lang];
-    const qs = new URLSearchParams(finalParams);
+    sentAt = Date.now();
+    const qs = new URLSearchParams({ ...params, format: 'json', origin: '*' });
     const host = WIKI_HOSTS[lang] || WIKI_HOSTS[DEFAULT_LANG];
     const reqUrl = `https://${host}/w/api.php?${qs}`;
     const req = https.get(reqUrl, { headers: { 'User-Agent': WIKI_USER_AGENT } }, (res) => {
       let data = '';
+      // A response cut off mid-body by a clean FIN (a short Content-Length
+      // body, or a chunked one missing its last chunk) fires neither 'end' nor
+      // a request 'error', and the timeout below goes with the socket. Node
+      // destroys res as aborted but emits 'error' only if res has a listener,
+      // so without these two the Promise never settled: its slot never came
+      // back (four of those and every Wikipedia call waits forever) and its
+      // coalesceWiki entry stayed, hanging every later caller of that key,
+      // e.g. each click check from that article. Reproduced on Node 22 against
+      // a local socket; guarded by scripts/testWikiApi.js.
+      res.on('error', reject);
+      res.on('close', () => { if (!res.complete) reject(new Error('wiki response aborted')); });
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
         // Rate-limit / upstream error → Wikipedia returns HTML, not JSON. Let
         // the caller retry with backoff rather than bubbling a parse error
         // that poisons distance caches. Attach status + Retry-After hint so
         // the retry loop can honor them.
+        if (res.statusCode === 429) { perfCount('wiki429'); pauseWikiBackground(parseRetryAfter(res.headers['retry-after'])); }
         if (res.statusCode && res.statusCode >= 400) {
           const err = new Error(`wiki http ${res.statusCode}`);
           err.status = res.statusCode;
@@ -1840,7 +2310,11 @@ function wikiAPIOnce(params, lang = DEFAULT_LANG) {
     req.setTimeout(WIKI_REQUEST_TIMEOUT_MS, () => {
       req.destroy(new Error('wiki request timeout'));
     });
-  }).finally(releaseWikiSlot));
+  }).finally(() => {
+    if (sentAt) perfSample('wikiRequestMs', Date.now() - sentAt);
+    perfCount('wikiRequests');
+    releaseWikiSlot();
+  }));
 }
 
 // Retry transient failures with short exponential backoff. Critical: user-
@@ -1954,16 +2428,11 @@ async function getBacklinks(title, limit = 500, lang = DEFAULT_LANG) {
 const backlinkCountCache = new Map(); // lang|title -> { value: number, expires }
 const BACKLINK_COUNT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 async function countBacklinks(title, threshold, lang = DEFAULT_LANG) {
-  // Resolve to the page's CANONICAL stored title before counting. redirects=1
-  // follows redirects; converttitles=1 maps a variant title to the stored form.
-  // The latter is essential for zh: the pool stores Simplified titles (柯震东)
-  // but the page is stored Traditional (柯震東), and list=backlinks needs the
-  // EXACT stored title (it does not variant-convert) — without this every
-  // Simplified zh title counts as 0 backlinks and gets wrongly rejected as
-  // sparse. For en (no variant) converttitles is a harmless no-op.
+  // Resolve to the page's CANONICAL stored title before counting (redirects=1):
+  // list=backlinks needs the EXACT stored title and does not follow redirects.
   let resolved = title;
   try {
-    const data = await wikiAPI({ action: 'query', titles: title.replace(/ /g, '_'), redirects: '1', converttitles: '1' }, lang);
+    const data = await wikiAPI({ action: 'query', titles: title.replace(/ /g, '_'), redirects: '1' }, lang);
     const page = Object.values(data.query?.pages || {})[0];
     if (page && page.missing === undefined && page.title) resolved = page.title;
   } catch (e) { /* fall back to the raw title */ }
@@ -2050,12 +2519,29 @@ async function getRedirectsTo(title, lang = DEFAULT_LANG) {
     }
     // Only cache complete results — partial alias sets would let distance
     // checks miss redirects forever.
+    // Callers that treat the set as exhaustive (the classic win check) need to
+    // know a mid-pagination failure left it partial.
+    aliases.complete = completed;
     if (completed) cacheSet(aliasCache, key, aliases);
     return aliases;
   });
 }
 
-async function computeDistance(currentArticle, destination, destData, lang = DEFAULT_LANG) {
+// Token bucket for computeDistance's background live verification (outlink
+// fetches beyond the cached hop sets): VERIFY_FETCHES_PER_MIN server-wide.
+const VERIFY_FETCHES_PER_MIN = 120;
+const verifyBucket = { tokens: VERIFY_FETCHES_PER_MIN, last: Date.now() };
+function takeVerifyBudget(want) {
+  const now = Date.now();
+  verifyBucket.tokens = Math.min(VERIFY_FETCHES_PER_MIN, verifyBucket.tokens + Math.max(0, now - verifyBucket.last) * VERIFY_FETCHES_PER_MIN / 60000);
+  verifyBucket.last = now;
+  const n = Math.max(0, Math.min(want, Math.floor(verifyBucket.tokens)));
+  verifyBucket.tokens -= n;
+  if (n < want) perfCount('verifySkipped');
+  return n;
+}
+
+async function computeDistance(currentArticle, destination, destData, lang = DEFAULT_LANG, highFetches = null) {
   const currentNorm = normalizeArticle(currentArticle);
   const destNorm = normalizeArticle(destination);
 
@@ -2110,13 +2596,30 @@ async function computeDistance(currentArticle, destination, destData, lang = DEF
     }
   }
 
-  // Fetch up to 20 uncached in parallel batches
-  const toFetch = uncached.slice(0, 20);
+  // Fetch up to 20 uncached in parallel batches, as background work unless the
+  // caller hands over a budget ({ left: n }, shared across its calls) that
+  // still has room. Only the marathon pick does: the player waits on it with
+  // the round clock running, and when no hop set settles a candidate these
+  // fetches are its critical path. Stubbed, 12 outlinks behind 30 queued
+  // fetches: 4.6s as background, 1.8s inside the budget
+  // (scripts/testWikiPriority.js 1d). The budget bounds what one pick puts in
+  // the high class, where each batch of 10 sits FIFO ahead of other players'
+  // click checks: the pick scans every warmed candidate until a 2-hop, and
+  // each one left unsettled fetches up to 20 more outlinks here. Past the
+  // budget the batches run as background, like every fire-and-forget caller.
+  // Background verification draws on a server-wide budget. It was the bulk of
+  // Wikipedia traffic in a 30-player load test (two thirds of requests) and
+  // what tripped the rate limit; past the budget the badge falls back to the
+  // estimate below (4/5/6) instead of a proven 3.
+  const toFetch = uncached.slice(0, highFetches ? 20 : takeVerifyBudget(Math.min(20, uncached.length)));
   for (let i = 0; i < toFetch.length; i += 10) {
     const batch = toFetch.slice(i, i + 10);
-    const results = await Promise.all(
+    const fetchBatch = () => Promise.all(
       batch.map(article => getPageLinks(article, lang).catch(() => new Set()))
     );
+    const inBudget = !!highFetches && highFetches.left > 0;
+    if (inBudget) highFetches.left -= batch.length;
+    const results = await (inBudget ? fetchBatch() : inWikiBackground(fetchBatch));
     for (const middleLinks of results) {
       for (const link of middleLinks) {
         if (destData.hop1.has(link)) return 3;
@@ -2140,25 +2643,37 @@ async function computeDistance(currentArticle, destination, destData, lang = DEF
 // starting simultaneously) reliably trips Wikipedia's rate limiter. With 2
 // in flight, peak is ~30 concurrent requests — well under the threshold.
 const CACHE_DEST_CONCURRENCY = 2;
+// Marathon warm-up (bulk) may hold only one of the two slots and queues
+// behind every non-bulk caller, so a classic, tri or daily start always has
+// a slot within one destination build instead of waiting out a marathon
+// room's whole candidate list.
+const CACHE_DEST_BULK_MAX = 1;
 let cacheDestInflight = 0;
-const cacheDestQueue = [];
-function acquireCacheSlot() {
+let cacheDestBulkInflight = 0;
+const cacheDestQueue = []; // waiters: { bulk, grant }
+function cacheSlotFree(bulk) {
+  return cacheDestInflight < CACHE_DEST_CONCURRENCY && (!bulk || cacheDestBulkInflight < CACHE_DEST_BULK_MAX);
+}
+// `waiter.bulk` may be cleared while it queues (a real game joined it).
+function acquireCacheSlot(waiter = { bulk: false }) {
   return new Promise(resolve => {
-    const tryAcquire = () => {
-      if (cacheDestInflight < CACHE_DEST_CONCURRENCY) {
-        cacheDestInflight++;
-        resolve();
-      } else {
-        cacheDestQueue.push(tryAcquire);
-      }
+    waiter.grant = () => {
+      cacheDestInflight++;
+      if (waiter.bulk) { waiter.heldBulk = true; cacheDestBulkInflight++; }
+      resolve();
     };
-    tryAcquire();
+    if (cacheSlotFree(waiter.bulk)) waiter.grant();
+    else cacheDestQueue.push(waiter);
   });
 }
-function releaseCacheSlot() {
+function releaseCacheSlot(waiter) {
   cacheDestInflight--;
-  const next = cacheDestQueue.shift();
-  if (next) next();
+  if (waiter?.heldBulk) cacheDestBulkInflight--;
+  // Non-bulk waiters first (arrival order), then bulk if a bulk slot is free.
+  if (!cacheDestQueue.length) return;
+  let i = cacheDestQueue.findIndex(w => !w.bulk);
+  if (i < 0) i = 0; // only bulk waiters
+  if (cacheSlotFree(cacheDestQueue[i].bulk)) cacheDestQueue.splice(i, 1)[0].grant();
 }
 
 // Coalesce the entire cacheDestination pipeline. Without this, two games
@@ -2166,19 +2681,35 @@ function releaseCacheSlot() {
 // + hop1 + 30 hop2 sample fetches + distance Map building). The inner wiki
 // fetches dedupe via coalesceWiki, but the hop2 sampling + Set assembly
 // still runs twice. With this map, the second caller awaits the first.
-const cacheDestInFlight = new Map(); // lang|destination -> Promise<destData>
+const cacheDestInFlight = new Map(); // lang|destination -> { promise: Promise<destData>, waiter, ctx }
 
 async function cacheDestination(destination, lang = DEFAULT_LANG) {
   const key = cacheKey(lang, destination);
+  const bulk = !!wikiPriority.getStore()?.bulk;
   const existing = cacheDestInFlight.get(key);
-  if (existing) return existing;
-  const p = (async () => {
-    await acquireCacheSlot();
+  if (existing) {
+    // A real game wants a destination a marathon room is warming in bulk:
+    // move it up to background, in the slot queue and the request queue.
+    if (!bulk && existing.waiter.bulk) {
+      existing.waiter.bulk = false;
+      existing.ctx.bulk = false;
+      if (cacheDestQueue.includes(existing.waiter) && cacheSlotFree(false)) {
+        cacheDestQueue.splice(cacheDestQueue.indexOf(existing.waiter), 1);
+        existing.waiter.grant();
+      }
+    }
+    return existing.promise;
+  }
+  const waiter = { bulk };
+  // Its own context object, so the promotion above reaches its requests.
+  const ctx = { high: !!wikiPriority.getStore()?.high, bulk };
+  const promise = wikiPriority.run(ctx, async () => {
+    await acquireCacheSlot(waiter);
     try { return await cacheDestinationInner(destination, lang); }
-    finally { releaseCacheSlot(); }
-  })().finally(() => cacheDestInFlight.delete(key));
-  cacheDestInFlight.set(key, p);
-  return p;
+    finally { releaseCacheSlot(waiter); }
+  }).finally(() => cacheDestInFlight.delete(key));
+  cacheDestInFlight.set(key, { promise, waiter, ctx });
+  return promise;
 }
 
 async function cacheDestinationInner(destination, lang = DEFAULT_LANG) {
@@ -2198,6 +2729,14 @@ async function cacheDestinationInner(destination, lang = DEFAULT_LANG) {
 
   // hop1: direct backlinks to destination.
   const hop1 = await getBacklinks(destination, 2000, lang);
+  // getBacklinks hands back a partial (often empty) Set when its fetch failed,
+  // and only caches a complete one. Taking that as hop1 made every article
+  // look 4+ hops away for the whole game: HUD arrows, closest-hops on the
+  // daily board, marathon tiers and scores. Fail instead; callers leave the
+  // badge off (classic) or retry the candidate (marathon).
+  if (cacheGet(backlinkCache, cacheKey(lang, destination)) === undefined) {
+    throw new Error(`backlinks unavailable for ${destination}`);
+  }
   console.log(`[cache:${lang}] hop1: ${hop1.size} backlinks to ${destination}`);
 
   // hop2: backlinks to the hop1 articles. Fetching ALL hop1 backlinks would
@@ -2246,6 +2785,13 @@ function sendSSE(playerId, data) {
 function broadcastToRoom(roomCode, msg) {
   const room = rooms.get(roomCode);
   if (!room) return;
+  // Remember the round's start and end so a player whose connection dropped
+  // across them gets them again on reconnect (see the /events rebind). The
+  // rebind used to send `connected` and nothing else: a player who missed
+  // game_over stayed on the game screen, and their next click was refused.
+  if (msg.type === 'game_start') { room.lastGameStart = msg; room.lastGameOver = null; }
+  else if (msg.type === 'game_over') room.lastGameOver = msg;
+  else if (msg.type === 'returned_to_lobby') { room.lastGameStart = null; room.lastGameOver = null; }
   for (const [pid] of room.players) {
     sendSSE(pid, msg);
   }
@@ -2357,7 +2903,9 @@ function startMarathonClock(room, roomCode, { reanchor = false, broadcast = fals
     endMarathonForRoom(room, roomCode).catch(e =>
       console.error('Marathon end error:', e.message));
   }, remaining);
-  if (broadcast) broadcastToRoom(roomCode, { type: 'marathon_clock_start', endsAt: m.endsAt });
+  // `now` lets the client measure the remaining time instead of comparing
+  // our clock with its own (a device 40s fast showed 0:00 with 40s to go).
+  if (broadcast) broadcastToRoom(roomCode, { type: 'marathon_clock_start', endsAt: m.endsAt, now: Date.now() });
 }
 
 async function startMarathonForRoom(room, roomCode) {
@@ -2375,7 +2923,7 @@ async function startMarathonForRoom(room, roomCode) {
   // player is stuck in a dead-end at t=0.
   const startArticle = hubsArr.length
     ? hubsArr[Math.floor(Math.random() * hubsArr.length)]
-    : (lang === 'zh' ? '维基百科' : 'Wikipedia');
+    : 'Wikipedia';
   const startNorm = normalizeArticle(startArticle);
 
   // Candidate pool: unique destinations from pair pool, excluding the start.
@@ -2431,10 +2979,7 @@ async function startMarathonForRoom(room, roomCode) {
   // candidates keep warming in the background; client falls back to polling.
   const warmFirst = candidates.slice(0, 5);
   const warmRest = candidates.slice(5);
-  const warmOne = (title) => cacheDestination(title, lang).then(data => {
-    const entry = marathon.candidates.get(normalizeArticle(title));
-    if (entry) entry.data = data;
-  }).catch(e => {
+  const warmOne = (title) => warmMarathonCandidate(marathon, title, lang).catch(e => {
     console.error('Marathon initial warm fail for', title, e.message);
     throw e;
   });
@@ -2460,6 +3005,7 @@ async function startMarathonForRoom(room, roomCode) {
     origin: startArticle,
     duration,
     endsAt: marathon.endsAt,
+    now: Date.now(), // so the client counts down from `duration`, not from our clock vs its own
     clockPending: !warmReady,
     lang,
   });
@@ -2470,7 +3016,7 @@ async function startMarathonForRoom(room, roomCode) {
     durationKey: durKey,
     origin: startArticle,
   });
-  recordRoomEvent(room, roomCode, 'game_started', { mirror: true, lang, mode: 'marathon', meta: { durationKey: durKey } });
+  recordRoomEvent(room, roomCode, 'game_started', { mirror: true, lang, mode: 'marathon', meta: { durationKey: durKey, ...gameFlags(room) } });
 
   if (warmReady) {
     startMarathonClock(room, roomCode); // common path — identical timing to before
@@ -2500,25 +3046,85 @@ async function startMarathonForRoom(room, roomCode) {
     });
   }
 
-  // Warm remaining candidates in the background.
-  warmMarathonCandidates(room, warmRest, lang);
+  // Warm the remaining candidates in bulk, a few at a time as targets get used.
+  inWikiBulk(() => warmMarathonCandidates(room, roomCode, warmRest, lang));
 }
 
-async function warmMarathonCandidates(room, candidates, lang) {
+// How many warmed-or-warming targets each player should have in reserve.
+// Warming one takes ~35 Wikipedia requests (5-10s healthy), and a quick
+// player clears a target in ~20s, so 6 ahead never runs dry. It used to warm
+// the whole list (16-40 destinations) up front: a 3-minute round where a
+// player reached four targets still cost ~700 requests.
+const MARATHON_WARM_AHEAD = 6;
+function marathonSpareTargets(marathon, room) {
+  let spare = Infinity;
+  for (const [, p] of room.players) {
+    const used = p.marathonState?.usedTitles || new Set();
+    let n = 0;
+    for (const [key, e] of marathon.candidates) if ((e.data || e.warming) && !used.has(key)) n++;
+    spare = Math.min(spare, n);
+  }
+  return spare === Infinity ? 0 : spare;
+}
+
+async function warmMarathonCandidates(room, roomCode, candidates, lang) {
+  const marathon = room.marathon;
+  // Stop once this round is over: ended, replaced by a new round, or the
+  // room deleted. Deleting an empty room never cleared room.started, so the
+  // warm-up used to keep going for every candidate (and three retry passes)
+  // after the last player left: ~200 requests a minute for several minutes.
+  const alive = () => room.marathon === marathon && room.started && room.mode === 'marathon'
+    && room.players.size > 0 && rooms.get(roomCode) === room;
   const BATCH = 3;
-  for (let i = 0; i < candidates.length; i += BATCH) {
-    // Abort if the room closed or switched modes mid-warm.
-    if (!room.marathon || !room.started || room.mode !== 'marathon') return;
-    const batch = candidates.slice(i, i + BATCH);
-    await Promise.all(batch.map(async (title) => {
+  const failed = [];
+  let missesSeen = 0;
+  for (let i = 0; i < candidates.length;) {
+    if (!alive()) return;
+    const spare = marathonSpareTargets(marathon, room);
+    // A pick that found nothing (every spare is one link from where the
+    // player stands) needs more candidates whatever the count says.
+    const missed = (marathon.pickMisses || 0) > missesSeen;
+    missesSeen = marathon.pickMisses || 0;
+    if (spare >= MARATHON_WARM_AHEAD && !missed) { await new Promise(r => setTimeout(r, 2000)); continue; }
+    const batch = candidates.slice(i, i + Math.max(1, Math.min(BATCH, MARATHON_WARM_AHEAD - spare)));
+    i += batch.length;
+    await Promise.all(batch.map(title => warmMarathonCandidate(marathon, title, lang).catch(e => {
+      console.error('Marathon cache fail for', title, e.message);
+      failed.push(title);
+    })));
+  }
+  // More passes for candidates whose backlinks were unavailable (429s): the
+  // round has minutes left and the storm usually doesn't. Without them a bad
+  // first minute left the round with two or three targets to cycle. Only
+  // while the players are short of targets; otherwise the rest are left.
+  let pending = failed;
+  for (let pass = 0; pass < 3 && pending.length; pass++) {
+    await new Promise(r => setTimeout(r, 5000 * (pass + 1)));
+    const still = [];
+    for (const title of pending) {
+      if (!alive()) return;
+      if (marathonSpareTargets(marathon, room) >= MARATHON_WARM_AHEAD) { still.push(title); continue; }
       try {
-        const data = await cacheDestination(title, lang);
-        const entry = room.marathon?.candidates.get(normalizeArticle(title));
-        if (entry) entry.data = data;
+        await warmMarathonCandidate(marathon, title, lang);
       } catch (e) {
-        console.error('Marathon cache fail for', title, e.message);
+        console.error('Marathon cache retry fail for', title, e.message);
+        still.push(title);
       }
-    }));
+    }
+    pending = still;
+  }
+}
+
+// Warm one candidate; `warming` counts it as a spare target while in flight.
+async function warmMarathonCandidate(marathon, title, lang) {
+  const entry = marathon.candidates.get(normalizeArticle(title));
+  if (entry) entry.warming = true;
+  try {
+    const data = await cacheDestination(title, lang);
+    if (entry) entry.data = data;
+    return data;
+  } finally {
+    if (entry) entry.warming = false;
   }
 }
 
@@ -2540,7 +3146,11 @@ async function pickMarathonTarget(room, rp, currentArticle) {
   // Previous version capped the scan at 4, which could miss closer 2-hops
   // sitting later in the candidates Map and skew picks toward higher hops.
   // computeDistance hits the in-process cache after the warm pass, so the
-  // full scan stays sub-millisecond per call.
+  // full scan stays sub-millisecond per call, unless no hop set settles a
+  // candidate and computeDistance falls back to live verification. That runs
+  // at the pick's player priority for one candidate's worth of fetches (it
+  // fetches at most 20 per call) and as background past that.
+  const highFetches = { left: 20 };
   const scan = async () => {
     const out = [];
     for (const [key, entry] of room.marathon.candidates) {
@@ -2548,7 +3158,7 @@ async function pickMarathonTarget(room, rp, currentArticle) {
       if (!entry.data) continue;
       if (key === currentNorm) continue;
 
-      const hops = await computeDistance(currentArticle, entry.title, entry.data, lang);
+      const hops = await computeDistance(currentArticle, entry.title, entry.data, lang, highFetches);
       if (hops < 2) continue; // 1-hop filtered per design: forces strategy
 
       out.push({ key, entry, hops });
@@ -2571,10 +3181,19 @@ async function pickMarathonTarget(room, rp, currentArticle) {
       warmed.every(e => usedTitles.has(normalizeArticle(e.title)) || normalizeArticle(e.title) === currentNorm);
     if (everyWarmedUsed) {
       usedTitles.clear();
+      // Keep the target the player just skipped (or hit) out of the recycled
+      // set when there is anything else to offer; with one warmed candidate a
+      // skip handed back the very same target and still charged for it.
+      const last = rp.marathonState?.events?.at(-1)?.title;
+      if (last && warmed.length > 1) usedTitles.add(normalizeArticle(last));
       sampled = await scan();
     }
   }
-  if (!sampled.length) return null;
+  if (!sampled.length) {
+    // Tell warmMarathonCandidates to warm more (see MARATHON_WARM_AHEAD).
+    if (room.marathon) room.marathon.pickMisses = (room.marathon.pickMisses || 0) + 1;
+    return null;
+  }
 
   // Stable sort: lowest hops first, ties broken by sample order (already shuffled).
   sampled.sort((a, b) => a.hops - b.hops);
@@ -2588,8 +3207,8 @@ async function pickMarathonTarget(room, rp, currentArticle) {
 }
 
 // Called from the navigate handler in marathon mode. Checks whether the
-// navigated article matches the player's current target (with redirect +
-// variant fallbacks, matching classic/tri logic). On a hit: records the
+// navigated article matches the player's current target (with a redirect
+// fallback, matching classic/tri logic). On a hit: records the
 // event, clears currentTarget, pushes an SSE so the client can celebrate +
 // request the next target. No return value — best-effort.
 async function handleMarathonNavigate(room, rp, playerId, article, lang) {
@@ -2604,12 +3223,6 @@ async function handleMarathonNavigate(room, rp, playerId, article, lang) {
     try {
       const resolved = await resolveRedirect(article, lang);
       if (normalizeArticle(resolved) === targetNorm) matched = true;
-    } catch {}
-  }
-  if (!matched && WIKI_VARIANTS[lang]) {
-    try {
-      const variantForm = await toVariantTitle(article, lang);
-      if (variantForm && normalizeArticle(variantForm) === targetNorm) matched = true;
     } catch {}
   }
   if (!matched) return;
@@ -2673,7 +3286,7 @@ async function endMarathonForRoom(room, roomCode) {
     topScore: results[0]?.total || 0,
     playerCount: results.length,
   });
-  recordRoomEvent(room, roomCode, 'game_over', { mirror: true, mode: 'marathon', meta: { gaveUp: false, durationKey: room.marathon.durationKey } });
+  recordRoomEvent(room, roomCode, 'game_over', { mirror: true, mode: 'marathon', meta: { gaveUp: false, durationKey: room.marathon.durationKey, ...gameFlags(room) } });
 }
 
 // ─── Game Logic ───
@@ -2687,10 +3300,12 @@ function initRoom(code, hostId, hostName, lang = DEFAULT_LANG) {
     marathon: null,   // marathon mode: { startArticle, duration, candidates, endsAt }
     started: false,
     startTime: null,
+    raceStartTime: null, // classic/tri: when game_start went out; win times count from here
     winner: null,
     destData: null, // { hop1: Set, hop2: Set, aliases: Set } for distance calc
     viewRange: null, // [minViews, maxViews] for difficulty filtering
     manualArticles: null, // { origin, destination } or { targets: [a,b,c] }
+    safeMode: false, // host's classroom toggle: no adult articles (see safeModeOn)
     giveUpVotes: new Set(), // set of playerIds who voted to give up
     singlePlayer: false, // true if room is single-player only
     colorIndex: 1, // next color index (host already took 0)
@@ -2699,7 +3314,16 @@ function initRoom(code, hostId, hostName, lang = DEFAULT_LANG) {
 }
 
 // Player colors — assigned in join order per room
-const PLAYER_COLORS = ['#7c6fad', '#5a9e8f', '#b07850', '#5a8ab5', '#a86060', '#8a6aaa', '#508f80', '#b08a55'];
+// Muted fills that all carry white text. 16 so a full classroom room still
+// gets mostly distinct colours; beyond that they repeat (names tell apart).
+const PLAYER_COLORS = [
+  '#7c6fad', '#5a9e8f', '#b07850', '#5a8ab5', '#a86060', '#8a6aaa', '#508f80', '#b08a55',
+  '#9a6a8f', '#6a8f4f', '#b56a7a', '#4f7fa0', '#a0884a', '#7a7ab5', '#5f9aa8', '#9a7560',
+];
+// Room size cap. Was 8; raised so a class or a streamer's chat fits in one
+// room. Every navigate costs server-side Wikipedia lookups through the shared
+// WIKI_MAX_CONCURRENT queue, so raise this further only with that in mind.
+const MAX_ROOM_PLAYERS = 30;
 
 function newPlayerState(name, roomColorIndex) {
   const color = PLAYER_COLORS[(roomColorIndex || 0) % PLAYER_COLORS.length];
@@ -2717,8 +3341,14 @@ function newPlayerState(name, roomColorIndex) {
 async function startGameForRoom(room, roomCode) {
   room.started = true;
   room.startTime = Date.now();
+  room.raceStartTime = null; // stamped as game_start goes out (classic/tri, below)
   room.winner = null;
   room.giveUpVotes.clear(); // Reset votes for new game
+  // The previous round's destination data must not score this one. play_again
+  // kept it, so the distance HUD/arrows pointed at the OLD destination until
+  // the new cache landed (6-30s under load).
+  room.destData = null;
+  room.triDestData = null;
   const viewRange = room.viewRange || null;
   const lang = room.lang || DEFAULT_LANG;
 
@@ -2736,13 +3366,13 @@ async function startGameForRoom(room, roomCode) {
     if (ma.origin && ma.destination) {
       room.pair = { origin: ma.origin, destination: ma.destination };
     } else if (ma.origin || ma.destination) {
-      const randomPair = await getRandomPair(viewRange, lang);
+      const randomPair = await getSafeRandomPair(room, viewRange, lang);
       room.pair = {
         origin: ma.origin || randomPair.origin,
         destination: ma.destination || randomPair.destination,
       };
     } else {
-      room.pair = await getRandomPair(viewRange, lang);
+      room.pair = await getSafeRandomPair(room, viewRange, lang);
     }
     // Re-entrancy guard. startGameForRoom is async and fire-and-forget from its
     // callers, so a concurrent return_to_lobby / play_again / second start can null
@@ -2752,38 +3382,46 @@ async function startGameForRoom(room, roomCode) {
     const _pair = room.pair;
     // Resolve redirects to canonical titles, keep originals for fallback matching.
     // Pool pairs are already canonical — skip the network roundtrip.
+    // game_start waits on this and on the backlink guardrail below (the Start
+    // button spins, with a 15s client watchdog), so both run at player
+    // priority. The cacheDestination warm launched after game_start stays
+    // background.
     const origDest = room.pair.destination;
     if (!room.pair.fromPool) {
       // Await into temps, then re-check identity before assigning. (A bare
       // `room.pair.x = await …` would resolve the LHS object BEFORE the await and
       // silently write to the orphaned old pair; the crash then lands on the next
       // bare room.pair read. Guarding here keeps room.pair reads/writes honest.)
-      const _o = await resolveRedirect(room.pair.origin, lang);
+      const _o = await withWikiPriority(() => resolveRedirect(room.pair.origin, lang));
       if (room.pair !== _pair) return;
       room.pair.origin = _o;
-      const _d = await resolveRedirect(room.pair.destination, lang);
+      const _d = await withWikiPriority(() => resolveRedirect(room.pair.destination, lang));
       if (room.pair !== _pair) return;
       room.pair.destination = _d;
     }
     room.pair.destinationOriginal = origDest;
-    // Variant aliases: on zh, the canonical wiki title can be Traditional
-    // (太平天國) while our pool stores Simplified (太平天国). A player navigating
-    // via a zh-TW/zh-HK link lands on the Traditional form, so plain string
-    // equality misses the win. Build an alias set covering both forms.
-    const destAliases = new Set([room.pair.destination, origDest]);
-    if (WIKI_VARIANTS[lang]) {
-      try {
-        const variantForm = await toVariantTitle(room.pair.destination, lang);
-        if (variantForm) destAliases.add(variantForm);
-      } catch (e) { /* best-effort — fall back to existing aliases */ }
+    // One typed word plus a random half, or two titles that are the same page
+    // under different names ("USA" / "United States"), can resolve to a pair
+    // with no race in it. The client only compares the raw strings.
+    if (!room.pair.fromPool && normalizeArticle(room.pair.origin) === normalizeArticle(room.pair.destination)) {
+      const dest = room.pair.destination;
+      room.started = false;
+      room.manualArticles = null;
+      room.pair = null;
+      sendSSE(room.host, {
+        type: 'start_rejected',
+        reason: 'same_article',
+        destination: dest,
+        message: `"${dest.replace(/_/g, ' ')}" is both the start and the goal — pick a different goal.`,
+        daily: !!room.daily,
+      });
+      return;
     }
-    if (room.pair !== _pair) return; // pair reset during the variant await → abort
-    room.pair.destinationAliases = [...destAliases];
     // Guardrail: reject manually-set destinations with too few backlinks.
     // Pool destinations are curated so we skip; live-generated fallbacks
     // would already be popular enough. The threshold of 15 is empirical:
-    // 拉布布 (7 backlinks) produced a 15-min unwinnable game; 太平天国
-    // (1585 backlinks) was fine. Below 15 the game has too few entry
+    // a 7-backlink destination produced a 15-min unwinnable game, while one
+    // with 1585 backlinks was fine. Below 15 the game has too few entry
     // paths for realistic play.
     const manualDest = !!(room.manualArticles && room.manualArticles.destination);
     if (manualDest) {
@@ -2791,7 +3429,7 @@ async function startGameForRoom(room, roomCode) {
       try {
         // countBacklinks resolves redirects + returns null on fetch failure so
         // a transient 429 can't get a popular destination wrongly rejected.
-        const backlinkCount = await countBacklinks(room.pair.destination, MIN_BACKLINKS, lang);
+        const backlinkCount = await withWikiPriority(() => countBacklinks(room.pair.destination, MIN_BACKLINKS, lang));
         if (room.pair !== _pair) return; // pair reset during the backlink await → abort
         if (backlinkCount !== null && backlinkCount < MIN_BACKLINKS) {
           const dest = room.pair.destination;
@@ -2836,6 +3474,18 @@ async function startGameForRoom(room, roomCode) {
     for (const [, p] of room.players) {
       Object.assign(p, { path: [room.pair.origin], finished: false, finishTime: null, visited: [], distances: [] });
     }
+    // Start the race clock as game_start goes out, not at room.startTime. The
+    // player can't click before this lands, and their on-screen timer starts on
+    // it (startGameUI). Between the two is our own Wikipedia-bound setup:
+    // resolveRedirect for a non-pool pair, and countBacklinks for a manual
+    // destination, whose title lookup is uncached, so every daily makes a live
+    // request. That took 0.2-0.3s warm and 0.7-1.3s cold locally, more under 429
+    // backoff, and was billed to every winner, like the validation lag that
+    // handleAction's arrival stamp keeps out. (Marathon anchors endsAt after
+    // its pre-warm wait the same way.) room.startTime stays the request time for
+    // game_over's wall-clock durationMs. Math.max: a wall clock stepped back
+    // mid-setup must not make a race time longer than one from startTime.
+    room.raceStartTime = Math.max(room.startTime, Date.now());
     broadcastToRoom(roomCode, {
       type: 'game_start',
       mode: 'classic',
@@ -2852,17 +3502,19 @@ async function startGameForRoom(room, roomCode) {
       destination: room.pair.destination,
       manual: !!room.manualArticles,
     });
-    recordRoomEvent(room, roomCode, 'game_started', { mirror: true, lang, mode: 'classic' });
+    recordRoomEvent(room, roomCode, 'game_started', { mirror: true, lang, mode: 'classic', meta: gameFlags(room) });
     // Cache destination backlinks async (don't block game start). Catch
     // errors so a Wikipedia hiccup doesn't produce an unhandled rejection;
     // the player just plays without an initial-distance badge, which is fine.
-    cacheDestination(room.pair.destination, lang)
+    const warmDestination = (attempt) => cacheDestination(room.pair.destination, lang)
       .then(async destData => {
+        // Same identity guard as above: a quick game and a play_again can
+        // start the next round before this resolves, and this data belongs
+        // to the round that launched it.
+        if (room.pair !== _pair) return;
         room.destData = destData;
-        // Tag the cache with the lang it was computed for, so a mid-lobby
-        // set_lang can detect stale data and recompute.
-        room.destDataLang = lang;
         const dist = await computeDistance(room.pair.origin, room.pair.destination, destData, lang);
+        if (room.pair !== _pair) return;
         // Origin is path[0], so its distance belongs at index 0. Assign by
         // index, not push: this .then can resolve AFTER a fast player's first
         // navigate already wrote distances[1], and a push would then land the
@@ -2870,7 +3522,16 @@ async function startGameForRoom(room, roomCode) {
         for (const [, p] of room.players) p.distances[0] = dist;
         broadcastToRoom(roomCode, { type: 'distance_update', distances: getDistanceMap(room) });
       })
-      .catch(e => console.error('Classic distance-cache error:', e.message));
+      .catch(e => {
+        console.error('Classic distance-cache error:', e.message);
+        // cacheDestination refuses data built on a failed backlink fetch (a
+        // 429 storm); one more try a little later usually lands, and the
+        // badge then appears mid-game instead of never.
+        if (attempt < 1 && room.pair === _pair && room.started) {
+          setTimeout(() => { if (room.pair === _pair && room.started) warmDestination(attempt + 1); }, 8000);
+        }
+      });
+    warmDestination(0);
   } else {
     // Use manual articles if set, otherwise generate random.
     // Duplicate targets would make the game unwinnable (two visited slots map
@@ -2879,16 +3540,40 @@ async function startGameForRoom(room, roomCode) {
     const manualTargets = room.manualArticles?.targets;
     const manualOk = Array.isArray(manualTargets)
       && manualTargets.length === 3
+      && manualTargets.every(t => t) // set_articles keeps blank slots for the lobby preview
       && new Set(manualTargets.map(t => normalizeArticle(t))).size === 3;
     if (manualOk) {
       room.triple = { targets: manualTargets };
     } else {
-      room.triple = await getRandomTriple(viewRange, lang);
+      room.triple = await getSafeRandomTriple(room, viewRange, lang);
+    }
+    // Resolve the targets to canonical titles, as classic does for its pair:
+    // a target that is a redirect title ("Rooster" → Chicken, or a pool title
+    // that Wikipedia has since moved, like Scrubs_season_10) could only be hit
+    // by a link spelled exactly that way, because checkWin compares titles
+    // and the player lands on the canonical page. The originals stay as
+    // aliases so a link to the old spelling still counts. Pool triples are
+    // resolved too: the pool drifts between refreshes, and redirectCache makes
+    // repeats free. Same identity guard as classic across the awaits.
+    const _triple = room.triple;
+    const originals = room.triple.targets.slice();
+    const resolved = [];
+    for (const t of originals) {
+      const r = await withWikiPriority(() => resolveRedirect(t, lang));
+      if (room.triple !== _triple) return;
+      resolved.push(r);
+    }
+    if (new Set(resolved.map(normalizeArticle)).size === 3) {
+      room.triple.targets = resolved;
+      room.triple.aliases = originals;
     }
     const startArticle = room.triple.targets[0];
     for (const [, p] of room.players) {
       Object.assign(p, { path: [startArticle], finished: false, finishTime: null, visited: [startArticle], distances: [] });
     }
+    // Race clock starts as game_start goes out (see classic above): a pool miss
+    // waits on live triple generation first.
+    room.raceStartTime = Math.max(room.startTime, Date.now());
     broadcastToRoom(roomCode, {
       type: 'game_start',
       mode: 'tri',
@@ -2904,7 +3589,7 @@ async function startGameForRoom(room, roomCode) {
       targets: room.triple.targets,
       manual: !!room.manualArticles,
     });
-    recordRoomEvent(room, roomCode, 'game_started', { mirror: true, lang, mode: 'tri' });
+    recordRoomEvent(room, roomCode, 'game_started', { mirror: true, lang, mode: 'tri', meta: gameFlags(room) });
     // Cache destination data for unvisited tri targets (targets[1] and targets[2])
     room.triDestData = {};
     for (const t of room.triple.targets.slice(1)) {
@@ -2980,6 +3665,7 @@ function getDistanceMap(room) {
 // with enforced:false), so a false-reject on live traffic can be disabled
 // instantly via a config change instead of a code rollback.
 const ENFORCE_MOVE_LEGALITY = process.env.ENFORCE_MOVE_LEGALITY !== 'false';
+const LEGAL_CHECK_DEADLINE_MS = 3000;
 async function isLegalMove(from, target, lang = DEFAULT_LANG) {
   try {
     const targetNorm = normalizeArticle(target);
@@ -2997,6 +3683,13 @@ async function isLegalMove(from, target, lang = DEFAULT_LANG) {
     // voltage. resolveRedirect is cached (redirectCache), so this adds ~0ms
     // on repeat navigations.
     const fromCanonical = await resolveRedirect(from, lang);
+    // resolveRedirect returns the RAW title when its lookup failed (it only
+    // caches a real answer). If `from` is a redirect title, checking the
+    // stub's links would then reject every real click: the stub links only
+    // its target, so outLinks has one entry and the size-0 fail-open below
+    // never fires. Two days of logs had 12 of 24 rejections like that, each
+    // after an 11-31s wait inside a 429 storm. No verdict without a resolve.
+    if (cacheGet(redirectCache, cacheKey(lang, from)) === undefined) return true;
 
     // Landing page IS the target: if the player's position redirects to the
     // clicked article (they're literally reading it), allow as a no-op.
@@ -3011,15 +3704,11 @@ async function isLegalMove(from, target, lang = DEFAULT_LANG) {
 
     if (outLinks.has(targetNorm)) return true;
 
-    // The clicked link may go through a redirect, or (zh) a Traditional↔
-    // Simplified variant, so the raw title differs from what prop=links stored.
-    // Mirror checkWin's resolve→variant fallback ladder before rejecting.
+    // The clicked link may go through a redirect, so the raw title differs
+    // from what prop=links stored. Mirror checkWin's redirect fallback before
+    // rejecting.
     const resolved = normalizeArticle(await resolveRedirect(target, lang));
     if (resolved !== targetNorm && outLinks.has(resolved)) return true;
-    if (WIKI_VARIANTS[lang]) {
-      const variant = normalizeArticle((await toVariantTitle(target, lang)) || '');
-      if (variant && variant !== targetNorm && outLinks.has(variant)) return true;
-    }
 
     // Last resort before rejecting: ask Wikipedia DIRECTLY whether `from`
     // links to `target`. pltitles is a single-target membership probe — one
@@ -3031,9 +3720,12 @@ async function isLegalMove(from, target, lang = DEFAULT_LANG) {
     // hypothesis; this probe is the verdict. Load is negligible — it runs
     // only on would-be rejections (~400/day vs ~2.5k navigates), and real
     // cheat attempts pay one extra request to be confirmed.
+    // redirects=1 so the probe answers for the page the player is reading
+    // even if fromCanonical is still a redirect title.
     const probe = await wikiAPI({
       action: 'query',
       titles: fromCanonical.replace(/ /g, '_'),
+      redirects: '1',
       prop: 'links',
       pltitles: target.replace(/ /g, '_'),
       plnamespace: '0',
@@ -3055,11 +3747,8 @@ async function isLegalMove(from, target, lang = DEFAULT_LANG) {
 function checkWin(room, rp, article) {
   if (room.mode === 'classic') {
     const current = normalizeArticle(article);
-    // Check against every known alias of the destination. destinationAliases
-    // covers canonical + pool form + (on zh) the variant-converted form so
-    // Traditional↔Simplified mismatches don't hide wins.
-    const aliases = room.pair.destinationAliases
-      || [room.pair.destination, room.pair.destinationOriginal].filter(Boolean);
+    // Check against both resolved and original destination
+    const aliases = [room.pair.destination, room.pair.destinationOriginal].filter(Boolean);
     if (aliases.some(a => normalizeArticle(a) === current)) return true;
     // Also check if the navigated article redirects to the destination
     // (async check stored for next comparison)
@@ -3067,12 +3756,12 @@ function checkWin(room, rp, article) {
   } else {
     // Tri mode: check if this article matches any unvisited target
     const current = normalizeArticle(article);
-    for (const t of room.triple.targets) {
-      if (normalizeArticle(t) === current && !rp.visited.includes(t)) {
-        rp.visited.push(t);
-        break;
-      }
-    }
+    const aliases = room.triple.aliases || [];
+    room.triple.targets.forEach((t, i) => {
+      if (rp.visited.includes(t)) return;
+      const names = [t, aliases[i]].filter(Boolean).map(normalizeArticle);
+      if (names.includes(current)) rp.visited.push(t);
+    });
     // Win if all 3 targets visited
     return rp.visited.length >= room.triple.targets.length;
   }
@@ -3109,26 +3798,49 @@ function serializePerPlayer(playerId, fn) {
 }
 
 async function handleAction(playerId, msg, req = null) {
+  // Stamp arrival HERE, before the per-player queue, so a winning click is
+  // timed from when it reached us. Validation after this point is our own
+  // Wikipedia-bound work (shared WIKI_MAX_CONCURRENT queue + 429 backoff; Oct 18
+  // prod: 1.45% of /action took >3s, p99 10s, max 33s), and a click queued
+  // behind the same player's previous slow click waits on top of that. Stamping
+  // inside handleActionInner would bill the player for all of it.
+  const arrivedAt = Date.now();
   // Only navigate needs ordering (it is the one read-modify-write on rp.path).
   // Everything else stays unserialized so a slow action can't head-of-line
   // block unrelated ones.
   if (msg.type === 'navigate') {
-    return serializePerPlayer(playerId, () => handleActionInner(playerId, msg, req));
+    return serializePerPlayer(playerId, () => handleActionInner(playerId, msg, req, arrivedAt));
   }
-  return handleActionInner(playerId, msg, req);
+  return handleActionInner(playerId, msg, req, arrivedAt);
 }
 
-async function handleActionInner(playerId, msg, req = null) {
+// Race time (ms since room.raceStartTime, i.e. since game_start went out) for a
+// win whose click arrived at `arrivedAt`. Falls back to the processing-time
+// stamp (now - raceStartTime) when the arrival isn't inside this round: before
+// the race started (a click queued across a play_again restart) or after now
+// (wall clock stepped back). raceStartTime is never before room.startTime, so
+// the result is never negative, never NaN, and never greater than the old
+// `Date.now() - room.startTime`. Server clocks only — a client-sent time is
+// never trusted. null if this round's race clock hasn't started.
+function winTimeMs(room, arrivedAt) {
+  if (!Number.isFinite(room.raceStartTime)) return null;
+  const processingMs = Math.max(0, Date.now() - room.raceStartTime);
+  const arrivalMs = arrivedAt - room.raceStartTime;
+  return (arrivalMs >= 0 && arrivalMs <= processingMs) ? arrivalMs : processingMs;
+}
+
+async function handleActionInner(playerId, msg, req = null, arrivedAt = Date.now()) {
   console.log(`[${playerId.slice(0,8)}] ${msg.type}`, msg.type === 'navigate' ? msg.article : '');
 
   switch (msg.type) {
 
     case 'create_room': {
       const code = generateRoomCode();
-      const name = (msg.name || 'Player').slice(0, 20);
+      const name = cleanPlayerName(msg.name, 'Player', MAX_NAME_LEN);
       const lang = normalizeLang(msg.lang);
       const player = players.get(playerId);
       if (player) {
+        if (player.roomCode) removeFromRoom(playerId, player.roomCode);
         player.name = name;
         player.roomCode = code;
       }
@@ -3147,34 +3859,15 @@ async function handleActionInner(playerId, msg, req = null) {
       const room = rooms.get(code);
       if (!room) return { ok: false, error: 'Room not found' };
       if (room.started) return { ok: false, error: 'Game already in progress' };
-      if (room.players.size >= 8) return { ok: false, error: 'Room is full (max 8)' };
+      if (room.players.size >= MAX_ROOM_PLAYERS) return { ok: false, error: `Room is full (max ${MAX_ROOM_PLAYERS})` };
 
-      const name = (msg.name || 'Player').slice(0, 20);
+      const name = cleanPlayerName(msg.name, 'Player', MAX_NAME_LEN);
       const player = players.get(playerId);
 
       // Leave prior room first — otherwise the player has stale state in both
       // rooms, the old host pointer dangles, and player_list broadcasts keep
       // firing for a ghost member.
-      if (player && player.roomCode && player.roomCode !== code) {
-        const oldCode = player.roomCode;
-        const oldRoom = rooms.get(oldCode);
-        if (oldRoom) {
-          oldRoom.players.delete(playerId);
-          if (oldRoom.host === playerId) {
-            const next = oldRoom.players.keys().next();
-            oldRoom.host = next.done ? null : next.value;
-          }
-          if (oldRoom.players.size === 0) {
-            rooms.delete(oldCode);
-          } else {
-            broadcastToRoom(oldCode, {
-              type: 'player_list',
-              players: [...oldRoom.players.entries()].map(([id, p]) => ({ id, name: p.name, color: p.color })),
-              host: oldRoom.host,
-            });
-          }
-        }
-      }
+      if (player && player.roomCode && player.roomCode !== code) removeFromRoom(playerId, player.roomCode);
 
       if (player) {
         player.name = name;
@@ -3185,7 +3878,8 @@ async function handleActionInner(playerId, msg, req = null) {
       // cycles wrapped back to 0 and collided with the host's color.
       const usedColors = new Set();
       for (const [, p] of room.players) usedColors.add(p.color);
-      let pickedColorIdx = 0;
+      // Every colour taken: spread the repeats instead of all reusing #0.
+      let pickedColorIdx = room.players.size % PLAYER_COLORS.length;
       for (let i = 0; i < PLAYER_COLORS.length; i++) {
         if (!usedColors.has(PLAYER_COLORS[i])) { pickedColorIdx = i; break; }
       }
@@ -3195,11 +3889,30 @@ async function handleActionInner(playerId, msg, req = null) {
       room.colorIndex++;
       sendSSE(playerId, { type: 'room_joined', code, playerId, lang: room.lang || DEFAULT_LANG });
       sendSSE(playerId, { type: 'mode_changed', mode: room.mode });
+      sendSSE(playerId, safeModeMessage(room));
       broadcastToRoom(code, {
         type: 'player_list',
         players: [...room.players.entries()].map(([id, p]) => ({ id, name: p.name, color: p.color })),
         host: room.host,
       });
+      return { ok: true };
+    }
+
+    case 'set_safe_mode': {
+      const player = players.get(playerId);
+      if (!player) return { ok: false };
+      const room = rooms.get(player.roomCode);
+      if (!room || room.host !== playerId) return { ok: false, error: 'Only host can change Safe mode' };
+      if (room.started) return { ok: false, error: 'Cannot change Safe mode during a game' };
+      room.safeMode = !!msg.on;
+      if (room.safeMode) {
+        // Articles the host already typed may now be off limits.
+        const m = room.manualArticles;
+        const bad = m && firstExplicitTitle([m.origin, m.destination, ...(m.targets || [])]);
+        if (bad) room.manualArticles = null;
+        if (bad) broadcastToRoom(player.roomCode, { type: 'articles_updated', manualArticles: null });
+      }
+      broadcastToRoom(player.roomCode, safeModeMessage(room));
       return { ok: true };
     }
 
@@ -3236,17 +3949,31 @@ async function handleActionInner(playerId, msg, req = null) {
       if (!player) return { ok: false };
       const room = rooms.get(player.roomCode);
       if (!room || room.host !== playerId) return { ok: false, error: 'Only host can start' };
+      // A second start while a round is running (or still starting: the
+      // client's 15s watchdog re-enables the button during a slow
+      // countBacklinks) restarted the game under everyone: new pair, every
+      // path reset, a second game_start.
+      if (room.started) return { ok: false, error: 'Game already started' };
       // Single player or multiplayer (2+)
       if (room.singlePlayer) {
         if (room.players.size < 1) return { ok: false, error: 'Need at least 1 player' };
       } else {
         if (room.players.size < 2) return { ok: false, error: 'Need at least 2 players' };
       }
-      // Accept words from the client if provided (validated)
-      if (msg.origin && msg.destination && isValidArticle(msg.origin) && isValidArticle(msg.destination)) {
+      // Accept words from the client if provided (validated). Words the host
+      // typed but that fail validation are an error, not a silent fallback to
+      // whatever set_articles stored earlier (possibly with blank slots).
+      if (msg.origin && msg.destination) {
+        if (!isValidArticle(msg.origin) || !isValidArticle(msg.destination)) return { ok: false, error: 'Invalid article title' };
         room.manualArticles = { origin: msg.origin, destination: msg.destination };
-      } else if (Array.isArray(msg.targets) && msg.targets.length === 3 && msg.targets.every(t => isValidArticle(t))) {
+      } else if (Array.isArray(msg.targets)) {
+        if (msg.targets.length !== 3 || !msg.targets.every(t => isValidArticle(t))) return { ok: false, error: 'Invalid article title' };
         room.manualArticles = { targets: msg.targets };
+      }
+      if (safeModeOn(room) && room.manualArticles) {
+        const m = room.manualArticles;
+        const bad = firstExplicitTitle([m.origin, m.destination, ...(m.targets || [])]);
+        if (bad) { room.manualArticles = null; return { ok: false, error: SAFE_MODE_ARTICLE_ERROR(bad) }; }
       }
       startGameForRoom(room, player.roomCode);
       return { ok: true };
@@ -3268,11 +3995,20 @@ async function handleActionInner(playerId, msg, req = null) {
           reason,
         });
         recordEvent('navigate_rejected', { playerId, roomCode: player.roomCode, meta: { article: msg.article, reason } });
-        // Tell the client its game state is stale so it can show a message
-        // and reset back to home — otherwise the user keeps clicking links
-        // that are silently dropped (the bug we saw in prod logs).
-        sendSSE(playerId, { type: 'session_lost', reason });
-        return { ok: false, error: 'session_lost' };
+        if (!room) {
+          // Tell the client its game state is stale so it can show a message
+          // and reset back to home — otherwise the user keeps clicking links
+          // that are silently dropped (the bug we saw in prod logs).
+          sendSSE(playerId, { type: 'session_lost', reason });
+          return { ok: false, error: 'session_lost' };
+        }
+        // The room is alive, the round just ended: a click that was in flight
+        // (or queued behind a slow check) when someone won, or when the
+        // marathon clock ran out. That player is on the results screen, or is
+        // about to be; session_lost here threw them to home with "Your game
+        // session expired" (13 cases in two days of logs). A plain refusal
+        // lets the client undo the optimistic move and stay where it is.
+        return { ok: false, error: 'not_started' };
       }
       const rp = room.players.get(playerId);
       if (!rp || rp.finished) {
@@ -3287,15 +4023,65 @@ async function handleActionInner(playerId, msg, req = null) {
         if (!rp) sendSSE(playerId, { type: 'session_lost', reason });
         return { ok: false, error: reason };
       }
+      // Classic/tri: no move counts until game_start goes out (raceStartTime).
+      // Before that the round's starting positions aren't assigned (in a new
+      // room rp.path is still [], so the legality check below has no "from" and
+      // is skipped), and a real client can't click: links only appear once
+      // game_start lands. A scripted client could otherwise post the
+      // destination straight after start_daily's reply and take a 0-step, ~1ms
+      // win at the top of the daily leaderboard. Marathon runs its own clock
+      // and never sets raceStartTime.
+      if (room.mode !== 'marathon' && !Number.isFinite(room.raceStartTime)) {
+        logEvent('navigate_rejected', {
+          playerId, roomCode: player.roomCode, article: msg.article, reason: 'before_start',
+        });
+        recordEvent('navigate_rejected', { playerId, roomCode: player.roomCode, mode: room.mode, meta: { article: msg.article, reason: 'before_start' } });
+        return { ok: false, error: 'not_started' };
+      }
 
       const article = msg.article;
       if (!isValidArticle(article)) return { ok: false, error: 'Invalid article' };
+      // Safe mode: the client already refuses these links; this stops a
+      // modified client. `from` snaps the caller back to where the server has them.
+      if (safeModeOn(room) && isExplicitTitle(article)) {
+        logEvent('navigate_rejected', { playerId, roomCode: player.roomCode, article, reason: 'safe_mode' });
+        return { ok: false, error: 'safe_mode', from: rp.path[rp.path.length - 1] };
+      }
 
       // Core anti-cheat: the move is only legal if `article` is actually linked
       // from the page the player is on. Without this the path (and the Daily
       // leaderboard built from it) is forgeable via direct navigate POSTs.
+      // The reply waits on this check, so it runs at player priority, like the
+      // marathon-hit and win-check lookups below. Wikipedia work this handler
+      // launches without awaiting (distance, prefetch) starts outside those
+      // spans and stays background.
       const fromArticle = rp.path[rp.path.length - 1];
-      if (fromArticle && !(await isLegalMove(fromArticle, article, room.lang || DEFAULT_LANG))) {
+      // The player waits on this check, and under Wikipedia rate limiting it
+      // used to take 10-30s. Past LEGAL_CHECK_DEADLINE_MS the move is let
+      // through (the check already fails open on errors); the check still
+      // finishes in the background and a late "illegal" verdict is logged.
+      let legal = true;
+      // Solo free play has no leaderboard and nobody to cheat against, so the
+      // check only costs the player wait and Wikipedia requests: skip it. Daily
+      // and multiplayer rooms still verify every move.
+      const needsMoveCheck = !(room.singlePlayer && !room.daily);
+      if (fromArticle && needsMoveCheck) {
+        const check = withWikiPriority(() => isLegalMove(fromArticle, article, room.lang || DEFAULT_LANG));
+        // Daily runs keep the full wait: their leaderboard is public, so the
+        // check must finish (it still fails open on Wikipedia errors).
+        const verdict = room.daily
+          ? await check
+          : await Promise.race([check, new Promise(r => setTimeout(() => r('late'), LEGAL_CHECK_DEADLINE_MS))]);
+        if (verdict === 'late') {
+          perfCount('legalCheckLate');
+          check.then(ok => {
+            if (!ok) logEvent('navigate_rejected', { playerId, roomCode: player.roomCode, article, from: fromArticle, reason: 'illegal_move', enforced: false, late: true });
+          }).catch(() => {});
+        } else {
+          legal = verdict;
+        }
+      }
+      if (!legal) {
         // Log every would-be rejection (so enforcement can be monitored, and
         // shadow mode observed) — but only actually block when enforcement is on.
         logEvent('navigate_rejected', {
@@ -3355,8 +4141,10 @@ async function handleActionInner(playerId, msg, req = null) {
         // hit, pickMarathonTarget needs them to compute distance — without
         // this prefetch the player waits on a Wikipedia roundtrip BETWEEN
         // every target reveal, which is the biggest source of marathon lag.
+        // (Background priority: if the pick or the next click check needs the
+        // set while this is still queued, joining it promotes it.)
         getPageLinks(article, mLang).catch(() => {});
-        await handleMarathonNavigate(room, rp, playerId, article, mLang);
+        await withWikiPriority(() => handleMarathonNavigate(room, rp, playerId, article, mLang));
         return { ok: true };
       }
 
@@ -3370,30 +4158,29 @@ async function handleActionInner(playerId, msg, req = null) {
       let won = checkWin(room, rp, article);
       // Detect whether the quick check already registered a checkpoint (tri
       // mode mutates rp.visited in checkWin); if nothing happened, fall
-      // through to redirect + variant fallbacks below.
+      // through to the redirect fallback below.
       const progressedBefore = won || rp.visited.length > visitedBefore;
-      if (!progressedBefore) {
+      // Classic: the destination's redirect aliases are fetched at game start
+      // (room.destData.aliases), so an article outside them can't be a
+      // redirect to the destination and the lookup can be skipped.
+      const aliasesKnown = room.mode === 'classic' && room.destData?.aliases?.complete === true;
+      if (!progressedBefore && !(aliasesKnown && !room.destData.aliases.has(normalizeArticle(article)))) {
         // Try resolving the article in case it's a redirect to the destination
-        const resolved = await resolveRedirect(article, roomLang);
+        const resolved = await withWikiPriority(() => resolveRedirect(article, roomLang));
         if (normalizeArticle(resolved) !== normalizeArticle(article)) {
           won = checkWin(room, rp, resolved);
-        }
-        // For zh: player may arrive on the Traditional form of a page whose
-        // Simplified form is the destination/target (pool stores Simplified).
-        // Convert the incoming title through the wiki's variant and retry.
-        const progressedAfterResolve = won || rp.visited.length > visitedBefore;
-        if (!progressedAfterResolve && WIKI_VARIANTS[roomLang]) {
-          try {
-            const variantForm = await toVariantTitle(article, roomLang);
-            if (variantForm && normalizeArticle(variantForm) !== normalizeArticle(article)) {
-              won = checkWin(room, rp, variantForm);
-            }
-          } catch (e) { /* best-effort — fall through */ }
         }
       }
       if (won) {
         rp.finished = true;
-        rp.finishTime = Date.now() - room.startTime;
+        // Timed from game_start going out (room.raceStartTime) to the click's
+        // arrival (see handleAction), so neither our start-up setup nor our
+        // validation lag reaches the results screen or the daily leaderboard.
+        rp.finishTime = winTimeMs(room, arrivedAt);
+        // Known, accepted limitation: the winner is still whoever's validation
+        // FINISHES first. In a multiplayer photo finish, a click that arrived
+        // earlier but is stuck on slower Wikipedia lookups can record the lower
+        // time yet lose room.winner to a later click that validated faster.
         if (!room.winner) {
           room.winner = playerId;
           const results = [...room.players.entries()].map(([id, p]) => ({
@@ -3413,7 +4200,7 @@ async function handleActionInner(playerId, msg, req = null) {
             daily: !!room.daily,
             dailyMeta: room.dailyMeta || null,
           });
-          recordRoomEvent(room, player.roomCode, 'game_over', { mirror: true, mode: room.mode, lang: room.lang || DEFAULT_LANG, winnerId: room.winner, meta: { gaveUp: false, winnerId: room.winner } });
+          recordRoomEvent(room, player.roomCode, 'game_over', { mirror: true, mode: room.mode, lang: room.lang || DEFAULT_LANG, winnerId: room.winner, meta: { gaveUp: false, winnerId: room.winner, ...gameFlags(room) } });
           logEvent('game_over', {
             roomCode: player.roomCode,
             mode: room.mode,
@@ -3560,7 +4347,13 @@ async function handleActionInner(playerId, msg, req = null) {
         return { ok: true };
       }
       const currentArticle = rp.path[rp.path.length - 1] || room.marathon.startArticle;
-      const pick = await pickMarathonTarget(room, rp, currentArticle);
+      // Player priority: they wait on this pick with the round clock running.
+      // It first needs getPageLinks(currentArticle), often still in flight
+      // from navigate's prefetch, which this promotes. When no hop set settles
+      // a candidate, computeDistance's live verification is on the critical
+      // path too; it keeps this priority within the pick's budget (see
+      // pickMarathonTarget).
+      const pick = await withWikiPriority(() => pickMarathonTarget(room, rp, currentArticle));
       if (!pick) {
         sendSSE(playerId, { type: 'marathon_next_target', target: null, reason: 'warming' });
         return { ok: true };
@@ -3619,7 +4412,7 @@ async function handleActionInner(playerId, msg, req = null) {
       rp.marathonState.currentTarget = null;
 
       const currentArticle = rp.path[rp.path.length - 1] || room.marathon.startArticle;
-      const pick = await pickMarathonTarget(room, rp, currentArticle);
+      const pick = await withWikiPriority(() => pickMarathonTarget(room, rp, currentArticle));
       if (!pick) {
         sendSSE(playerId, {
           type: 'marathon_next_target',
@@ -3688,9 +4481,7 @@ async function handleActionInner(playerId, msg, req = null) {
       // Use viewRange from message (SP setup) or from room (MP lobby)
       let viewRange = room?.viewRange || null;
       if (!viewRange) viewRange = parseViewRange(msg.viewRange);
-      // Prefer the room's language; fall back to the lang on this one-off
-      // request (SP setup sends it via msg.lang before a room exists).
-      const lang = normalizeLang(room?.lang || msg.lang);
+      const lang = normalizeLang(msg.lang);
 
       // Pool path: single titles mined from pool pairs (dedup, range-filtered,
       // with a sliding window of this player's last N picks excluded so rapid
@@ -3722,6 +4513,10 @@ async function handleActionInner(playerId, msg, req = null) {
       if (origin !== undefined && origin !== '' && !isValidArticle(origin)) return { ok: false, error: 'Invalid origin' };
       if (destination !== undefined && destination !== '' && !isValidArticle(destination)) return { ok: false, error: 'Invalid destination' };
       if (targets && !targets.every(t => t === '' || isValidArticle(t))) return { ok: false, error: 'Invalid target' };
+      if (safeModeOn(room)) {
+        const bad = firstExplicitTitle([origin, destination, ...(targets || [])]);
+        if (bad) return { ok: false, error: SAFE_MODE_ARTICLE_ERROR(bad) };
+      }
       room.manualArticles = {
         origin: origin || undefined,
         destination: destination || undefined,
@@ -3744,12 +4539,12 @@ async function handleActionInner(playerId, msg, req = null) {
       if (!room || !room.daily || !room.dailyAnonId || !room.dailyMeta) {
         return { ok: false, error: 'No active daily room' };
       }
-      const newName = (msg.name || '').toString().slice(0, MAX_NAME_LEN).trim() || 'Anonymous';
+      const newName = cleanPlayerName(msg.name, 'Anonymous', MAX_NAME_LEN);
       room.dailyName = newName;
       const board = dailyLeaderboards.get(room.dailyMeta.date);
       if (board) {
         const entry = board.find(e => e.anonId === room.dailyAnonId);
-        if (entry) entry.name = newName;
+        if (entry) { entry.name = newName; persistDailyName(room.dailyMeta.date, entry); }
       }
       return { ok: true };
     }
@@ -3763,7 +4558,7 @@ async function handleActionInner(playerId, msg, req = null) {
       // No-op if already warm; runs once per (date, server-process).
       warmDailyLinkCaches(daily);
       const code = generateRoomCode();
-      const name = (msg.name || 'Anonymous').toString().slice(0, MAX_NAME_LEN);
+      const name = cleanPlayerName(msg.name, 'Anonymous', MAX_NAME_LEN);
       // Stable per-browser identity for leaderboard dedup. Falls back to a
       // server-generated id if client didn't send one (locks down only for
       // the duration of this game; no cross-day enforcement in that case).
@@ -3776,7 +4571,11 @@ async function handleActionInner(playerId, msg, req = null) {
         new Promise(r => setTimeout(() => r(null), COUNTRY_LOOKUP_TIMEOUT_MS)),
       ]).catch(() => null) : null;
       const player = players.get(playerId);
-      if (player) { player.name = name; player.roomCode = code; }
+      if (player) {
+        if (player.roomCode) removeFromRoom(playerId, player.roomCode);
+        player.name = name;
+        player.roomCode = code;
+      }
       const room = initRoom(code, playerId, name, 'en');
       room.singlePlayer = true;
       room.daily = true;
@@ -3799,16 +4598,24 @@ async function handleActionInner(playerId, msg, req = null) {
     }
 
     case 'start_single': {
+      // Safe mode: refuse adult titles before anything is set up, so the
+      // player keeps their current state and can pick again.
+      if (msg.safeMode) {
+        const bad = firstExplicitTitle([msg.origin, msg.destination, ...(Array.isArray(msg.targets) ? msg.targets : [])]);
+        if (bad) return { ok: false, error: SAFE_MODE_ARTICLE_ERROR(bad) };
+      }
       const code = generateRoomCode();
-      const name = (msg.name || 'Single Player').slice(0, 20);
+      const name = cleanPlayerName(msg.name, 'Single Player', MAX_NAME_LEN);
       const lang = normalizeLang(msg.lang);
       const player = players.get(playerId);
       if (player) {
+        if (player.roomCode) removeFromRoom(playerId, player.roomCode);
         player.name = name;
         player.roomCode = code;
       }
       const room = initRoom(code, playerId, name, lang);
       room.singlePlayer = true;
+      room.safeMode = !!msg.safeMode;
       // Apply mode and difficulty from client
       room.mode = msg.mode === 'tri' ? 'tri' : msg.mode === 'marathon' ? 'marathon' : 'classic';
       const parsedRange = parseViewRange(msg.viewRange);
@@ -3837,29 +4644,16 @@ async function handleActionInner(playerId, msg, req = null) {
       }
       rooms.set(code, room);
       sendSSE(playerId, { type: 'room_created', code, playerId, singlePlayer: true, lang });
+      sendSSE(playerId, safeModeMessage(room));
       startGameForRoom(room, code);
       return { ok: true, code };
     }
 
     case 'set_lang': {
-      const player = players.get(playerId);
-      if (!player) return { ok: false };
-      const room = rooms.get(player.roomCode);
-      if (!room || room.host !== playerId) return { ok: false, error: 'Only host can change language' };
-      if (room.started) return { ok: false, error: 'Cannot change language during game' };
-      const newLang = normalizeLang(msg.lang);
-      if (room.lang === newLang) return { ok: true };
-      room.lang = newLang;
-      // Any manual words the lobby had set are in the wrong language now.
-      room.manualArticles = null;
-      // Toss cached link data tied to the old language. Any in-flight
-      // cacheDestination for the old lang will still write into
-      // room.destData when it resolves, so we also stamp room.destDataLang
-      // (see startGameForRoom) and verify at use time.
-      room.destData = null;
-      room.destDataLang = null;
-      room.triDestData = null;
-      broadcastToRoom(player.roomCode, { type: 'lang_changed', lang: newLang });
+      // Only tabs opened before the language picker was removed send this.
+      // A room's lang is always normalizeLang(...) === 'en', so there is
+      // nothing to change. Reply ok and broadcast nothing: the old client only
+      // switches language on a lang_changed broadcast, so it stays on English.
       return { ok: true };
     }
 
@@ -3891,6 +4685,22 @@ async function handleActionInner(playerId, msg, req = null) {
       return { ok: true };
     }
 
+    case 'end_round': {
+      // Host ends a classic/tri round for everyone. The surrender vote needs
+      // every player, so one idle or AFK player in a big room could stall it
+      // forever; this gives the host a way out (same result as a unanimous
+      // surrender: game_over with gaveUp, no winner).
+      const player = players.get(playerId);
+      if (!player) return { ok: false };
+      const room = rooms.get(player.roomCode);
+      if (!room || !room.started) return { ok: false, error: 'Game not in progress' };
+      if (room.host !== playerId) return { ok: false, error: 'Only host can end the round' };
+      if (room.mode === 'marathon') return { ok: false, error: 'Marathon ends on the timer' };
+      logEvent('round_ended_by_host', { roomCode: player.roomCode, playerCount: room.players.size, voted: room.giveUpVotes.size });
+      finalizeGiveUp(room, player.roomCode);
+      return { ok: true };
+    }
+
     case 'back_to_lobby': {
       const player = players.get(playerId);
       if (!player) return { ok: false };
@@ -3903,6 +4713,7 @@ async function handleActionInner(playerId, msg, req = null) {
       // Reset room state but keep players connected
       room.started = false;
       room.startTime = null;
+      room.raceStartTime = null;
       room.winner = null;
       room.pair = null;
       room.triple = null;
@@ -3956,7 +4767,7 @@ function finalizeGiveUp(room, roomCode) {
     daily: !!room.daily,
     dailyMeta: room.dailyMeta || null,
   });
-  recordRoomEvent(room, roomCode, 'game_over', { mirror: true, mode: room.mode, lang: room.lang || DEFAULT_LANG, meta: { gaveUp: true } });
+  recordRoomEvent(room, roomCode, 'game_over', { mirror: true, mode: room.mode, lang: room.lang || DEFAULT_LANG, meta: { gaveUp: true, ...gameFlags(room) } });
   logEvent('game_over', {
     roomCode,
     mode: room.mode,
@@ -3986,6 +4797,16 @@ function handleDisconnect(playerId) {
   actionBuckets.delete(playerId);
 
   if (!roomCode) return;
+  removeFromRoom(playerId, roomCode);
+}
+
+// Take a player out of a room: on disconnect, and before they create or start
+// another one. start_single, start_daily and create_room used to just point
+// player.roomCode at the new room, so every "Play again" in single player left
+// the old room behind with its member count stuck at one, never deleted, with
+// its distance caches (thousands of titles) in memory for the life of the
+// process. join_room had this logic inline; it is shared now.
+function removeFromRoom(playerId, roomCode) {
   const room = rooms.get(roomCode);
   if (!room) return;
   room.players.delete(playerId);
@@ -4045,6 +4866,27 @@ function readBody(req) {
   });
 }
 
+// Bounded read for tiny fire-and-forget beacons (/perf). Unlike readBody it
+// never rejects or destroys the socket: past `max` chars it stops buffering and
+// resolves null, so the endpoint can still answer its 204 (the caller sends
+// Connection: close so the rest of an oversized upload is not drained). An
+// aborted upload resolves null via 'close' (which follows 'end' on a complete
+// request, so it never pre-empts a real body).
+function readBeaconBody(req, max) {
+  return new Promise(resolve => {
+    let body = '';
+    req.setEncoding('utf8');
+    req.on('data', chunk => {
+      if (body === null) return;
+      body += chunk;
+      if (body.length > max) { body = null; resolve(null); }
+    });
+    req.on('end', () => resolve(body));
+    req.on('error', () => resolve(null));
+    req.on('close', () => resolve(null));
+  });
+}
+
 function cors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -4053,6 +4895,15 @@ function cors(res) {
 
 // ─── HTTP Server ───
 const server = http.createServer(async (req, res) => {
+  // www.wikispeedrun.io → the apex, same path and query. One canonical host for
+  // Google and for shared links; the www domain exists only to land here.
+  // Railway passes the visitor's Host header through unchanged.
+  if ((req.headers.host || '').toLowerCase().split(':')[0] === 'www.wikispeedrun.io') {
+    res.writeHead(301, { Location: 'https://wikispeedrun.io' + (req.url.startsWith('/') ? req.url : '/') });
+    res.end();
+    return;
+  }
+
   const parsed = url.parse(req.url, true);
   cors(res);
 
@@ -4066,21 +4917,42 @@ const server = http.createServer(async (req, res) => {
   // capped at 25 entries. Cache-Control: no-store so each result-screen view
   // gets the freshest standings.
   if (parsed.pathname === '/daily/leaderboard' && req.method === 'GET') {
-    let date = (parsed.query.date && /^\d{4}-\d{2}-\d{2}$/.test(parsed.query.date))
-      ? parsed.query.date
-      : utcDateStr();
+    // The date must be a real calendar day, not just the right shape: a
+    // "2026-10-00" passes the regex and the lexical clamp below, then makes
+    // utcDateStr throw on an Invalid Date inside getLeaderboard. That left
+    // the request hanging and counted as an unhandled rejection, and 51 of
+    // them in 10s would have restarted the process (recordFatal) with every
+    // live game in it. Round-trip through Date so only real days get through.
+    let date = utcDateStr();
+    const q = parsed.query.date;
+    if (q && /^\d{4}-\d{2}-\d{2}$/.test(q)) {
+      const d = new Date(q + 'T00:00:00Z');
+      if (!isNaN(d) && utcDateStr(d) === q) date = q;
+    }
     // Clamp to [launch, today]. Fixed-width YYYY-MM-DD compares lexically, so
     // this is a safe string clamp — and it stops out-of-range dates (no board
     // exists for the future or before launch) from reaching the day-walk.
     const today = utcDateStr();
     if (date > today) date = today;
     else if (date < DAILY_LAUNCH_DATE) date = DAILY_LAUNCH_DATE;
-    const entries = getLeaderboard(date);
-    res.writeHead(200, {
-      'Content-Type': 'application/json',
-      'Cache-Control': 'no-store',
-    });
-    res.end(JSON.stringify({ date, entries, count: entries.length }));
+    try {
+      // anonId is the player's secret per-browser key: whoever holds it can
+      // start a daily as that player (taking their slot for the day) or rename
+      // their entry. It is never sent out. The caller says who it is in the
+      // X-Anon-Id header and gets `isMe` on its own row instead.
+      const caller = String(req.headers['x-anon-id'] || '').slice(0, MAX_ANONID_LEN);
+      const entries = getLeaderboard(date).map(({ anonId, ...pub }) => ({ ...pub, isMe: !!caller && anonId === caller }));
+      res.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-store',
+      });
+      res.end(JSON.stringify({ date, entries, count: entries.length }));
+    } catch (e) {
+      // Never let a board lookup become an unhandled rejection: answer, log.
+      console.error('Leaderboard error:', e.message);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'leaderboard_unavailable' }));
+    }
     return;
   }
 
@@ -4124,14 +4996,46 @@ const server = http.createServer(async (req, res) => {
     if (!allowPageview(clientIpFromReq(req))) { res.writeHead(429); res.end(); return; }
     // Accept the beacon but don't record bots — keeps the headcount human.
     if (isBotUA(req.headers['user-agent'])) { res.writeHead(204); res.end(); return; }
+    if (!underPageviewDailyCap(clientIpFromReq(req))) { res.writeHead(204); res.end(); return; }
     try {
       const data = JSON.parse(await readBody(req));
       const visitorId = sanitizeVid(data.vid);
       const gaClientId = sanitizeGaClientId(data.gacid) || visitorId;
       const page = typeof data.page === 'string' ? data.page.slice(0, 200) : null;
+      // Where the visitor came from. `ref` is the referring site's hostname
+      // only (never a path or query), `src` an explicit ?ref= / ?utm_source=
+      // tag. Both are client-supplied, so keep them to a tight charset.
+      const ref = typeof data.ref === 'string' && /^[a-z0-9.-]{1,100}$/i.test(data.ref) ? data.ref.toLowerCase() : null;
+      const src = typeof data.src === 'string' && /^[a-z0-9_.-]{1,40}$/i.test(data.src) ? data.src.toLowerCase() : null;
+      const pvMeta = {};
+      if (page) pvMeta.page = page;
+      if (ref) pvMeta.ref = ref;
+      if (src) pvMeta.src = src;
       // Each self-gates on its own id; recordEvent needs a vid, sendGA4 a clientId.
-      recordEvent('page_view', { visitorId, meta: page ? { page } : null });
+      recordEvent('page_view', { visitorId, meta: Object.keys(pvMeta).length ? pvMeta : null });
       sendGA4({ clientId: gaClientId, name: 'page_view', params: {} });
+    } catch (_) { /* malformed — ignore, never error a logging endpoint */ }
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
+  // Article-load timing beacon (index.html loadArticle). The browser fetches
+  // article HTML straight from Wikipedia, so this is our only view of how long
+  // players wait for a page. Logged as one article_load line and nothing else:
+  // no Postgres row, no GA4 hit, no Discord ping (unlike /clientlog, which
+  // treats everything as client_error). Public + unauthenticated: rate-limited
+  // per IP and globally, bots skipped, every field validated, and it always
+  // answers 204 — even for reports it drops (counted, see flushPerfDrops).
+  if (parsed.pathname === '/perf' && req.method === 'POST') {
+    try {
+      flushPerfDrops();
+      if (!isBotUA(req.headers['user-agent']) && allowPerf(clientIpFromReq(req))) {
+        const body = await readBeaconBody(req, PERF_MAX_BODY);
+        if (body === null) res.setHeader('Connection', 'close');
+        const entry = body === null ? null : sanitizeArticleLoad(JSON.parse(body));
+        if (entry && allowPerfGlobal()) logEvent('article_load', entry);
+      }
     } catch (_) { /* malformed — ignore, never error a logging endpoint */ }
     res.writeHead(204);
     res.end();
@@ -4141,9 +5045,10 @@ const server = http.createServer(async (req, res) => {
   // Backlink validation for the destination word-box (Bug 3): lets the client
   // warn at type-time that an article is too isolated to be a playable target,
   // instead of only finding out after pressing Start. Backed by the same
-  // countBacklinks the runtime guardrail uses (redirect/variant-resolving,
+  // countBacklinks the runtime guardrail uses (redirect-resolving,
   // 7-day cached, fail-open). Outbound load is bounded by the global request
-  // limiter; results are cached so repeated checks are cheap.
+  // limiter; results are cached so repeated checks are cheap. Player priority:
+  // someone is typing into the form and waiting on the warning.
   if (parsed.pathname === '/validate-dest' && req.method === 'GET') {
     const title = parsed.query.title;
     const lang = normalizeLang(parsed.query.lang);
@@ -4153,7 +5058,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     const MIN = 15;
-    const count = await countBacklinks(title, MIN, lang);
+    const count = await withWikiPriority(() => countBacklinks(title, MIN, lang));
     // null = couldn't determine → not sparse (fail open; never block on our hiccup).
     const sparse = count !== null && count < MIN;
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
@@ -4207,8 +5112,16 @@ const server = http.createServer(async (req, res) => {
 
   // App document routes: / plus the per-mode SEO pages (see PAGE_ROUTES).
   // Same app, per-route <title>/description/canonical baked in at boot.
-  const pageVariant = pageVariants.get(parsed.pathname === '/index.html' ? '/' : parsed.pathname);
-  if (pageVariant && req.method === 'GET') {
+  // HEAD gets the same status and headers as GET (Node drops the body itself);
+  // uptime monitors and link checkers send HEAD, and it used to fall through
+  // to the 404.
+  // Invite links (/r/<room code>) serve the home document; the client reads
+  // the code from the path and opens the join screen. Codes are 5 hex chars.
+  const isInvitePath = /^\/r\/[0-9a-f]{5}\/?$/i.test(parsed.pathname);
+  const pageVariant = pageVariants.get(
+    (parsed.pathname === '/index.html' || isInvitePath) ? '/' : parsed.pathname
+  );
+  if (pageVariant && (req.method === 'GET' || req.method === 'HEAD')) {
     // Honor If-None-Match: send 304 instead of re-shipping the body when
     // the client has the same version cached. Saves ~330KB raw / ~65KB br
     // on every revisit within the cache window.
@@ -4272,6 +5185,16 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // favicon.svg rendered at 192px (see index.html). /favicon.ico serves the
+  // same PNG: clients that never read <link rel="icon"> ask for it and got 404s.
+  if (parsed.pathname === '/favicon.png' || parsed.pathname === '/favicon.ico') {
+    res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400' });
+    fs.createReadStream(path.join(__dirname, 'favicon.png'))
+      .on('error', () => { if (!res.headersSent) res.writeHead(500); res.end(); })
+      .pipe(res);
+    return;
+  }
+
   // og:image for link-preview cards (iMessage, Slack, WhatsApp, Discord,
   // Twitter, Facebook). Referenced by the <meta property="og:image"> tag
   // in index.html. Kept as a plain route so the URL stays clean and
@@ -4292,6 +5215,7 @@ const server = http.createServer(async (req, res) => {
       'Allow: /\n' +
       'Disallow: /events\n' +
       'Disallow: /action\n' +
+      'Disallow: /r/\n' +
       'Sitemap: https://wikispeedrun.io/sitemap.xml\n'
     );
     return;
@@ -4425,6 +5349,22 @@ const server = http.createServer(async (req, res) => {
 
     sendSSE(playerId, { type: 'connected', playerId, csrfToken: activeCsrf, reconnectToken: activeReconnect });
 
+    // Resync a rebound player with their room: the roster (host may have
+    // changed) and the round boundary they may have missed. `resume` lets the
+    // client ignore what it already has.
+    if (existing && existing.roomCode) {
+      const room = rooms.get(existing.roomCode);
+      if (room && room.players.has(playerId)) {
+        sendSSE(playerId, {
+          type: 'player_list',
+          players: [...room.players.entries()].map(([id, p]) => ({ id, name: p.name, color: p.color })),
+          host: room.host,
+        });
+        if (room.started && room.lastGameStart) sendSSE(playerId, { ...room.lastGameStart, resume: true });
+        else if (!room.started && room.lastGameOver) sendSSE(playerId, { ...room.lastGameOver, resume: true });
+      }
+    }
+
     const keepalive = setInterval(() => {
       if (!res.writableEnded) {
         res.write(': keepalive\n\n');
@@ -4487,7 +5427,10 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ ok: false, error: 'rate_limited' }));
         return;
       }
+      const actionStart = Date.now();
       const result = await handleAction(playerId, msg, req);
+      // Click checks are what a player waits on; time them separately.
+      if (msg && msg.type === 'navigate') perfSample('navigateMs', Date.now() - actionStart);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(result || { ok: true }));
     } catch (e) {
@@ -4521,10 +5464,16 @@ module.exports = {
   getRandomPair,
   getRandomTriple,
   getGoodRandomArticles,
+  // The pool generator picks its own articles (getRandomPair reads the pool
+  // first, so it could never produce a new puzzle) from these.
+  getTopViewedArticles,
+  validateArticles,
+  getPageViews,
+  getPageLinks,
+  isBadTitle,
   cacheDestination,
   computeDistance,
   resolveRedirect,
-  toVariantTitle,
   normalizeArticle,
   // Backlink helpers — generatePool.js's sparse-destination guardrail imports
   // getBacklinks; without these exports the require returned undefined and the
@@ -4534,6 +5483,7 @@ module.exports = {
   countBacklinks,
   getDailyChallenge,
   HARDCODED_DAILY_BLACKLIST,
+  DAILY_MIN_STEADY_VIEWS,
   WIKI_HOSTS,
   DEFAULT_LANG,
   // Marathon scoring (pure — safe to unit test)

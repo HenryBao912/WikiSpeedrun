@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>WikiSpeedrun — Free Multiplayer Wikipedia Racing Game</title>
-<meta name="description" content="No signup · no downloads · no ads. Race friends from one Wikipedia article to another, or play solo and take on today's Daily Challenge.">
+<title>WikiSpeedrun – Wikipedia Racing Game</title>
+<meta name="description" content="No signup · no downloads · no ads. Race friends from one Wikipedia article to another, or play solo and take on today’s Daily Challenge.">
 <meta name="keywords" content="wikipedia race, wikispeedrun, wiki game, wiki race, multiplayer wikipedia game, browser game">
 <meta name="author" content="WikiSpeedrun">
 <meta name="theme-color" content="#6c5ce7">
@@ -13,7 +13,7 @@
 <!-- Open Graph (Facebook, LinkedIn, Discord, Slack) -->
 <meta property="og:site_name" content="WikiSpeedrun">
 <meta property="og:title" content="WikiSpeedrun — Free Multiplayer Wikipedia Racing Game">
-<meta property="og:description" content="No signup · no downloads · no ads. Race friends from one Wikipedia article to another, or play solo and take on today's Daily Challenge.">
+<meta property="og:description" content="No signup · no downloads · no ads. Race friends from one Wikipedia article to another, or play solo and take on today’s Daily Challenge.">
 <meta property="og:url" content="https://wikispeedrun.io/">
 <meta property="og:type" content="website">
 <meta property="og:image" content="https://wikispeedrun.io/preview.png">
@@ -23,7 +23,7 @@
 <!-- Twitter -->
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="WikiSpeedrun — Free Multiplayer Wikipedia Racing Game">
-<meta name="twitter:description" content="No signup · no downloads · no ads. Race friends from one Wikipedia article to another, or play solo and take on today's Daily Challenge.">
+<meta name="twitter:description" content="No signup · no downloads · no ads. Race friends from one Wikipedia article to another, or play solo and take on today’s Daily Challenge.">
 <meta name="twitter:image" content="https://wikispeedrun.io/preview.png">
 
 <!-- Structured data: helps Google show rich results -->
@@ -34,10 +34,10 @@
   "name": "WikiSpeedrun",
   "alternateName": ["Wiki Game", "Wikipedia Speedrun", "Wiki Racing", "Wikipedia Race"],
   "url": "https://wikispeedrun.io/",
-  "description": "No signup, no downloads, no ads. Race friends from one Wikipedia article to another, or play solo and take on today's Daily Challenge. Supports English and Simplified Chinese Wikipedia.",
+  "description": "No signup, no downloads, no ads. Race friends from one Wikipedia article to another, or play solo and take on today’s Daily Challenge.",
   "applicationCategory": "GameApplication",
   "operatingSystem": "Any (web browser)",
-  "inLanguage": ["en", "zh-Hans"],
+  "inLanguage": "en",
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
   "potentialAction": {
     "@type": "PlayAction",
@@ -48,11 +48,15 @@
 
 <!-- ?v= is a cache-buster: browsers cache favicons far more aggressively than
      HTML, so without it returning visitors keep the previous icon indefinitely.
-     Bump the number whenever favicon.svg changes. -->
-<link rel="icon" type="image/svg+xml" href="/favicon.svg?v=3">
+     Bump the number whenever favicon.svg changes. favicon.png is the same
+     design rendered at 192px (a multiple of 48, as Google asks), so whichever
+     file a browser or Google picks, the icon looks the same. -->
+<link rel="icon" type="image/svg+xml" href="/favicon.svg?v=6">
+<link rel="icon" type="image/png" sizes="192x192" href="/favicon.png?v=6">
+<link rel="apple-touch-icon" href="/favicon.png?v=6">
 <!-- DOMPurify: sanitizes Wikipedia HTML before injecting via innerHTML.
      Self-hosted (not a CDN) so it can't be tampered with upstream and isn't
-     blocked where jsDelivr is (e.g. mainland China — the zh.wikipedia audience). -->
+     blocked where jsDelivr is. -->
 <script src="/purify.min.js"></script>
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-XJHZTSVGM5"></script>
@@ -180,7 +184,7 @@
     text-align: center;
     font-size: 0.8rem;
     color: var(--text2);
-    opacity: 0.6;
+    opacity: 0.8;
     z-index: 1;
     pointer-events: auto;
     transition: opacity 0.2s;
@@ -188,6 +192,7 @@
   .home-footer:hover { opacity: 0.95; }
   /* Crawlable mode links — own line above the credits. */
   .home-footer .footer-nav { display: block; margin-bottom: 5px; }
+  .home-footer .footer-legal { display: block; margin-top: 5px; font-size: 0.85em; opacity: 0.8; }
   .home-footer .footer-nav a { color: var(--text2); }
   .home-footer .heart {
     display: inline-block;
@@ -212,7 +217,7 @@
   }
   .home-footer a:hover { color: var(--accent2); border-bottom-color: var(--accent2); }
   @media (max-width: 600px) {
-    .home-footer { font-size: 0.72rem; bottom: 14px; }
+    .home-footer { font-size: 0.72rem; bottom: 14px; padding: 0 12px; box-sizing: border-box; }
     .home-footer .dot { margin: 0 6px; }
   }
   /* Landscape phones (low height + wide) — the home content competes with
@@ -227,6 +232,10 @@
     overflow: hidden;
     z-index: 0;
     pointer-events: none;
+    /* Fade the drifting words out above the footer so they never run
+       through the footer links (they rise from the bottom edge). */
+    -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 150px), transparent calc(100% - 84px));
+    mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 150px), transparent calc(100% - 84px));
   }
   .bg-word {
     position: absolute;
@@ -699,6 +708,8 @@
   }
   .dr-head {
     display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
     justify-content: space-between;
     align-items: center;
     padding: 12px 16px;
@@ -1008,7 +1019,7 @@
     border: 1px solid rgba(255, 255, 255, 0.1);
   }
   .name-modal-btns .save {
-    background: linear-gradient(135deg, #a855f7, #ec4899);
+    background: var(--accent);
     color: #fff;
   }
   .name-modal-btns button:hover { transform: translateY(-1px); }
@@ -1060,7 +1071,7 @@
     font-size: 0.7rem;
     padding: 2px 8px;
     border-radius: 99px;
-    background: rgba(0, 0, 0, 0.22);
+    background: rgba(0, 0, 0, 0.6);
     color: #fff;
     letter-spacing: 0.4px;
     line-height: 1.1;
@@ -1173,7 +1184,7 @@
   .marathon-mode-btn.active { border-color: var(--accent); background: var(--surface2); }
   .marathon-mode-btn:hover { border-color: var(--accent); }
 
-  /* Marathon setup box: wraps the time picker + lang dropdown so the
+  /* Marathon setup box: wraps the time picker + Start button so the
      marathon setup feels like a single cohesive panel (mirrors the
      round-words-section visual rhythm used by classic/tri). */
   /* Lobby's #lobby uses align-items:center which collapses form-groups to
@@ -1181,7 +1192,6 @@
      as the rest of the column so the box doesn't shrink-wrap awkwardly. */
   .marathon-duration-group { margin-top: 2px; width: 100%; max-width: 420px; align-self: center; }
   .marathon-setup-box {
-    position: relative;
     width: 100%;
     max-width: 420px;
     padding: 20px;
@@ -2046,6 +2056,80 @@
   }
   .cs-closest .cs-closest-label { color: var(--text2); }
   .cs-closest strong { color: var(--gold); font-weight: 800; }
+
+  /* One geometry for every status pill on the results screen (mode,
+     closest, daily number, streak). Colour carries the meaning; size,
+     radius, weight and case stay constant. Declared after the individual
+     rules so it wins at equal specificity. */
+  .cs-mode-chip, .cs-closest, .dr-daily-pill, .dr-streak-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    box-sizing: border-box;
+    min-height: 26px;
+    margin-top: 0;
+    padding: 4px 12px;
+    border-radius: 999px;
+    border-width: 1px;
+    border-style: solid;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    line-height: 1.2;
+    text-transform: uppercase;
+  }
+  .dr-daily-pill, .dr-streak-pill { white-space: nowrap; }
+  .dr-streak-pill .flame { display: inline-flex; filter: none; }
+  .dr-streak-pill .flame svg { display: block; }
+
+  /* Daily run block: stats + one square per step + share, in one place. */
+  .dr-run {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px 16px 4px;
+  }
+  .dr-stats { display: flex; flex-wrap: wrap; gap: 8px 28px; }
+  /* The results screen already states steps and time twice (banner + path
+     card); the stats only earn their place in the home leaderboard modal. */
+  #results .dr-stats { display: none; }
+  .dr-stat { display: flex; flex-direction: column; gap: 3px; }
+  .dr-stat-label {
+    color: var(--text2);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+  }
+  .dr-stat-val {
+    color: var(--text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 1.5rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+  }
+  .dr-squares { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+  .dr-sq {
+    width: 28px; height: 28px;
+    box-sizing: border-box;
+    border-radius: 6px;
+    animation: drSqPop 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  /* Same colour story as the in-game pods (.dist-far / -mid / -close). */
+  .dr-sq-far { background: #7dd3fc; }
+  .dr-sq-mid { background: #c084fc; }
+  .dr-sq-close { background: #fbbf24; }
+  .dr-sq-target { background: var(--green); }
+  .dr-sq-unknown { background: var(--surface2); border: 1px solid rgba(255, 255, 255, 0.14); }
+  .dr-sq-more { color: var(--text2); font-size: 0.75rem; font-weight: 700; }
+  @keyframes drSqPop {
+    from { transform: scale(0.4); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+  }
+  .dr-squares-key { color: var(--text2); font-size: 0.7rem; }
+  .dr-squares-key .dr-key-target { color: var(--green); }
 
   /* Self-card — purple border (NOT gold), reusing the .winner-card slot
      but overriding its border. Gold is reserved for MP winners. */
@@ -3049,6 +3133,37 @@
     position: relative;
     overflow-y: auto;
   }
+  /* Invite link (lobby) + invite join (setup). */
+  .invite-link-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 48px;
+    padding: 12px 24px;
+  }
+  .invite-link-text {
+    margin-top: -6px;
+    color: var(--text2);
+    font-size: 0.8rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    user-select: all;
+  }
+  .invite-join { display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; }
+  .invite-join-btn { width: 100%; min-height: 52px; font-size: 1.05rem; }
+  .invite-join-btn #inviteCodeLabel { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 2px; }
+  .invite-exit {
+    background: none;
+    border: none;
+    color: var(--text2);
+    font: inherit;
+    font-size: 0.85rem;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+    padding: 8px;
+  }
+  .invite-exit:hover { color: var(--text); }
   .room-code-display {
     font-size: 3rem;
     font-weight: 800;
@@ -3088,7 +3203,15 @@
     gap: 8px;
     color: white;
   }
-  .player-list li.host::before { content: '👑'; }
+  /* Host marker: a small crown drawn in the brand gold (was a 👑 emoji). */
+  .player-list li.host::before {
+    content: '';
+    width: 16px; height: 16px;
+    flex-shrink: 0;
+    background: var(--gold);
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3 7l4.5 4L12 4l4.5 7L21 7l-2 12H5L3 7z'/%3E%3C/svg%3E") center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3 7l4.5 4L12 4l4.5 7L21 7l-2 12H5L3 7z'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
   .waiting-text { color: var(--text2); animation: pulse 2s infinite; }
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
 
@@ -3244,6 +3367,68 @@
     transition: opacity 0.2s;
   }
   .surrender-btn:hover { opacity: 0.9; cursor: pointer; }
+  /* Safe mode switch (multiplayer lobby, solo setup). A quiet one-line option
+     under the setup controls: a small switch, the name and a three-word
+     hint. The full explanation is in the title tooltip. */
+  .safe-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: 100%;
+    margin: 14px auto 0;
+    padding: 4px 8px;
+    color: var(--text2);
+    font-size: 0.78rem;
+    line-height: 1.2;
+    cursor: pointer;
+    user-select: none;
+  }
+  .safe-toggle input {
+    -webkit-appearance: none;
+    appearance: none;
+    position: relative;
+    flex-shrink: 0;
+    width: 26px; height: 14px;
+    margin: 0;
+    border-radius: 99px;
+    background: var(--surface2);
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .safe-toggle input::after {
+    content: '';
+    position: absolute;
+    top: 2px; left: 2px;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--text2);
+    transition: transform 0.15s, background 0.15s;
+  }
+  .safe-toggle input:checked { background: var(--green); }
+  .safe-toggle input:checked::after { transform: translateX(12px); background: #fff; }
+  .safe-toggle input:focus-visible { outline: 2px solid var(--accent2); outline-offset: 2px; }
+  .safe-toggle .safe-title { font-weight: 600; }
+  .safe-toggle input:checked + span .safe-title { color: var(--text); }
+  .safe-toggle .safe-desc { opacity: 0.75; }
+  .safe-toggle.locked { opacity: 0.6; cursor: default; }
+  .safe-toggle.locked input { cursor: default; }
+  #lobby .safe-toggle { margin-top: -10px; } /* the lobby column already has a 24px gap */
+  /* Host-only: ends the round when someone idle is stalling the surrender vote. */
+  .end-round-btn {
+    background: none;
+    border: none;
+    padding: 6px 0 0;
+    color: var(--text2);
+    font: inherit;
+    font-size: 0.75rem;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+  }
+  .end-round-btn:hover { color: var(--text); }
+  .end-round-btn.armed { color: #ffa38c; text-decoration: none; font-weight: 700; }
   .give-up-status {
     font-size: 0.75rem;
     color: var(--text2);
@@ -3408,6 +3593,11 @@
     overflow-x: hidden;
     background: #fff;
     color: #222;
+    /* Containing block for absolutely positioned bits inside articles
+       (screen-reader spans, map pins). Without it they escape this scroll
+       box, stretch the document, and the whole game screen becomes
+       scrollable (seen on the "Wiki" article). */
+    position: relative;
   }
   .wiki-content {
     max-width: 900px;
@@ -3590,7 +3780,36 @@
   .lb-riders {
     position: relative;
     width: 100%;
-    min-height: 40px;
+    min-height: 52px;
+  }
+  /* Distance ruler behind the pods (classic only). Each tick is one
+     "links away" value, so the number in a pod reads against a labelled
+     axis instead of standing alone. */
+  .lb-ticks { position: absolute; inset: 0; pointer-events: none; z-index: 0; }
+  .lb-tick {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 1px;
+    background: rgba(255, 255, 255, 0.07);
+  }
+  .lb-tick > span {
+    position: absolute;
+    bottom: 2px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 0 4px;
+    background: var(--surface);
+    color: var(--text2);
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .lb-tick.finish { background: rgba(0, 184, 148, 0.35); }
+  .lb-tick.finish > span { color: var(--green); }
+  @media (max-width: 700px) {
+    .lb-tick .lb-tick-unit, .lb-rider .lb-steps-word { display: none; }
   }
   .lb-rider {
     position: absolute;
@@ -3626,12 +3845,26 @@
     box-shadow: 0 0 4px rgba(0, 184, 148, 0.5);
   }
   .lb-rider .lb-steps { opacity: 0.75; font-size: 0.65rem; }
+  /* Distance badge: a dark disc inside the pod so the number reads as
+     "links away" (it matches the tick the pod is sitting on). */
   .lb-rider .lb-dist {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    margin-left: -4px;
+    border-radius: 99px;
+    background: rgba(15, 15, 19, 0.6);
     font-weight: 800;
-    font-size: 0.8rem;
-    min-width: 12px;
-    text-align: center;
+    font-size: 0.72rem;
+    line-height: 1;
   }
+  .lb-rider { box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35); }
+  /* Pods get an inline z-index by distance; a hovered one (and its tooltip) still comes to the front. */
+  .lb-rider:hover { z-index: 30 !important; }
   .lb-arrow {
     display: inline-block;
     font-size: 0.65rem;
@@ -3675,6 +3908,12 @@
     flex-shrink: 0;
   }
   .lb-stack-circle:first-child { margin-left: 0; }
+  .lb-stack-more {
+    margin-left: 3px;
+    color: var(--text2);
+    font-size: 0.65rem;
+    font-weight: 800;
+  }
   .lb-rider .lb-tip {
     position: absolute;
     bottom: calc(100% + 6px);
@@ -3699,6 +3938,18 @@
   .lb-tip .tip-steps { opacity: 0.8; }
   .lb-tip .tip-dist { font-weight: 800; }
   .lb-rider.pulse { animation: dotPulse 0.6s ease-out; }
+  /* One link from the target: the pod throbs and the finish line speeds up,
+     so everyone in the room can see who is about to win. */
+  .lb-rider.is-close { animation: podHeat 1.1s ease-in-out infinite; }
+  .lb-rider.is-close.pulse { animation: dotPulse 0.6s ease-out, podHeat 1.1s ease-in-out infinite; }
+  @keyframes podHeat {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.6); }
+    50% { box-shadow: 0 0 0 6px rgba(251, 191, 36, 0); }
+  }
+  .players-bar.heat::after { animation-duration: 0.8s; }
+  @media (prefers-reduced-motion: reduce) {
+    .lb-rider.is-close, .lb-rider.is-close.pulse, .dr-sq { animation: none; }
+  }
   @keyframes dotPulse {
     0% { transform: translateX(-50%) scale(1); }
     30% { transform: translateX(-50%) scale(1.3); }
@@ -3876,6 +4127,9 @@
     transition: opacity 0.2s, transform 0.2s;
     text-align: center;
   }
+  /* Race call-outs ("Ben is 1 link away!") reuse the toast but must not
+     read as an error: amber, matching the one-link pod colour. */
+  .global-toast.heat { background: #fbbf24; color: #1b1304; }
   .global-toast.show {
     opacity: 1;
     transform: translateX(-50%) translateY(0);
@@ -4045,69 +4299,6 @@
     .players-bar { padding: 2px 16px; }
     .dest-hint-bar { padding: 3px 12px; font-size: 0.72rem; }
   }
-
-  /* Language dropdown — lives in the top-right corner of the Words box.
-     Click the pill to open a panel with the other available languages. */
-  .lang-dropdown {
-    position: absolute;
-    top: 12px;
-    right: 12px;
-    font-size: 0.72rem;
-    font-weight: 600;
-    user-select: none;
-    z-index: 5;
-  }
-  .lang-dropdown-trigger {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 10px;
-    background: var(--surface);
-    border: 1px solid var(--surface2);
-    border-radius: 999px;
-    color: var(--text);
-    cursor: pointer;
-    transition: background 0.15s, border-color 0.15s;
-  }
-  .lang-dropdown-trigger:hover { border-color: var(--accent); }
-  .lang-dropdown-trigger .chevron {
-    font-size: 0.6rem;
-    opacity: 0.6;
-    transition: transform 0.15s;
-  }
-  .lang-dropdown.open .lang-dropdown-trigger .chevron { transform: rotate(180deg); }
-  .lang-dropdown-panel {
-    position: absolute;
-    top: calc(100% + 4px);
-    right: 0;
-    background: var(--surface);
-    border: 1px solid var(--surface2);
-    border-radius: 8px;
-    min-width: 120px;
-    padding: 4px;
-    box-shadow: 0 6px 24px rgba(0,0,0,0.35);
-    display: none;
-  }
-  .lang-dropdown.open .lang-dropdown-panel { display: block; }
-  .lang-dropdown-item {
-    padding: 6px 10px;
-    border-radius: 6px;
-    cursor: pointer;
-    color: var(--text2);
-    transition: background 0.1s, color 0.1s;
-  }
-  .lang-dropdown-item:hover { background: var(--surface2); color: var(--text); }
-  .lang-dropdown-item.active { color: var(--accent2); }
-  /* Both words boxes need position: relative so the dropdown can absolute-anchor. */
-  .round-words-section, #spRoundWordsSection { position: relative; }
-  /* Mobile: bigger tap targets. Default 6×10 padding is ~24px tall — misses
-     are common. Bump to ~42px with larger font so thumbs land reliably. */
-  @media (max-width: 600px) {
-    .lang-dropdown { font-size: 0.82rem; }
-    .lang-dropdown-trigger { padding: 8px 14px; }
-    .lang-dropdown-panel { min-width: 150px; padding: 6px; }
-    .lang-dropdown-item { padding: 12px 14px; font-size: 0.92rem; }
-  }
 </style>
 </head>
 <body>
@@ -4165,13 +4356,14 @@
     <a href="https://github.com/HenryBao912/WikiSpeedrun" target="_blank" rel="noopener">source</a>
     <span class="dot">·</span>
     <a href="https://ko-fi.com/wikispeedrunio" target="_blank" rel="noopener">support</a>
+    <span class="footer-legal">Not affiliated with the Wikimedia Foundation. Article text from <a href="https://www.wikipedia.org" target="_blank" rel="noopener">Wikipedia</a>, <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a>.</span>
   </footer>
 </div>
 
 <!-- ─── Single Player Setup Screen ─── -->
 <div id="sp-setup" class="screen">
   <button class="back-btn" onclick="showScreen('home')">← Back</button>
-  <h1 class="setup-title">Single Player</h1>
+  <h1 class="setup-title">Singleplayer</h1>
   <div class="setup-form">
     <div class="form-group">
       <label class="form-label">Mode</label>
@@ -4181,7 +4373,7 @@
           <span class="mode-desc">A → B</span>
         </div>
         <div class="mode-btn" id="spModeTri" onclick="setSinglePlayerMode('tri')">
-          <span class="mode-label">Tri Speedrun</span>
+          <span class="mode-label">Tri</span>
           <span class="mode-desc">Visit all 3</span>
         </div>
         <div class="mode-btn marathon-mode-btn" id="spModeMarathon" onclick="setSinglePlayerMode('marathon')">
@@ -4192,16 +4384,6 @@
     </div>
     <div class="form-group marathon-duration-group" id="spMarathonDurationGroup" style="display:none;">
       <div class="marathon-setup-box">
-        <div class="lang-dropdown" data-lang-dropdown>
-          <div class="lang-dropdown-trigger" onclick="toggleLangDropdown(this.parentNode)">
-            <span class="lang-dropdown-label">Eng</span>
-            <span class="chevron">▾</span>
-          </div>
-          <div class="lang-dropdown-panel">
-            <div class="lang-dropdown-item" data-lang="en" onclick="pickLang('en', event)">English</div>
-            <div class="lang-dropdown-item" data-lang="zh" onclick="pickLang('zh', event)">中文 (简体)</div>
-          </div>
-        </div>
         <div class="marathon-box-title">TIME</div>
         <div class="time-picker">
           <div class="time-stepper-value" id="spTimeStepperValue">5m</div>
@@ -4226,26 +4408,20 @@
           <input type="range" id="spDiffMax" min="0" max="100" value="100" oninput="updateSinglePlayerDiffSlider()" />
         </div>
         <div class="diff-ends">
-          <span class="diff-end-tf">tf</span>
-          <span class="diff-end-ez">ez</span>
+          <span class="diff-end-tf">hard</span>
+          <span class="diff-end-ez">easy</span>
         </div>
       </div>
     </div>
     <div class="round-words-section" id="spRoundWordsSection" style="display:flex;">
-      <div class="lang-dropdown" data-lang-dropdown>
-        <div class="lang-dropdown-trigger" onclick="toggleLangDropdown(this.parentNode)">
-          <span class="lang-dropdown-label">Eng</span>
-          <span class="chevron">▾</span>
-        </div>
-        <div class="lang-dropdown-panel">
-          <div class="lang-dropdown-item" data-lang="en" onclick="pickLang('en', event)">English</div>
-          <div class="lang-dropdown-item" data-lang="zh" onclick="pickLang('zh', event)">中文 (简体)</div>
-        </div>
-      </div>
-      <div class="rw-title" id="spRwTitle">WORDS</div>
+      <div class="rw-title" id="spRwTitle">ARTICLES</div>
       <div id="spRoundWordsInputs"></div>
       <button class="btn btn-primary" onclick="startSinglePlayer(this)" style="width:100%;margin-top:8px;">Start!</button>
     </div>
+    <label class="safe-toggle" id="spSafeRow" title="Safe mode blocks adult articles: they can't be a start or target, and their links won't open. Good for classrooms.">
+      <input type="checkbox" id="spSafeToggle" onchange="setSoloSafeMode(this.checked)">
+      <span><span class="safe-title">Safe mode</span><span class="safe-desc"> · hides adult articles</span></span>
+    </label>
   </div>
 </div>
 
@@ -4255,9 +4431,15 @@
   <h1 class="setup-title">Multiplayer</h1>
   <div class="setup-form">
     <div class="form-group">
-      <input type="text" id="mpName" placeholder="Your Name" maxlength="20" autocomplete="off" />
+      <input type="text" id="mpName" placeholder="Your Name" maxlength="20" autocomplete="off" onkeydown="if(event.key==='Enter'&&inviteCode)joinFromInvite(document.getElementById('inviteJoinBtn'))" />
     </div>
-    <div class="mp-actions-row">
+    <!-- Shown instead of Create/Code when the page was opened from an
+         invite link (/r/<code>): one button joins that room. -->
+    <div class="invite-join" id="inviteJoin" style="display:none;">
+      <button class="btn btn-primary invite-join-btn" id="inviteJoinBtn" onclick="joinFromInvite(this)">Join room <span id="inviteCodeLabel"></span></button>
+      <button type="button" class="invite-exit" onclick="exitInviteMode()">Create your own room instead</button>
+    </div>
+    <div class="mp-actions-row" id="mpActionsRow">
       <button class="btn btn-primary" onclick="createMultiplayerRoom()">Create Room</button>
       <div class="divider-vertical"></div>
       <input type="text" id="mpRoomCode" placeholder="CODE" class="mp-code-input" maxlength="5" inputmode="latin" lang="en" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" pattern="[A-Z0-9]*" oninput="autoJoinRoom(event)" />
@@ -4269,24 +4451,29 @@
 <!-- ─── Lobby Screen ─── -->
 <div id="lobby" class="screen">
   <button class="back-btn" onclick="backToMultiplayerSetup()">← Back</button>
-  <p style="color:var(--text2)">Share this room code with friends:</p>
+  <p style="color:var(--text2)">Send friends the invite link, or share the code:</p>
+  <button class="btn btn-primary invite-link-btn" id="inviteLinkBtn" onclick="shareInviteLink(this)">
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+    <span id="inviteLinkLabel">Copy invite link</span>
+  </button>
+  <div class="invite-link-text" id="inviteLinkText"></div>
   <div class="room-code-display" id="roomCodeDisplay" onclick="copyCode()">
     <span id="codeText"></span>
     <span class="copy-hint">click to copy</span>
   </div>
   <div style="text-align:center;">
-    <p style="color:var(--text2);margin-bottom:12px;">Players:</p>
+    <p style="color:var(--text2);margin-bottom:12px;" id="playerCountLabel">Players:</p>
     <ul class="player-list" id="playerList"></ul>
     <p class="waiting-text" id="waitingText">Waiting for players...</p>
   </div>
   <div class="form-group">
     <div class="mode-selector" id="mpModeSelector">
       <div class="mode-btn active" id="mpModeClassic" onclick="setMultiplayerMode('classic')">
-        <span class="mode-label">Classic Mode</span>
+        <span class="mode-label">Classic</span>
         <span class="mode-desc">A → B</span>
       </div>
       <div class="mode-btn" id="mpModeTri" onclick="setMultiplayerMode('tri')">
-        <span class="mode-label">Tri<br>Mode</span>
+        <span class="mode-label">Tri</span>
         <span class="mode-desc">Visit all 3</span>
       </div>
       <div class="mode-btn marathon-mode-btn" id="mpModeMarathon" onclick="setMultiplayerMode('marathon')">
@@ -4297,16 +4484,6 @@
   </div>
   <div class="form-group marathon-duration-group" id="mpMarathonDurationGroup" style="display:none;">
     <div class="marathon-setup-box">
-      <div class="lang-dropdown" data-lang-dropdown>
-        <div class="lang-dropdown-trigger" onclick="toggleLangDropdown(this.parentNode)">
-          <span class="lang-dropdown-label">Eng</span>
-          <span class="chevron">▾</span>
-        </div>
-        <div class="lang-dropdown-panel">
-          <div class="lang-dropdown-item" data-lang="en" onclick="pickLang('en', event)">English</div>
-          <div class="lang-dropdown-item" data-lang="zh" onclick="pickLang('zh', event)">中文 (简体)</div>
-        </div>
-      </div>
       <div class="marathon-box-title">TIME</div>
       <div class="time-picker">
         <div class="time-stepper-value" id="mpTimeStepperValue">5m</div>
@@ -4331,26 +4508,20 @@
         <input type="range" id="mpDiffMax" min="0" max="100" value="100" oninput="updateMultiplayerDiffSlider()" />
       </div>
       <div class="diff-ends">
-        <span class="diff-end-tf">tf</span>
-        <span class="diff-end-ez">ez</span>
+        <span class="diff-end-tf">hard</span>
+        <span class="diff-end-ez">easy</span>
       </div>
     </div>
   </div>
   <div class="round-words-section" id="roundWordsSection" style="display:none;">
-    <div class="lang-dropdown" data-lang-dropdown>
-      <div class="lang-dropdown-trigger" onclick="toggleLangDropdown(this.parentNode)">
-        <span class="lang-dropdown-label">Eng</span>
-        <span class="chevron">▾</span>
-      </div>
-      <div class="lang-dropdown-panel">
-        <div class="lang-dropdown-item" data-lang="en" onclick="pickLang('en', event)">English</div>
-        <div class="lang-dropdown-item" data-lang="zh" onclick="pickLang('zh', event)">中文 (简体)</div>
-      </div>
-    </div>
-    <div class="round-words-title" id="mpRoundWordsTitle">Words</div>
+    <div class="round-words-title" id="mpRoundWordsTitle">Articles</div>
     <div class="round-words-inputs" id="roundWordsInputs"></div>
     <button class="btn btn-primary btn-small" id="mpStartBtn" onclick="startMultiplayerGame(this)" style="display:none;">Start!</button>
   </div>
+  <label class="safe-toggle" id="mpSafeRow" title="Safe mode blocks adult articles: they can't be a start or target, and their links won't open. Good for classrooms. Only the host can change it.">
+    <input type="checkbox" id="mpSafeToggle" onchange="setSafeMode(this.checked)">
+    <span><span class="safe-title">Safe mode</span><span class="safe-desc"> · hides adult articles</span></span>
+  </label>
 </div>
 
 <!-- ─── Game Screen ─── -->
@@ -4378,6 +4549,7 @@
       <span>Time: <span class="stat-val" id="timerDisplay">0:00</span></span>
       <button class="surrender-btn" onclick="sendGiveUpVote()">Surrender</button>
       <div class="give-up-status" id="giveUpStatus"></div>
+      <button type="button" class="end-round-btn" id="endRoundBtn" onclick="endRoundForAll(this)" style="display:none;">End round for everyone</button>
     </div>
   </div>
   <div class="breadcrumb-bar" id="breadcrumbs"></div>
@@ -4499,6 +4671,9 @@
 })();
 
 // ─── Floating Background Words ───
+// Dice icon for the "random article" buttons (replaces a bare "?").
+const DICE_SVG = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><g fill="currentColor" stroke="none"><circle cx="8.3" cy="8.3" r="1.4"/><circle cx="15.7" cy="8.3" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="8.3" cy="15.7" r="1.4"/><circle cx="15.7" cy="15.7" r="1.4"/></g></svg>';
+
 const WIKI_WORDS = [
   'Philosophy','Cat','United States','Mathematics','Earth','Evolution','Sun',
   'Albert Einstein','London','Galaxy','DNA','Water','Python','Music','Rome',
@@ -4583,10 +4758,10 @@ function scheduleHeroRoll(el) {
   }, delay);
 }
 
-// The mode pickers, language-dropdown triggers, and room-code copy box are
-// <div onclick> controls — not keyboard-reachable or operable on their own.
-// Make them focusable, give them a button role/name, and activate on
-// Enter/Space, so the whole setup flow works without a pointing device.
+// The mode pickers and room-code copy box are <div onclick> controls — not
+// keyboard-reachable or operable on their own. Make them focusable, give them
+// a button role/name, and activate on Enter/Space, so the whole setup flow
+// works without a pointing device.
 function enhanceClickableControls() {
   const activate = (e) => {
     if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
@@ -4594,7 +4769,7 @@ function enhanceClickableControls() {
       e.currentTarget.click();
     }
   };
-  document.querySelectorAll('.mode-btn, .lang-dropdown-trigger, .room-code-display').forEach(el => {
+  document.querySelectorAll('.mode-btn, .room-code-display').forEach(el => {
     if (el._a11yEnhanced) return;
     if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '0');
     if (!el.hasAttribute('role')) el.setAttribute('role', 'button');
@@ -4606,7 +4781,7 @@ function enhanceClickableControls() {
   });
 }
 
-document.addEventListener('DOMContentLoaded', () => { initBgWords(); initHeroLinks(); renderSpRoundWords(); updateLangDropdowns(); enhanceClickableControls(); });
+document.addEventListener('DOMContentLoaded', () => { initBgWords(); initHeroLinks(); renderSpRoundWords(); enhanceClickableControls(); syncSafeToggles(); });
 
 // ─── Real-user tracking IDs ───
 // myVisitorId: persistent per browser (localStorage), identifies one human over
@@ -4677,7 +4852,13 @@ function sendPageView() {
     try { const m = document.cookie.match(/_ga=GA\d\.\d\.(\d+\.\d+)/); if (m) myGaClientId = m[1]; } catch (e) {}
   }
   try {
-    const payload = JSON.stringify({ vid: myVisitorId, gacid: myGaClientId || '', page: location.pathname });
+    // Referrer: hostname of another site only (no path/query kept). `src`
+    // is an explicit ?ref= or ?utm_source= tag, e.g. on shared daily links.
+    let refHost = '';
+    try { const u = new URL(document.referrer); if (u.hostname && u.hostname !== location.hostname) refHost = u.hostname; } catch (e) {}
+    let srcTag = '';
+    try { const q = new URLSearchParams(location.search); srcTag = (q.get('ref') || q.get('utm_source') || '').slice(0, 40); } catch (e) {}
+    const payload = JSON.stringify({ vid: myVisitorId, gacid: myGaClientId || '', page: location.pathname, ref: refHost, src: srcTag });
     if (navigator.sendBeacon) {
       navigator.sendBeacon('/pageview', new Blob([payload], { type: 'application/json' }));
     } else {
@@ -4706,135 +4887,10 @@ let isSinglePlayer = false;
 // modes" to nudge exploration; all other sessions keep "Back to Home".
 let isQuickPlaySession = false;
 
-// Wikipedia language. `wikiLangChoice` is the user's preference (what new
-// games/rooms use); `currentGameLang` is locked to whatever the active room
-// is using so mid-game toggles don't poison the state.
-let wikiLangChoice = (() => {
-  try { return localStorage.getItem('wsr_wiki_lang') || 'en'; } catch { return 'en'; }
-})();
-let currentGameLang = null; // set from game_start, cleared when leaving game
+// The removed language picker (zh mode, dropped Oct 2026) saved its choice
+// under this key. Nothing reads it now; clear it so it doesn't linger.
+try { localStorage.removeItem('wsr_wiki_lang'); } catch {}
 
-// Host of every Wikipedia we speak to. Keep in sync with server's WIKI_HOSTS.
-const WIKI_HOSTS = { en: 'en.wikipedia.org', zh: 'zh.wikipedia.org' };
-// MediaWiki variant codes — force Simplified for Chinese wiki (default
-// mixed/Traditional-leaning output is confusing for mainland users).
-const WIKI_VARIANTS = { zh: 'zh-cn' };
-function wikiHost(lang) { return WIKI_HOSTS[lang] || WIKI_HOSTS.en; }
-function wikiVariant(lang) { return WIKI_VARIANTS[lang] || ''; }
-// The lang to use for Wikipedia fetches right now. Uses the locked game
-// lang during play so the toggle can't retarget mid-race.
-function activeWikiLang() { return currentGameLang || wikiLangChoice; }
-
-// Dropdown labels per language. Shown in the trigger pill.
-const LANG_LABELS = { en: 'Eng', zh: '中文' };
-
-function setWikiLang(lang) {
-  if (lang !== 'en' && lang !== 'zh') return;
-  if (wikiLangChoice === lang) return;
-  wikiLangChoice = lang;
-  try { localStorage.setItem('wsr_wiki_lang', lang); } catch {}
-  updateLangDropdowns();
-}
-// Placeholder text for each input, per language. Kept together so new
-// inputs or languages only require one place to edit. Values must match
-// what's in the HTML templates' default placeholder attribute in English.
-const INPUT_PLACEHOLDERS = {
-  en: {
-    spRwOrigin: 'e.g. Pizza',
-    spRwDest: 'e.g. Moon',
-    spRwTarget1: 'Target',
-    spRwTarget2: 'Start here',
-    spRwTarget3: 'Target',
-    rwOrigin: 'e.g. Pizza',
-    rwDest: 'e.g. Moon',
-    rwTarget1: 'Target',
-    rwTarget2: 'Start here',
-    rwTarget3: 'Target',
-  },
-  zh: {
-    spRwOrigin: 'e.g. 披萨',
-    spRwDest: 'e.g. 月球',
-    spRwTarget1: '目标',
-    spRwTarget2: '起点',
-    spRwTarget3: '目标',
-    rwOrigin: 'e.g. 披萨',
-    rwDest: 'e.g. 月球',
-    rwTarget1: '目标',
-    rwTarget2: '起点',
-    rwTarget3: '目标',
-  },
-};
-
-function applyInputPlaceholders() {
-  const lang = activeWikiLang();
-  const map = INPUT_PLACEHOLDERS[lang] || INPUT_PLACEHOLDERS.en;
-  for (const id in map) {
-    const el = document.getElementById(id);
-    if (el) el.setAttribute('placeholder', map[id]);
-  }
-}
-
-// Sync every dropdown's trigger label + active-option highlight. Called on
-// boot, on pickLang(), and when a room locks a different language.
-function updateLangDropdowns() {
-  const shownLang = currentGameLang || wikiLangChoice;
-  // Keep the document language in sync so screen readers pick the right voice
-  // for CJK content and browsers don't offer to "translate to Chinese" a page
-  // already in Chinese. <html lang> is otherwise hardcoded "en".
-  document.documentElement.lang = shownLang === 'zh' ? 'zh-Hans' : 'en';
-  document.querySelectorAll('[data-lang-dropdown]').forEach(dd => {
-    const label = dd.querySelector('.lang-dropdown-label');
-    if (label) label.textContent = LANG_LABELS[shownLang] || LANG_LABELS.en;
-    dd.querySelectorAll('.lang-dropdown-item').forEach(item => {
-      item.classList.toggle('active', item.dataset.lang === shownLang);
-    });
-  });
-  applyInputPlaceholders();
-}
-// Back-compat alias — callers scattered around still use the old name.
-function updateWikiLangToggleUI() { updateLangDropdowns(); }
-
-function toggleLangDropdown(dd) {
-  // Close any other open dropdown, then toggle this one.
-  document.querySelectorAll('[data-lang-dropdown].open').forEach(other => {
-    if (other !== dd) other.classList.remove('open');
-  });
-  dd.classList.toggle('open');
-}
-
-function pickLang(lang, event) {
-  if (event) event.stopPropagation();
-  document.querySelectorAll('[data-lang-dropdown]').forEach(dd => dd.classList.remove('open'));
-
-  // In an MP lobby, the room's language is server-authoritative. Host sends
-  // set_lang; server broadcasts lang_changed to everyone (including self).
-  // Non-hosts just close the dropdown — they can't change the room's lang.
-  if (currentGameLang && currentRoomCode && !isSinglePlayer) {
-    if (isHost && currentGameLang !== lang) {
-      send({ type: 'set_lang', lang }).catch(() => {});
-    }
-    return;
-  }
-
-  // SP or pre-room: update the user's local preference immediately.
-  const changed = wikiLangChoice !== lang;
-  setWikiLang(lang);
-  if (changed) {
-    document.querySelectorAll('.rw-input').forEach(input => { input.value = ''; });
-    document.querySelectorAll('.autocomplete-list.show').forEach(l => l.classList.remove('show'));
-    // summaryCache holds first-sentence previews keyed by article title. On
-    // a language switch the same title may belong to a different wiki — drop
-    // cached entries rather than serve stale English content for zh titles.
-    if (typeof summaryCache !== 'undefined') summaryCache.clear();
-  }
-}
-
-// Close any open dropdown when clicking outside it.
-document.addEventListener('click', (e) => {
-  if (!e.target.closest('[data-lang-dropdown]')) {
-    document.querySelectorAll('[data-lang-dropdown].open').forEach(dd => dd.classList.remove('open'));
-  }
-});
 let currentArticle = '';
 let myPath = [];
 let gameOrigin = '';
@@ -4847,6 +4903,41 @@ let triTargets = [];
 let myVisited = [];
 let latestDistData = null;
 let prevPositions = new Map();
+// Player ids currently one link from the target (drives the one-shot
+// "X is 1 link away!" toast in renderPlayersBar).
+const podWasClose = new Set();
+
+// ─── Safe mode ───
+// The server sends the pattern for titles to block (safe_mode_changed); links
+// matching it are refused here before the article loads, and again on the
+// server. The choice is remembered per browser, so a teacher's rooms and solo
+// games start with it on.
+const SAFE_MODE_KEY = 'wsr_safe_mode';
+let safeModeEnabled = false;
+let safeRe = null;
+function savedSafeMode() { try { return localStorage.getItem(SAFE_MODE_KEY) === '1'; } catch (e) { return false; } }
+function saveSafeMode(on) { try { localStorage.setItem(SAFE_MODE_KEY, on ? '1' : '0'); } catch (e) {} }
+function isBlockedBySafeMode(title) {
+  return !!(safeModeEnabled && safeRe && safeRe.test(String(title).replace(/_/g, ' ')));
+}
+function applySafeMode(on, pattern) {
+  safeModeEnabled = !!on;
+  try { safeRe = on && pattern ? new RegExp(pattern, 'i') : null; } catch (e) { safeRe = null; }
+  const lobby = document.getElementById('mpSafeToggle');
+  if (lobby) lobby.checked = safeModeEnabled;
+}
+// Host, in the lobby.
+function setSafeMode(on) {
+  if (!isHost) { applySafeMode(safeModeEnabled, null); const el = document.getElementById('mpSafeToggle'); if (el) el.checked = safeModeEnabled; return; }
+  saveSafeMode(on);
+  send({ type: 'set_safe_mode', on });
+}
+// Solo setup: just remembered; start_single carries it.
+function setSoloSafeMode(on) { saveSafeMode(on); }
+function syncSafeToggles() {
+  const sp = document.getElementById('spSafeToggle');
+  if (sp) sp.checked = savedSafeMode();
+}
 let resultsAnimationTimeouts = [];
 
 // Single player difficulty state
@@ -4987,6 +5078,21 @@ function connectSSE(forceNew = false) {
     };
 
     newSource.onerror = (e) => {
+      // The browser's own retry re-requests this source's original URL. A
+      // session's first source was opened before the server gave us an id, so
+      // its URL carries no playerId/rt: the retry lands as a brand-new player
+      // with no room, 'connected' hands us that id, and the next click gets
+      // session_lost ("Your game session expired"). In the Oct 19 2026 prod
+      // logs, 0 of 346 in-room drops on a first connection were resumed. So
+      // don't let it retry: close it, and if it's the live source, redial
+      // through connectSSE(), whose URL has playerId + rt, so the server's
+      // grace rebind keeps us in the room.
+      if (newSource.readyState === EventSource.CONNECTING && myPlayerId &&
+          !newSource.url.includes('playerId=')) {
+        newSource.close();
+        if (eventSource === newSource) connectSSE().catch(() => {});
+        return;
+      }
       // EventSource fires error events for transient issues + before
       // auto-reconnect attempts. Only log when actually CLOSED — the
       // intermediate retries are noise that scared users when surfaced.
@@ -5032,9 +5138,13 @@ async function send(msg) {
     // These rejection codes have their own user-facing feedback (move_rejected
     // toast / navigateTo rollback / session_lost screen), so don't also dump the
     // raw machine string into the #mpError slot.
-    const SILENT = new Set(['illegal_move', 'rate_limited', 'session_lost', 'finished', 'not_participant', 'no_room']);
+    const SILENT = new Set(['illegal_move', 'safe_mode', 'rate_limited', 'session_lost', 'finished', 'not_participant', 'no_room', 'not_started']);
     if (!result.ok && result.error && !SILENT.has(result.error)) {
-      showError('mpError', result.error);
+      // #mpError lives on the multiplayer setup screen. Anywhere else (a
+      // 401 "Not connected" mid-game, say) it was written where nobody could
+      // see it, and the article just flipped back with no explanation.
+      if (document.getElementById('mp-setup')?.classList.contains('active')) showError('mpError', result.error);
+      else showGlobalToast(result.error, 4000);
     }
     return result;
   } catch(e) {
@@ -5115,7 +5225,11 @@ function selectMode(choice) {
     window.gtag?.('event', 'mode_selected', { selection: choice });
   } catch (e) { /* gtag blocked — skip */ }
   if (choice === 'singleplayer') showScreen('sp-setup');
-  else if (choice === 'multiplayer') showScreen('mp-setup');
+  else if (choice === 'multiplayer') {
+    const nameEl = document.getElementById('mpName');
+    if (nameEl && !nameEl.value) nameEl.value = getPlayerName();
+    showScreen('mp-setup');
+  }
 }
 
 // ─── Daily Challenge ───
@@ -5214,10 +5328,25 @@ function startDailyCountdown() {
       // Crossed midnight UTC — refresh badge for new daily number.
       setTimeout(hydrateDailyBadge, 500);
     }
+    refreshDailyIfStale();
   };
   tick();
   dailyCountdownTimer = setInterval(tick, 1000);
 }
+// A tab left open across midnight UTC rarely sees the countdown's rollover
+// tick (browsers throttle background timers to about one a minute), so
+// cachedDaily stayed on yesterday: the button said "View Leaderboard" and
+// opened yesterday's board, and today's daily never started. Compare dates
+// on every tick and when the tab comes back.
+let _dailyRefreshFor = null;
+function refreshDailyIfStale() {
+  if (!cachedDaily || !cachedDaily.date) return;
+  const today = new Date().toISOString().slice(0, 10);
+  if (cachedDaily.date === today || _dailyRefreshFor === today) return;
+  _dailyRefreshFor = today;
+  hydrateDailyBadge();
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshDailyIfStale(); });
 document.addEventListener('DOMContentLoaded', () => { hydrateDailyBadge(); startDailyCountdown(); });
 
 // Deep-link router: /daily-challenge, /multiplayer, /singleplayer are real
@@ -5226,7 +5355,9 @@ document.addEventListener('DOMContentLoaded', () => { hydrateDailyBadge(); start
 // this is what makes them honest landing pages for Google sitelinks.
 document.addEventListener('DOMContentLoaded', async () => {
   const p = location.pathname;
-  if (p === '/singleplayer') selectMode('singleplayer');
+  const invite = p.match(/^\/r\/([0-9a-f]{5})\/?$/i);
+  if (invite) enterInviteMode(invite[1].toUpperCase());
+  else if (p === '/singleplayer') selectMode('singleplayer');
   else if (p === '/multiplayer') selectMode('multiplayer');
   else if (p === '/daily-challenge') {
     // Wait for /daily so the already-played check routes correctly (played →
@@ -5245,6 +5376,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 async function startDailyFromHome(btn) {
   // If the user has already played today, route to the leaderboard view
   // instead of starting another game (their committed result is locked in).
+  // A stale cachedDaily (tab open across midnight UTC) would route by
+  // yesterday's result; refresh first.
+  if (cachedDaily && cachedDaily.date !== new Date().toISOString().slice(0, 10)) {
+    try { await hydrateDailyBadge(); } catch (_) {}
+  }
   if (cachedDaily) {
     const state = loadDailyState();
     const todayResult = getTodayResult(state, cachedDaily.date);
@@ -5289,6 +5425,16 @@ function recordDailyResult(msg) {
   const myR = msg.results?.find(r => r.id === myPlayerId) || msg.results?.[0] || {};
   const distances = (myR.distances || []).filter(d => d != null && Number.isFinite(d));
   const won = !msg.gaveUp;
+  // Distance after each step (distances[] is aligned 1:1 with path[], so
+  // index 0 is the start). Kept unfiltered so position = step number; null
+  // means the server had no reading for that article.
+  const stepCount = Math.max(0, (myR.path?.length || 1) - 1);
+  const dists = [];
+  for (let i = 1; i <= stepCount && i <= 60; i++) {
+    const d = (myR.distances || [])[i];
+    dists.push(Number.isFinite(d) ? d : null);
+  }
+  if (won && dists.length === stepCount && dists.length) dists[dists.length - 1] = 0;
   const result = {
     date: meta.date,
     dailyNumber: meta.dailyNumber,
@@ -5296,6 +5442,7 @@ function recordDailyResult(msg) {
     steps: Math.max(0, (myR.path?.length || 1) - 1),
     timeMs: myR.time || null,
     closestHops: distances.length ? Math.min(...distances) : null,
+    dists,
   };
   const state = loadDailyState();
   const wasFirstToday = !state.todayResult || state.todayResult.date !== meta.date;
@@ -5352,6 +5499,46 @@ function openLeaderboardModal(todayResult, state) {
   bg.addEventListener('click', (e) => { if (e.target === bg) close(); });
 }
 
+// Streak icon (replaces the 🔥 emoji in the UI; the share text keeps it).
+const FLAME_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>';
+
+// One square per step, coloured by how far from the target that step
+// landed. Tiers mirror distColorClass() so the squares, the path pills and
+// the in-game pods all tell the same colour story; 0 is the target itself.
+function dailyStepTier(d) {
+  if (d === 0) return 'target';
+  if (d === null || d === undefined || !Number.isFinite(d)) return 'unknown';
+  if (d <= 1) return 'close';
+  if (d <= 2) return 'mid';
+  return 'far';
+}
+const DAILY_SQUARE_EMOJI = { target: '🟩', close: '🟨', mid: '🟪', far: '🟦', unknown: '⬛' };
+const DAILY_SQUARE_NAME = { target: 'target reached', close: 'close', mid: 'nearer', far: 'far', unknown: 'unknown' };
+const DAILY_SQUARE_MAX = 30;
+
+// Stats + squares block at the top of the daily strip. `result.dists` is
+// absent on results saved before this shipped — then only the stats show.
+function buildDailyRunBlock(result) {
+  if (!result) return '';
+  const stat = (label, value) => `<div class="dr-stat"><span class="dr-stat-label">${label}</span><span class="dr-stat-val">${value}</span></div>`;
+  let stats = stat('Steps', String(Number(result.steps) || 0));
+  if (result.timeMs) stats += stat('Time', esc(formatTime(result.timeMs)));
+  if (!result.won && result.closestHops != null) stats += stat('Closest', `${Number(result.closestHops)} away`);
+  let squares = '';
+  const dists = Array.isArray(result.dists) ? result.dists : [];
+  if (dists.length) {
+    const shown = dists.slice(0, DAILY_SQUARE_MAX);
+    const label = shown.map(d => DAILY_SQUARE_NAME[dailyStepTier(d)]).join(', ');
+    squares =
+      `<div class="dr-squares" role="img" aria-label="Distance after each step: ${label}">` +
+      shown.map((d, i) => `<span class="dr-sq dr-sq-${dailyStepTier(d)}" style="animation-delay:${i * 60}ms"></span>`).join('') +
+      (dists.length > DAILY_SQUARE_MAX ? `<span class="dr-sq-more">+${dists.length - DAILY_SQUARE_MAX}</span>` : '') +
+      `</div>` +
+      `<div class="dr-squares-key">One square per step: <span class="dist-far">far</span> · <span class="dist-mid">nearer</span> · <span class="dist-close">close</span> · <span class="dr-key-target">target</span></div>`;
+  }
+  return `<div class="dr-run"><div class="dr-stats">${stats}</div>${squares}</div>`;
+}
+
 // Build the daily result strip (streak + leaderboard + share) appended to
 // the result screen's grid. Idempotent — replaces existing strip if any.
 // Markup matches design system 7 handoff (.dr-* classes).
@@ -5364,7 +5551,7 @@ function renderDailyResultStrip(dailyMeta, todayResult, state) {
   strip.id = 'dailyResultStrip';
   strip.className = 'dr-strip';
   const streakHtml = state.streak > 0
-    ? `<div class="dr-streak-pill"><span class="flame">🔥</span><b>${state.streak}</b> day streak</div>`
+    ? `<div class="dr-streak-pill"><span class="flame">${FLAME_SVG}</span><b>${state.streak}</b> day streak</div>`
     : '';
   // Share button copy varies by outcome — leading ✓ only on win per spec.
   const shareCopy = todayResult.won
@@ -5378,11 +5565,12 @@ function renderDailyResultStrip(dailyMeta, todayResult, state) {
       <div class="dr-daily-pill">Daily Challenge #${dailyMeta.dailyNumber}</div>
       ${streakHtml}
     </div>
+    ${buildDailyRunBlock(todayResult)}
+    <button class="dr-share" id="dailyShareBtn">${shareCopy}</button>
     <div class="dr-lb" id="dailyLbContainer">
       <div class="dr-lb-title">Today's Leaderboard</div>
       <div class="dr-lb-scroll"><div id="dailyLbList">${skeletonHtml}</div></div>
     </div>
-    <button class="dr-share" id="dailyShareBtn">${shareCopy}</button>
     <div class="dr-foot">Come back tomorrow for Daily #${dailyMeta.dailyNumber + 1}</div>
   `;
   grid.appendChild(strip);
@@ -5395,7 +5583,8 @@ function renderDailyResultStrip(dailyMeta, todayResult, state) {
 
 async function fetchAndRenderLeaderboard(date) {
   try {
-    const r = await fetch('/daily/leaderboard?date=' + encodeURIComponent(date), { cache: 'no-store' });
+    // The header lets the server mark our own row (isMe); it never sends anyone's id back.
+    const r = await fetch('/daily/leaderboard?date=' + encodeURIComponent(date), { cache: 'no-store', headers: { 'X-Anon-Id': getOrCreateAnonId() } });
     if (!r.ok) throw new Error('lb fetch failed');
     cachedLeaderboard = await r.json();
   } catch (e) {
@@ -5423,12 +5612,11 @@ function renderLeaderboard() {
     list.innerHTML = '<div class="dr-empty"><b>Be the first today!</b>Your result lands here once submitted</div>';
     return;
   }
-  const myAnonId = getOrCreateAnonId();
   list.innerHTML = entries.map((e, i) => {
     const rank = i + 1;
     const rankCls = rank === 1 ? 'r1' : rank === 2 ? 'r2' : rank === 3 ? 'r3' : '';
     const rankContent = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : String(rank);
-    const isMe = e.anonId === myAnonId;
+    const isMe = !!e.isMe;
     const surrendered = !e.won;
     const stepsTxt = e.won
       ? `<div class="dr-steps">${e.steps} step${e.steps === 1 ? '' : 's'}</div>`
@@ -5499,8 +5687,12 @@ function buildDailyShareText(result, streak) {
   } else {
     lines.push(`🏳️ Surrendered${result.closestHops != null ? ' · closest ' + result.closestHops + ' hop' + (result.closestHops === 1 ? '' : 's') : ''}`);
   }
+  if (Array.isArray(result.dists) && result.dists.length) {
+    const shown = result.dists.slice(0, DAILY_SQUARE_MAX);
+    lines.push(shown.map(d => DAILY_SQUARE_EMOJI[dailyStepTier(d)]).join('') + (result.dists.length > DAILY_SQUARE_MAX ? '…' : ''));
+  }
   if (streak > 0) lines.push(`🔥 ${streak} day streak`);
-  lines.push('https://wikispeedrun.io');
+  lines.push('https://wikispeedrun.io/?ref=share');
   return lines.join('\n');
 }
 
@@ -5599,7 +5791,7 @@ async function quickPlay(btn) {
       // Quick Play skews popular: 10K–1M monthly views filters out the obscure
       // long-tail so newcomers don't get stuck on an article with few links.
       viewRange: [10000, 1000000],
-      lang: wikiLangChoice,
+      safeMode: savedSafeMode(),
     });
     if (result.ok) {
       currentRoomCode = result.code;
@@ -5667,8 +5859,8 @@ function stepMarathonDuration(delta) {
 // across SP and MP setup surfaces in one place.
 function updateMarathonSetupVisibility(mode, scope) {
   const isMarathon = mode === 'marathon';
-  // Marathon owns its own setup box (lang dropdown + time picker + Start),
-  // so the words/diff sections collapse out of the way entirely.
+  // Marathon owns its own setup box (time picker + Start), so the words/diff
+  // sections collapse out of the way entirely.
   if (scope === 'sp') {
     const diff = document.querySelector('#sp-setup .diff-form-group');
     if (diff) diff.style.display = isMarathon ? 'none' : '';
@@ -5749,7 +5941,7 @@ function renderSpRoundWords() {
           <input type="text" class="rw-input rw-origin" id="spRwOrigin" placeholder="e.g. Pizza" onfocus="this.value=''" autocomplete="off" />
           <ul class="autocomplete-list" id="acSpRwOrigin"></ul>
         </div>
-        <button class="rw-random-btn" id="spRwRandOrigin" onclick="randomizeWord('spRwOrigin')">?</button>
+        <button class="rw-random-btn" id="spRwRandOrigin" onclick="randomizeWord('spRwOrigin')" aria-label="Random article" title="Random article">${DICE_SVG}</button>
       </div>
       <div class="rw-arrow">↓</div>
       <div class="rw-row">
@@ -5757,7 +5949,7 @@ function renderSpRoundWords() {
           <input type="text" class="rw-input rw-dest" id="spRwDest" placeholder="e.g. Moon" onfocus="this.value=''" autocomplete="off" />
           <ul class="autocomplete-list" id="acSpRwDest"></ul>
         </div>
-        <button class="rw-random-btn rw-dest-btn" id="spRwRandDest" onclick="randomizeWord('spRwDest')">?</button>
+        <button class="rw-random-btn rw-dest-btn" id="spRwRandDest" onclick="randomizeWord('spRwDest')" aria-label="Random article" title="Random article">${DICE_SVG}</button>
       </div>
     `;
   } else {
@@ -5767,7 +5959,7 @@ function renderSpRoundWords() {
           <input type="text" class="rw-input rw-dest" id="spRwTarget1" placeholder="Target" onfocus="this.value=''" autocomplete="off" />
           <ul class="autocomplete-list" id="acSpRwTarget1"></ul>
         </div>
-        <button class="rw-random-btn rw-dest-btn" id="spRwRandTarget1" onclick="randomizeWord('spRwTarget1')">?</button>
+        <button class="rw-random-btn rw-dest-btn" id="spRwRandTarget1" onclick="randomizeWord('spRwTarget1')" aria-label="Random article" title="Random article">${DICE_SVG}</button>
       </div>
       <div class="rw-arrow">↑</div>
       <div class="rw-row">
@@ -5775,7 +5967,7 @@ function renderSpRoundWords() {
           <input type="text" class="rw-input rw-origin" id="spRwTarget2" placeholder="Start here" onfocus="this.value=''" autocomplete="off" />
           <ul class="autocomplete-list" id="acSpRwTarget2"></ul>
         </div>
-        <button class="rw-random-btn" id="spRwRandTarget2" onclick="randomizeWord('spRwTarget2')">?</button>
+        <button class="rw-random-btn" id="spRwRandTarget2" onclick="randomizeWord('spRwTarget2')" aria-label="Random article" title="Random article">${DICE_SVG}</button>
       </div>
       <div class="rw-arrow">↓</div>
       <div class="rw-row">
@@ -5783,11 +5975,10 @@ function renderSpRoundWords() {
           <input type="text" class="rw-input rw-dest" id="spRwTarget3" placeholder="Target" onfocus="this.value=''" autocomplete="off" />
           <ul class="autocomplete-list" id="acSpRwTarget3"></ul>
         </div>
-        <button class="rw-random-btn rw-dest-btn" id="spRwRandTarget3" onclick="randomizeWord('spRwTarget3')">?</button>
+        <button class="rw-random-btn rw-dest-btn" id="spRwRandTarget3" onclick="randomizeWord('spRwTarget3')" aria-label="Random article" title="Random article">${DICE_SVG}</button>
       </div>
     `;
   }
-  applyInputPlaceholders();
 }
 
 function updateSinglePlayerDiffSlider() {
@@ -5833,7 +6024,7 @@ async function startSinglePlayer(btn) {
     name: 'Single Player',
     mode: currentGameMode,
     viewRange: spDifficulty,
-    lang: wikiLangChoice,
+    safeMode: savedSafeMode(),
   };
   if (currentGameMode === 'marathon') {
     payload.duration = marathonDurationKey;
@@ -5842,33 +6033,33 @@ async function startSinglePlayer(btn) {
     const destEl = document.getElementById('spRwDest');
     const origin = originEl?.value.trim();
     const dest = destEl?.value.trim();
-    if (!origin || !dest) {
-      if (!origin) shakeInput(originEl);
-      if (!dest) shakeInput(destEl);
-      return;
-    }
-    if (origin.toLowerCase() === dest.toLowerCase()) {
+    // Empty boxes mean "pick for me": the server fills in whichever article
+    // is missing (respecting the difficulty slider), so Start never dead-ends.
+    if (origin && dest && origin.toLowerCase() === dest.toLowerCase()) {
       shakeInput(originEl);
       shakeInput(destEl);
       return;
     }
-    payload.origin = origin;
-    payload.destination = dest;
+    if (origin) payload.origin = origin;
+    if (dest) payload.destination = dest;
   } else {
     const els = [1, 2, 3].map(n => document.getElementById(`spRwTarget${n}`));
     const targets = els.map(el => el?.value.trim());
-    if (targets.some(t => !t)) {
+    // All three empty: let the server pick the set. Partly filled still
+    // shakes the empty ones, since the server needs all three or none.
+    const allEmpty = targets.every(t => !t);
+    if (!allEmpty && targets.some(t => !t)) {
       els.forEach((el, i) => { if (!targets[i]) shakeInput(el); });
       return;
     }
     const lowers = targets.map(t => t.toLowerCase());
     const dupes = new Set();
     lowers.forEach((t, i) => { lowers.forEach((t2, j) => { if (i !== j && t === t2) { dupes.add(i); dupes.add(j); } }); });
-    if (dupes.size > 0) {
+    if (!allEmpty && dupes.size > 0) {
       els.forEach((el, i) => { if (dupes.has(i)) shakeInput(el); });
       return;
     }
-    payload.targets = [targets[1], targets[0], targets[2]];
+    if (!allEmpty) payload.targets = [targets[1], targets[0], targets[2]];
   }
   // Validation passed — show the spinner. Marathon's first target can take
   // a few seconds while the server warms candidates; classic/tri are usually
@@ -5942,8 +6133,8 @@ function updateMultiplayerDiffSlider() {
 function renderRoundWords() {
   const container = document.getElementById('roundWordsInputs');
   const section = document.getElementById('roundWordsSection');
-  // Marathon: section chrome (lang dropdown + Start) stays visible via
-  // updateMarathonSetupVisibility; only skip populating the word inputs.
+  // Marathon: updateMarathonSetupVisibility owns the section's visibility;
+  // only skip populating the word inputs.
   if (mpCurrentMode === 'marathon') {
     container.innerHTML = '';
     return;
@@ -5960,7 +6151,7 @@ function renderRoundWords() {
           <input type="text" class="rw-input rw-origin" id="rwOrigin" placeholder="e.g. Pizza" ${disabled} onfocus="this.value=''" autocomplete="off" />
           <ul class="autocomplete-list" id="acRwOrigin"></ul>
         </div>
-        <button class="rw-random-btn" id="rwRandOrigin" onclick="randomizeWord('rwOrigin')" ${btnStyle}>?</button>
+        <button class="rw-random-btn" id="rwRandOrigin" onclick="randomizeWord('rwOrigin')" ${btnStyle} aria-label="Random article" title="Random article">${DICE_SVG}</button>
       </div>
       <div class="rw-arrow">↓</div>
       <div class="rw-row">
@@ -5968,14 +6159,13 @@ function renderRoundWords() {
           <input type="text" class="rw-input rw-dest" id="rwDest" placeholder="e.g. Moon" ${disabled} onfocus="this.value=''" autocomplete="off" />
           <ul class="autocomplete-list" id="acRwDest"></ul>
         </div>
-        <button class="rw-random-btn rw-dest-btn" id="rwRandDest" onclick="randomizeWord('rwDest')" ${btnStyle}>?</button>
+        <button class="rw-random-btn rw-dest-btn" id="rwRandDest" onclick="randomizeWord('rwDest')" ${btnStyle} aria-label="Random article" title="Random article">${DICE_SVG}</button>
       </div>
     `;
     if (isHost) {
       document.getElementById('rwOrigin')?.addEventListener('input', (e) => { if (e.isComposing) return; fetchAutocomplete(e.target.value, 'acRwOrigin', 'rwOrigin'); });
       document.getElementById('rwDest')?.addEventListener('input', (e) => { if (e.isComposing) return; fetchAutocomplete(e.target.value, 'acRwDest', 'rwDest'); validateDestInput(e.target); });
     }
-    applyInputPlaceholders();
   } else {
     container.innerHTML = `
       <div class="rw-row">
@@ -5983,7 +6173,7 @@ function renderRoundWords() {
           <input type="text" class="rw-input rw-dest" id="rwTarget1" placeholder="Target" ${disabled} onfocus="this.value=''" autocomplete="off" />
           <ul class="autocomplete-list" id="acRwTarget1"></ul>
         </div>
-        <button class="rw-random-btn rw-dest-btn" id="rwRandTarget1" onclick="randomizeWord('rwTarget1')" ${btnStyle}>?</button>
+        <button class="rw-random-btn rw-dest-btn" id="rwRandTarget1" onclick="randomizeWord('rwTarget1')" ${btnStyle} aria-label="Random article" title="Random article">${DICE_SVG}</button>
       </div>
       <div class="rw-arrow">↑</div>
       <div class="rw-row">
@@ -5991,7 +6181,7 @@ function renderRoundWords() {
           <input type="text" class="rw-input rw-origin" id="rwTarget2" placeholder="Start here" ${disabled} onfocus="this.value=''" autocomplete="off" />
           <ul class="autocomplete-list" id="acRwTarget2"></ul>
         </div>
-        <button class="rw-random-btn" id="rwRandTarget2" onclick="randomizeWord('rwTarget2')" ${btnStyle}>?</button>
+        <button class="rw-random-btn" id="rwRandTarget2" onclick="randomizeWord('rwTarget2')" ${btnStyle} aria-label="Random article" title="Random article">${DICE_SVG}</button>
       </div>
       <div class="rw-arrow">↓</div>
       <div class="rw-row">
@@ -5999,7 +6189,7 @@ function renderRoundWords() {
           <input type="text" class="rw-input rw-dest" id="rwTarget3" placeholder="Target" ${disabled} onfocus="this.value=''" autocomplete="off" />
           <ul class="autocomplete-list" id="acRwTarget3"></ul>
         </div>
-        <button class="rw-random-btn rw-dest-btn" id="rwRandTarget3" onclick="randomizeWord('rwTarget3')" ${btnStyle}>?</button>
+        <button class="rw-random-btn rw-dest-btn" id="rwRandTarget3" onclick="randomizeWord('rwTarget3')" ${btnStyle} aria-label="Random article" title="Random article">${DICE_SVG}</button>
       </div>
     `;
     if (isHost) {
@@ -6007,7 +6197,6 @@ function renderRoundWords() {
         document.getElementById(`rwTarget${n}`)?.addEventListener('input', (e) => { if (e.isComposing) return; fetchAutocomplete(e.target.value, `acRwTarget${n}`, `rwTarget${n}`); });
       });
     }
-    applyInputPlaceholders();
   }
 }
 
@@ -6039,7 +6228,7 @@ async function randomizeWord(inputId) {
     let attempts = 0;
     while (!word && attempts < 3) {
       attempts++;
-      const result = await send({ type: 'random_word', viewRange: spDifficulty || null, lang: wikiLangChoice });
+      const result = await send({ type: 'random_word', viewRange: spDifficulty || null });
       if (result.cooldown) {
         const input = document.getElementById(inputId);
         btn.classList.remove('loading');
@@ -6103,8 +6292,7 @@ function broadcastWordUpdate() {
 }
 
 // Debounce autocomplete calls. Without this, every keystroke fires a
-// Wikipedia opensearch request, which floods under IME composition and
-// triggers rate limits on zh.
+// Wikipedia opensearch request, which floods under IME composition.
 const _acDebounce = new Map(); // listId -> timeout id
 // Bug 3: validate a typed destination's backlink count at type-time, so the
 // user learns it's too isolated BEFORE pressing Start (instead of a post-submit
@@ -6134,7 +6322,7 @@ function validateDestInput(inputEl) {
     let result = _destValidateCache.get(norm);
     if (result === undefined) {
       try {
-        const resp = await fetch(`/validate-dest?title=${encodeURIComponent(title.replace(/ /g, '_'))}&lang=${activeWikiLang()}`);
+        const resp = await fetch(`/validate-dest?title=${encodeURIComponent(title.replace(/ /g, '_'))}`);
         result = await resp.json();
         if (result && result.ok) _destValidateCache.set(norm, result);
       } catch { return; }
@@ -6163,10 +6351,7 @@ async function fetchAutocomplete(query, listId, inputId) {
 }
 async function _fetchAutocompleteNow(query, listId, inputId) {
   try {
-    const lang = activeWikiLang();
-    const variant = wikiVariant(lang);
-    const variantQS = variant ? `&variant=${variant}` : '';
-    const resp = await fetchWithTimeout(`https://${wikiHost(lang)}/w/api.php?action=opensearch&search=${encodeURIComponent(query)}&limit=5&namespace=0&origin=*${variantQS}`);
+    const resp = await fetchWithTimeout(`https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(query)}&limit=5&namespace=0&origin=*`);
     const [, titles] = await resp.json();
     const list = document.getElementById(listId);
     // Build items with DOM APIs so titles containing quotes can't break out
@@ -6192,11 +6377,12 @@ function selectArticle(inputId, listId, title) {
 
 async function createMultiplayerRoom() {
   const name = document.getElementById('mpName').value.trim() || 'Player';
+  rememberMpName();
   try {
     await connectSSE();
     mpIsHost = true;
     isHost = true;
-    await send({ type: 'create_room', name, lang: wikiLangChoice });
+    await send({ type: 'create_room', name });
   } catch(e) {
     showError('mpError', 'Could not connect to server.');
   }
@@ -6214,6 +6400,7 @@ function shakeInput(el) {
 
 async function joinMultiplayerRoom() {
   const name = document.getElementById('mpName').value.trim() || 'Player';
+  rememberMpName();
   const codeInput = document.getElementById('mpRoomCode');
   const code = codeInput.value.trim().toUpperCase();
   if (!code) return;
@@ -6264,12 +6451,109 @@ function backToMultiplayerSetup() {
   clearStartWatchdog(); // a spinning Start handshake we're abandoning shouldn't toast later
   currentRoomCode = null;
   isHost = false;
-  currentGameLang = null;
   // Clean up any in-flight animations from the prior session.
   document.querySelectorAll('.checkpoint-flash').forEach(el => el.remove());
   document.querySelectorAll('.lb-rider.checkpoint-pulse').forEach(el => el.classList.remove('checkpoint-pulse'));
-  updateWikiLangToggleUI();
   showScreen('mp-setup');
+}
+
+// ─── Invite links ───
+// wikispeedrun.io/r/<code> opens the join screen with the code filled in, so
+// friends join with one tap instead of typing a code. The server serves the
+// home document for /r/<code>; the router below reads the code.
+let inviteCode = null;
+
+function inviteUrlFor(code) {
+  return `${location.origin}/r/${code}`;
+}
+
+// Phones get the native share sheet; desktops (where navigator.share also
+// exists on Mac/Windows Chrome) just copy, which is what people expect there.
+function useShareSheet() {
+  try { return !!navigator.share && matchMedia('(pointer: coarse)').matches; } catch (e) { return false; }
+}
+
+// Name typed for multiplayer is remembered (shared with the daily
+// leaderboard name) so invite joins and repeat rooms are one tap.
+function rememberMpName() {
+  const n = document.getElementById('mpName')?.value.trim();
+  if (n) setPlayerName(n);
+}
+
+function enterInviteMode(code) {
+  inviteCode = code;
+  const nameEl = document.getElementById('mpName');
+  if (nameEl && !nameEl.value) nameEl.value = getPlayerName();
+  document.getElementById('inviteCodeLabel').textContent = code;
+  document.getElementById('inviteJoin').style.display = '';
+  document.getElementById('mpActionsRow').style.display = 'none';
+  showScreen('mp-setup');
+  // No saved name yet: put the cursor in the name box (Enter joins).
+  if (nameEl && !nameEl.value) setTimeout(() => nameEl.focus(), 50);
+}
+
+function exitInviteMode() {
+  inviteCode = null;
+  document.getElementById('inviteJoin').style.display = 'none';
+  document.getElementById('mpActionsRow').style.display = '';
+  // Drop /r/<code> from the address bar so a refresh doesn't re-open it.
+  try { history.replaceState(null, '', '/multiplayer'); } catch (e) {}
+}
+
+async function joinFromInvite(btn) {
+  if (!inviteCode || btn?.classList.contains('btn-loading')) return;
+  const name = document.getElementById('mpName').value.trim() || 'Player';
+  rememberMpName();
+  setBtnLoading(btn, true);
+  try {
+    await connectSSE();
+    const result = await send({ type: 'join_room', code: inviteCode, name });
+    if (result && result.ok) return; // room_joined switches to the lobby
+    // send() already printed the server's reason in #mpError. A room that is
+    // gone or full can't be joined by retrying: offer the normal screen.
+    if (result && (result.error === 'Room not found' || /full/i.test(result.error || ''))) exitInviteMode();
+  } catch (e) {
+    showError('mpError', 'Could not connect to server.');
+  } finally {
+    setBtnLoading(btn, false);
+  }
+}
+
+// Lobby: native share sheet where there is one (phones), else copy the link.
+async function shareInviteLink(btn) {
+  if (!currentRoomCode) return;
+  const url = inviteUrlFor(currentRoomCode);
+  const label = document.getElementById('inviteLinkLabel');
+  const flash = (text) => {
+    if (!label) return;
+    label.textContent = text;
+    clearTimeout(label._t);
+    label._t = setTimeout(() => { label.textContent = useShareSheet() ? 'Share invite link' : 'Copy invite link'; }, 1800);
+  };
+  if (useShareSheet()) {
+    try { await navigator.share({ title: 'WikiSpeedrun', text: 'Race me on WikiSpeedrun', url }); return; }
+    catch (e) { if (e && e.name === 'AbortError') return; /* fall through to copy */ }
+  }
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error('no clipboard');
+    await navigator.clipboard.writeText(url);
+    flash('Link copied!');
+  } catch (e) {
+    const ta = document.createElement('textarea');
+    ta.value = url; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (_) {}
+    document.body.removeChild(ta);
+    flash(ok ? 'Link copied!' : 'Copy the link below');
+  }
+}
+
+function renderInviteLink() {
+  const textEl = document.getElementById('inviteLinkText');
+  const label = document.getElementById('inviteLinkLabel');
+  if (textEl) textEl.textContent = currentRoomCode ? inviteUrlFor(currentRoomCode).replace(/^https?:\/\//, '') : '';
+  if (label) label.textContent = useShareSheet() ? 'Share invite link' : 'Copy invite link';
 }
 
 function copyCode() {
@@ -6366,6 +6650,11 @@ function setBtnLoading(btn, isLoading) {
 let _startWatchdogTimer = null;
 function armStartWatchdog() {
   clearStartWatchdog();
+  // Solo and daily starts arm this after the start request's reply, and the
+  // server's game_start SSE usually lands first. If the game screen is already
+  // up there is no handshake left to wait for, and arming here would toast
+  // "didn't start" 15s into a game that is running fine.
+  if (document.getElementById('game')?.classList.contains('active')) return;
   _startWatchdogTimer = setTimeout(() => {
     _startWatchdogTimer = null;
     document.querySelectorAll('.btn-loading').forEach(b => b.classList.remove('btn-loading'));
@@ -6388,6 +6677,34 @@ window.addEventListener('beforeunload', (e) => {
 });
 
 // ─── Game ───
+// Host only, multiplayer classic/tri: ends the round for everyone, since the
+// surrender vote needs every player and one idle tab stalls it. Two taps, so a
+// stray click can't end a room's round.
+function updateEndRoundBtn() {
+  const btn = document.getElementById('endRoundBtn');
+  if (!btn) return;
+  const show = isHost && !isSinglePlayer && !!currentRoomCode && currentGameMode !== 'marathon'
+    && document.getElementById('game').classList.contains('active');
+  btn.style.display = show ? '' : 'none';
+  if (!show) resetEndRoundBtn(btn);
+}
+function resetEndRoundBtn(btn) {
+  clearTimeout(btn._t);
+  btn.classList.remove('armed');
+  btn.textContent = 'End round for everyone';
+}
+function endRoundForAll(btn) {
+  if (!btn.classList.contains('armed')) {
+    btn.classList.add('armed');
+    btn.textContent = 'Tap again to end it for everyone';
+    clearTimeout(btn._t);
+    btn._t = setTimeout(() => resetEndRoundBtn(btn), 4000);
+    return;
+  }
+  resetEndRoundBtn(btn);
+  send({ type: 'end_round' });
+}
+
 function sendGiveUpVote() {
   send({ type: 'give_up_vote' });
   const btn = document.querySelector('.surrender-btn');
@@ -6441,9 +6758,10 @@ function showError(elementId, msg) {
   }
 }
 
-function showGlobalToast(msg, durationMs = 5000) {
+function showGlobalToast(msg, durationMs = 5000, kind = '') {
   const el = document.getElementById('globalToast');
   if (!el) return;
+  el.classList.toggle('heat', kind === 'heat');
   el.textContent = msg;
   el.classList.add('show');
   clearTimeout(el._hideT);
@@ -6513,13 +6831,19 @@ function handleServerMessage(msg) {
       break;
     }
 
+    case 'safe_mode_changed':
+      applySafeMode(msg.on, msg.pattern);
+      break;
+
     case 'room_created':
       currentRoomCode = msg.code;
       isHost = true;
       mpIsHost = true;
       isSinglePlayer = msg.singlePlayer || false;
-      if (msg.lang) { currentGameLang = msg.lang; updateWikiLangToggleUI(); }
       document.getElementById('codeText').textContent = msg.code;
+      renderInviteLink();
+      applySafeMode(false, null); // a new room starts off; the host's saved choice is re-sent below
+      if (!isSinglePlayer && !msg.daily && savedSafeMode()) send({ type: 'set_safe_mode', on: true });
       // Daily indicator pill on the in-game header — show only for daily
       // rooms. Hidden by default + reset on every new room creation so a
       // prior daily session's pill doesn't leak into a regular game.
@@ -6547,18 +6871,47 @@ function handleServerMessage(msg) {
       currentRoomCode = msg.code;
       isHost = false;
       mpIsHost = false;
-      // Joining players use the room's (host-chosen) language, not their own
-      // toggle — otherwise they'd fetch articles from the wrong Wikipedia.
-      if (msg.lang) { currentGameLang = msg.lang; updateWikiLangToggleUI(); }
       document.getElementById('codeText').textContent = msg.code;
+      renderInviteLink();
       applyHostLobbyControls(false);
       renderRoundWords();
       showScreen('lobby');
       break;
 
-    case 'player_list':
+    case 'player_list': {
+      const wasHost = isHost;
       renderPlayerList(msg.players, msg.host);
+      // Players who left take their pill with them. playerProgress was never
+      // pruned, so a guest who closed the tab stayed on the race bar while the
+      // give-up count said "0/1 voted".
+      const present = new Set(msg.players.map(p => p.id));
+      let pruned = false;
+      for (const pid of [...playerProgress.keys()]) {
+        if (!present.has(pid)) { playerProgress.delete(pid); playerColors.delete(pid); pruned = true; }
+      }
+      // The bar also draws from the last distance_update, which lists every
+      // player the server knew at the time.
+      if (latestDistData) {
+        for (const pid of Object.keys(latestDistData)) {
+          if (!present.has(pid)) { delete latestDistData[pid]; pruned = true; }
+        }
+      }
+      if (pruned && document.getElementById('game').classList.contains('active')) renderPlayersBar(latestDistData);
+      updateEndRoundBtn(); // a new host mid-round gets the button
+      // Promoted to host on the results screen (the old host went home or
+      // closed the tab, and the 30s grace passed): the buttons were set once
+      // at render time, so the new host sat on "Waiting for host…" with no way
+      // out but a reload.
+      if (isHost && !wasHost && document.getElementById('results').classList.contains('active')) {
+        const playAgainBtn = document.getElementById('playAgainBtn');
+        const backBtn = document.getElementById('backToHomeBtn');
+        const waitEl = document.getElementById('waitingForHost');
+        if (playAgainBtn) playAgainBtn.style.display = '';
+        if (backBtn) backBtn.style.display = '';
+        if (waitEl) waitEl.style.display = 'none';
+      }
       break;
+    }
 
     case 'mode_changed':
       mpCurrentMode = msg.mode;
@@ -6575,16 +6928,6 @@ function handleServerMessage(msg) {
         setMarathonDuration(msg.duration);
       }
       renderRoundWords();
-      break;
-
-    case 'lang_changed':
-      // Host switched the room's wiki language. Update local state + wipe
-      // any words that were typed in the old language.
-      currentGameLang = msg.lang;
-      updateLangDropdowns();
-      document.querySelectorAll('.rw-input').forEach(input => { input.value = ''; });
-      document.querySelectorAll('.autocomplete-list.show').forEach(l => l.classList.remove('show'));
-      if (typeof summaryCache !== 'undefined') summaryCache.clear();
       break;
 
     case 'difficulty_changed':
@@ -6633,8 +6976,11 @@ function handleServerMessage(msg) {
     case 'marathon_clock_start':
       // The clock was deferred past game_start while warming; this is the real
       // deadline. Switch the frozen placeholder over to a live countdown.
+      // Anchor it to OUR clock: the server sends its own `now` next to endsAt,
+      // and comparing its clock with the device's showed 0:00 with time left
+      // (or time left at the buzzer) on any device whose clock is off.
       marathonClockPending = false;
-      marathonEndsAt = msg.endsAt;
+      marathonEndsAt = msg.now ? Date.now() + (msg.endsAt - msg.now) : msg.endsAt;
       break;
 
     case 'marathon_target_hit': {
@@ -6652,9 +6998,12 @@ function handleServerMessage(msg) {
     }
 
     case 'game_start':
+      // A resend after a reconnect: only useful if we missed the original
+      // (still in the lobby). If the game screen is already up this would
+      // reset the path and the clock.
+      if (msg.resume && document.getElementById('game').classList.contains('active')) break;
+      if (msg.resume && document.getElementById('results').classList.contains('active')) break;
       clearStartWatchdog(); // handshake completed — cancel the stuck-spinner timeout
-      // Lock the game language so the toggle can't retarget mid-play.
-      if (msg.lang) { currentGameLang = msg.lang; updateWikiLangToggleUI(); }
       startGameUI(msg);
       // Fire a Google Analytics event so we can track game starts by
       // mode/language/difficulty without leaving Railway logs. game_started
@@ -6722,6 +7071,10 @@ function handleServerMessage(msg) {
       break;
 
     case 'game_over':
+      // A resend after a reconnect: skip if the results are already showing,
+      // or if we are past them (lobby/home); it is for the player who was
+      // still on the game screen when the round ended without them hearing.
+      if (msg.resume && !document.getElementById('game').classList.contains('active')) break;
       // Daily challenge: persist the result + streak BEFORE rendering so the
       // result screen can read fresh state. Idempotent — safe if game_over
       // fires more than once for the same room.
@@ -6752,6 +7105,7 @@ function handleServerMessage(msg) {
       // Guardrail in startGameForRoom refused to start the game (e.g.,
       // destination too isolated). Show the reason and route to the right
       // recovery screen depending on context.
+      clearStartWatchdog(); // this IS the answer; without it a second "didn't start" toast followed 15s later
       showGlobalToast(msg.message || 'Game could not start. Try a different destination.', 6000);
       if (msg.daily) {
         // Daily user didn't come from SP setup — they tapped the home CTA.
@@ -6780,20 +7134,20 @@ function handleServerMessage(msg) {
 }
 
 // Lock (guest) or unlock (host) the lobby's host-only setup controls: the mode
-// selector, the difficulty section, and the room-language dropdown. Extracted
-// so the host path (room_created), the guest path (room_joined), AND host
-// promotion (renderPlayerList, when the original host leaves) stay in sync —
-// previously a promoted guest was left with a greyed-out, unusable setup and a
-// Start button that failed validation, bricking the room.
+// selector and the difficulty section. Extracted so the host path
+// (room_created), the guest path (room_joined), AND host promotion
+// (renderPlayerList, when the original host leaves) stay in sync — previously
+// a promoted guest was left with a greyed-out, unusable setup and a Start
+// button that failed validation, bricking the room.
 function applyHostLobbyControls(host) {
   const sel = document.getElementById('mpModeSelector');
   const diff = document.getElementById('mpDiffSection');
   if (sel) { sel.style.opacity = host ? '1' : '0.5'; sel.style.pointerEvents = host ? 'auto' : 'none'; }
   if (diff) { diff.style.opacity = host ? '1' : '0.5'; diff.style.pointerEvents = host ? 'auto' : 'none'; }
-  document.querySelectorAll('#roundWordsSection .lang-dropdown').forEach(dd => {
-    dd.style.opacity = host ? '' : '0.5';
-    dd.style.pointerEvents = host ? '' : 'none';
-  });
+  const safeRow = document.getElementById('mpSafeRow');
+  const safeBox = document.getElementById('mpSafeToggle');
+  if (safeRow) safeRow.classList.toggle('locked', !host);
+  if (safeBox) safeBox.disabled = !host;
 }
 
 function renderPlayerList(players, hostId) {
@@ -6804,7 +7158,7 @@ function renderPlayerList(players, hostId) {
   // Sync the local isHost flag against the authoritative host id from the
   // server. Without this, when the original host disconnects and the server
   // promotes the next player, that player's client wouldn't unlock the host
-  // controls (Start button, mode selector, language toggle).
+  // controls (Start button, mode selector, difficulty).
   const wasHost = isHost;
   if (hostId && myPlayerId) isHost = (hostId === myPlayerId);
   // Keep the host-only setup controls in sync with the (possibly just-changed)
@@ -6823,6 +7177,8 @@ function renderPlayerList(players, hostId) {
     return li;
   }));
   document.getElementById('waitingText').style.display = players.length < 2 ? '' : 'none';
+  const countLabel = document.getElementById('playerCountLabel');
+  if (countLabel) countLabel.textContent = `Players (${players.length}):`;
   const canStart = isHost && players.length >= 2;
   document.getElementById('mpStartBtn').style.display = canStart ? '' : 'none';
   // Marathon's Start button lives inside the setup box. Keep it visible for
@@ -6886,7 +7242,8 @@ function startGameUI(msg) {
     // marathon_clock_start with the real deadline.
     marathonClockPending = !!msg.clockPending;
     marathonDurationMs = msg.duration || 0;
-    marathonEndsAt = msg.endsAt;
+    // Same clock anchoring as marathon_clock_start.
+    marathonEndsAt = (msg.now && msg.endsAt) ? Date.now() + (msg.endsAt - msg.now) : msg.endsAt;
     marathonScore = { raw: 0, clicks: 0, skips: 0, completed: 0, bonus: 0, total: 0 };
     marathonTarget = null;
     triTargets = [];
@@ -6913,8 +7270,10 @@ function startGameUI(msg) {
   surrenderBtn.style.display = msg.mode === 'marathon' ? 'none' : '';
   latestDistData = null;
   prevPositions.clear();
+  podWasClose.clear();
   document.getElementById('lbRiders').innerHTML = '';
   showScreen('game');
+  updateEndRoundBtn();
   const playersBar = document.getElementById('playersBar');
   playersBar.style.display = 'flex';
   playersBar.classList.toggle('tri-mode', currentGameMode === 'tri');
@@ -7152,40 +7511,23 @@ async function toggleSummary(el, title) {
   // Stop click from propagating (so doc listener doesn't immediately close it)
   try {
     const articleTitle = title.replace(/ /g, '_');
-    const lang = activeWikiLang();
-    const cacheK = `${lang}:${articleTitle}`;
-    let summary = summaryCache.get(cacheK);
+    let summary = summaryCache.get(articleTitle);
     if (!summary) {
-      // For zh we need `variant=zh-cn` applied or the extract comes back
-      // Traditional-heavy. The REST summary endpoint doesn't honor variant,
-      // so we fetch the plain extract via the action API instead.
-      let full = '';
-      const variant = wikiVariant(lang);
-      if (variant) {
-        const url = `https://${wikiHost(lang)}/w/api.php?action=query&prop=extracts&exintro=1&explaintext=1&redirects=1&format=json&origin=*&variant=${variant}&titles=${encodeURIComponent(articleTitle)}`;
-        const res = await fetchWithTimeout(url);
-        const data = await res.json();
-        const page = Object.values(data.query?.pages || {})[0];
-        full = page?.extract || '';
-      } else {
-        const res = await fetchWithTimeout(`https://${wikiHost(lang)}/api/rest_v1/page/summary/${encodeURIComponent(articleTitle)}`);
-        const data = await res.json();
-        full = data.extract || '';
-      }
+      const res = await fetchWithTimeout(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(articleTitle)}`);
+      const data = await res.json();
+      const full = data.extract || '';
       // Get first sentence — handle abbreviations, decimals, etc.
-      // Chinese uses 。 as sentence terminator; English uses .!?.
-      const sentenceEnd = /[.!?。！？]/;
       const abbr = /(?:Mr|Mrs|Ms|Dr|Prof|Sr|Jr|St|Mt|Ft|Lt|Gen|Gov|Sgt|Cpl|Pvt|Rev|Hon|Pres|Inc|Corp|Ltd|Co|vs|etc|approx|dept|est|vol|no|op|al|e\.g|i\.e|U\.S|U\.K|U\.N)\./gi;
       // Replace abbreviation dots with a placeholder
       const safe = full.replace(abbr, m => m.slice(0, -1) + '\x00')
                        .replace(/\d+\.\d+/g, m => m.replace('.', '\x00')); // protect decimals
-      const endMatch = safe.match(sentenceEnd);
+      const endMatch = safe.match(/[.!?]/);
       if (endMatch) {
         summary = full.substring(0, endMatch.index + 1);
       } else {
         summary = full;
       }
-      summaryCachePut(cacheK, summary);
+      summaryCachePut(articleTitle, summary);
     }
     if (activeTooltip === tooltip) tooltip.textContent = summary || 'No summary available.';
   } catch (e) {
@@ -7202,23 +7544,18 @@ document.addEventListener('click', (e) => {
   }
 });
 
-// Known Wikipedia namespace prefixes (English canonical + Simplified-Chinese
-// localized). A link whose title begins "<one of these>:" points at chrome
-// (File:, Category:, Talk:, 分类:, …), not an article, so we render it as a
-// dead link. Matching the explicit set — rather than the old positional
-// "colon before index 15" heuristic — keeps legitimate titles with an early
-// colon clickable (e.g. "Mission: Impossible", "Spider-Man: Homecoming").
+// Known English Wikipedia namespace prefixes. A link whose title begins
+// "<one of these>:" points at chrome (File:, Category:, Talk:, …), not an
+// article, so we render it as a dead link. Matching the explicit set — rather
+// than the old positional "colon before index 15" heuristic — keeps
+// legitimate titles with an early colon clickable (e.g. "Mission: Impossible",
+// "Spider-Man: Homecoming").
 const WIKI_NAMESPACES = new Set([
   'special', 'media', 'wikipedia', 'wikipedia talk', 'wp', 'project',
   'user', 'user talk', 'file', 'file talk', 'image', 'help', 'help talk',
   'talk', 'template', 'template talk', 'category', 'category talk',
   'portal', 'portal talk', 'module', 'module talk', 'draft', 'draft talk',
   'mediawiki', 'mediawiki talk', 'timedtext', 'book',
-  // Simplified-Chinese localized namespaces
-  '维基百科', '维基百科讨论', '帮助', '帮助讨论', '分类', '分类讨论',
-  '模板', '模板讨论', '模块', '模块讨论', '门户', '门户讨论',
-  '文件', '文件讨论', '用户', '用户讨论', '草稿', '草稿讨论',
-  '话题', '讨论',
 ]);
 function isNamespaceLink(target) {
   // Strip a single leading ':' (the forced-link form, e.g. ":Category:Foo")
@@ -7228,6 +7565,68 @@ function isNamespaceLink(target) {
   if (colon <= 0) return false;
   const prefix = t.slice(0, colon).replace(/_/g, ' ').trim().toLowerCase();
   return WIKI_NAMESPACES.has(prefix);
+}
+
+// ─── Article load timing → /perf ───
+// loadArticle fetches article HTML straight from Wikipedia, so the server never
+// sees how long a page takes to appear (a streamer saw ~3s loads; we had no
+// numbers). Sampling is decided ONCE per page session (~25%), not per load: a
+// sampled session reports every load and `sid` groups them, so one player's
+// loads can be compared with each other. `n` numbers a session's reports, so
+// one lost on the way (server rate limit, network) shows as a gap instead of
+// silently skewing that session. Superseded loads are never reported.
+// Overhead is a few timestamps per load and one beacon in sampled sessions, and
+// the reporting must never throw into gameplay.
+const ARTICLE_PERF_SAMPLE_RATE = 0.25;
+const _articlePerfSid = Math.random() < ARTICLE_PERF_SAMPLE_RATE
+  ? Math.random().toString(16).slice(2, 14).padEnd(12, '0')
+  : null;
+let _articlePerfN = 0;
+function perfNow() {
+  try { return performance.now(); } catch (e) { return Date.now(); }
+}
+// lp is the timing record loadArticle fills in; err is what the load threw,
+// or null once its content is in and laid out. Sends at most one report per load.
+function reportArticleLoad(lp, title, err) {
+  if (!_articlePerfSid || lp.reported) return;
+  lp.reported = true;
+  try {
+    const failed = err !== null;
+    const r = {
+      ok: !failed,
+      title: String(title).slice(0, 120),
+      lang: 'en', // always English now; kept so article_load lines keep their shape
+      first: lp.first,
+      total_ms: Math.round(perfNow() - lp.t0),
+      sid: _articlePerfSid,
+      n: ++_articlePerfN,
+      net: (navigator.connection && navigator.connection.effectiveType) || null,
+      mobile: !!(window.matchMedia && matchMedia('(pointer: coarse)').matches),
+    };
+    if (lp.fetchMs != null) {
+      r.fetch_ms = Math.round(lp.fetchMs);
+      r.bytes = lp.bytes;
+      if (!failed) r.render_ms = r.total_ms - r.fetch_ms;
+    }
+    if (failed) {
+      // Where it broke: our 12s fetch timeout fired; the connection or body
+      // stream failed (fetch rejects with TypeError); Wikipedia answered
+      // without a usable article (non-2xx); or our own processing failed
+      // after the HTML arrived.
+      const name = err && err.name;
+      r.err = name === 'AbortError' ? 'timeout'
+        : lp.fetchMs != null ? 'render'
+        : name === 'TypeError' ? 'network'
+        : 'http';
+      if (r.err === 'http') r.status = lp.status;
+    }
+    const payload = JSON.stringify(r);
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon('/perf', new Blob([payload], { type: 'application/json' }));
+    } else {
+      fetch('/perf', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload, keepalive: true }).catch(() => {});
+    }
+  } catch (e) { /* instrumentation must never break a load */ }
 }
 
 // ─── Wikipedia Article Loading ─── (simplified, kept from original)
@@ -7251,27 +7650,20 @@ async function loadArticle(title) {
   content.style.display = 'none';
   container.scrollTop = 0;
 
+  // Timing for the sampled /perf beacon (reportArticleLoad). seq 1 is the
+  // page session's first load: usually a cold connection to Wikipedia (only a
+  // lobby autocomplete or summary tooltip could have warmed it).
+  const lp = { t0: perfNow(), first: seq === 1, status: null, fetchMs: null, bytes: null, reported: false };
+
   try {
-    // For languages with a variant (zh → Simplified), use the action=parse
-    // endpoint which returns variant-converted HTML. For plain English, the
-    // REST API gives cleaner Parsoid output — keep using it.
-    const lang = activeWikiLang();
-    const variant = wikiVariant(lang);
-    let html;
-    if (variant) {
-      const parseUrl = `https://${wikiHost(lang)}/w/api.php?action=parse&prop=text&redirects=1&format=json&origin=*&variant=${variant}&page=${encodeURIComponent(title)}`;
-      // Article HTML can be sizeable on slow networks — bump timeout to 12 s.
-      const resp = await fetchWithTimeout(parseUrl, {}, 12000);
-      if (!resp.ok) throw new Error('Article not found');
-      const data = await resp.json();
-      html = data.parse?.text?.['*'];
-      if (!html) throw new Error('Article not found');
-    } else {
-      const apiUrl = `https://${wikiHost(lang)}/api/rest_v1/page/html/${encodeURIComponent(title)}`;
-      const resp = await fetchWithTimeout(apiUrl, {}, 12000);
-      if (!resp.ok) throw new Error('Article not found');
-      html = await resp.text();
-    }
+    const apiUrl = `https://en.wikipedia.org/api/rest_v1/page/html/${encodeURIComponent(title)}`;
+    // Article HTML can be sizeable on slow networks — bump timeout to 12 s.
+    const resp = await fetchWithTimeout(apiUrl, {}, 12000);
+    lp.status = resp.status;
+    if (!resp.ok) throw Object.assign(new Error('Article not found'), { status: resp.status });
+    const html = await resp.text();
+    lp.fetchMs = perfNow() - lp.t0; // response body fully read
+    lp.bytes = html.length;
 
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, 'text/html');
@@ -7332,12 +7724,29 @@ async function loadArticle(title) {
 
     // Process links: only keep Wikipedia internal article links. Namespace
     // links and external/anchor links are rendered as dead grey text.
+    const currentNorm = title.replace(/_/g, ' ').toLowerCase();
     doc.querySelectorAll('a').forEach(a => {
       const href = a.getAttribute('href') || '';
       const wikiMatch = href.match(/^\.\/([^#?]+)/) || href.match(/^\/wiki\/([^#?]+)/);
       const target = wikiMatch ? decodeURIComponent(wikiMatch[1]) : null;
       a.removeAttribute('href');
-      if (target && !isNamespaceLink(target)) {
+      // Red links point at articles that don't exist ("?action=edit&redlink=1",
+      // class "new"); the server accepts the move, Wikipedia answers 404, and
+      // the player gets an error page plus an undo. Dead text instead.
+      const redLink = a.classList.contains('new') || /[?&]redlink=1/.test(href);
+      // A link to the page itself ("§ Eclipses" on Moon) is a scroll, not a
+      // move: it cost a step and reloaded the page at the top.
+      const fragment = href.includes('#') ? href.slice(href.indexOf('#') + 1) : '';
+      const selfLink = target && target.replace(/_/g, ' ').toLowerCase() === currentNorm;
+      if (selfLink && fragment) {
+        let frag = fragment;
+        try { frag = decodeURIComponent(fragment); } catch (_) {}
+        a.setAttribute('data-scroll', frag);
+        a.setAttribute('tabindex', '0');
+        a.setAttribute('role', 'link');
+        a.style.cursor = 'pointer';
+        a.style.color = '#3366cc';
+      } else if (target && !redLink && !selfLink && !isNamespaceLink(target)) {
         a.setAttribute('data-article', target);
         // The href is gone, so without an explicit tabindex+role the link is
         // no longer focusable — keyboard and screen-reader users literally
@@ -7361,6 +7770,7 @@ async function loadArticle(title) {
         const text = h.textContent.trim();
         if (!text) return;
         const id = 'toc-section-' + i;
+        if (h.id) h.setAttribute('data-section-id', h.id); // keep Wikipedia's id for same-page "§" links
         h.id = id;
         tocItems.push(`<a class="wiki-toc-item" href="#${id}">${esc(text)}</a>`);
       });
@@ -7378,7 +7788,7 @@ async function loadArticle(title) {
     if (typeof DOMPurify === 'undefined' || !DOMPurify.sanitize) {
       throw new Error('sanitizer unavailable');
     }
-    const wikiBody = DOMPurify.sanitize(doc.body.innerHTML, { ADD_ATTR: ['data-article', 'tabindex', 'role'] });
+    const wikiBody = DOMPurify.sanitize(doc.body.innerHTML, { ADD_ATTR: ['data-article', 'data-scroll', 'data-section-id', 'tabindex', 'role'] });
     if (seq !== _loadArticleSeq) return; // a newer load superseded us — don't render stale content
     if (title === _forwardNavTitle) _forwardNavTitle = null; // forward move loaded fine — nothing to undo
     content.innerHTML = titleHtml + tocHtml + wikiBody;
@@ -7396,7 +7806,18 @@ async function loadArticle(title) {
         const link = e.target.closest('a[data-article]');
         if (link) {
           e.preventDefault();
-          navigateTo(link.getAttribute('data-article'));
+          const title = link.getAttribute('data-article');
+          if (isBlockedBySafeMode(title)) { showGlobalToast('Safe mode: that article is blocked.', 2500); return; }
+          navigateTo(title);
+          return;
+        }
+        const scrollLink = e.target.closest('a[data-scroll]');
+        if (scrollLink) {
+          e.preventDefault();
+          const frag = scrollLink.getAttribute('data-scroll');
+          const el = document.getElementById(frag)
+            || content.querySelector(`[data-section-id="${CSS.escape(frag)}"]`);
+          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
           return;
         }
         const toc = e.target.closest('.wiki-toc-item');
@@ -7412,12 +7833,20 @@ async function loadArticle(title) {
     }
 
     updateBreadcrumbs();
+    // Report only now: updateBreadcrumbs' scrollWidth read forces the style and
+    // layout of the article just inserted, synchronously, in this same task.
+    // In headless Chrome that was 4-35ms on desktop and 15-78ms at 6x CPU
+    // throttle, against a render_ms of 31-94 / 67-404 that left it out. Paint,
+    // at the next frame, stays out: requestAnimationFrame pauses in background
+    // tabs.
+    reportArticleLoad(lp, title, null);
 
   } catch (err) {
     // A newer load (rapid nav, or a move_rejected/rollback reload) has taken
     // over — don't pop myPath or render an error for this stale load, or we'd
     // double-pop and desync the path from the server.
     if (seq !== _loadArticleSeq) return;
+    reportArticleLoad(lp, title, err);
     // Undo the navigation — go back to previous article.
     // Build with DOM APIs: article titles are user-influenced via the URL/link
     // click and must never be concatenated into HTML strings.
@@ -7427,26 +7856,42 @@ async function loadArticle(title) {
     h.textContent = 'Error loading article';
     content.appendChild(h);
     const p = document.createElement('p');
-    const wikiName = activeWikiLang() === 'zh' ? 'Chinese Wikipedia' : 'English Wikipedia';
-    p.textContent = `Could not load "${failedTitle}". This article may not exist on ${wikiName}.`;
+    p.textContent = `Could not load "${failedTitle}". This article may not exist on English Wikipedia.`;
     content.appendChild(p);
-    if (myPath.length > 1) {
-      // If this was a FORWARD navigation, the server may have accepted the move
-      // (the move was legal; only the client's article fetch failed). Tell the
-      // server to undo it so rp.path stays aligned with the client path —
-      // otherwise, under move-legality enforcement, every later click is
-      // validated against an article the player never actually saw and gets
-      // wrongly rejected. The server only undoes if its tail still matches.
-      const wasForwardNav = (title === _forwardNavTitle);
-      _forwardNavTitle = null;
+    const wasForwardNav = (title === _forwardNavTitle);
+    _forwardNavTitle = null;
+    const btnStyle = 'margin-top:16px;padding:10px 24px;background:var(--accent);color:white;border:none;border-radius:8px;cursor:pointer;font-size:1rem;';
+    if (wasForwardNav && myPath.length > 1) {
+      // A FORWARD navigation: the server may have accepted the move (the move
+      // was legal; only the client's article fetch failed). Tell the server
+      // to undo it so rp.path stays aligned with the client path — otherwise,
+      // under move-legality enforcement, every later click is validated
+      // against an article the player never actually saw and gets wrongly
+      // rejected. The server only undoes if its tail still matches.
       myPath.pop();
       const prevArticle = myPath[myPath.length - 1];
       currentArticle = prevArticle;
-      if (wasForwardNav) send({ type: 'navigate_undo', article: title });
+      send({ type: 'navigate_undo', article: title });
       const btn = document.createElement('button');
       btn.textContent = `← Go Back to ${prevArticle.replace(/_/g, ' ')}`;
-      btn.style.cssText = 'margin-top:16px;padding:10px 24px;background:var(--accent);color:white;border:none;border-radius:8px;cursor:pointer;font-size:1rem;';
+      btn.style.cssText = btnStyle;
       btn.addEventListener('click', () => loadArticle(prevArticle));
+      content.appendChild(btn);
+    } else {
+      // The origin, or a reload of the position the server already holds (a
+      // rollback, a resync): nothing to undo, and popping would move the
+      // client behind the server. Offer a retry. The origin case had no
+      // button at all: a slow first load (12s timeout) or a Wikipedia 429 left
+      // the player on an error page with the clock running.
+      // A timeout, a blocked network (school filters), or Wikipedia saying
+      // "slow down" (429 when a whole classroom starts at once) is not a
+      // missing article; say so, since the retry will usually work.
+      const unreachable = err && (err.name === 'AbortError' || err.status === 429 || err.status >= 500 || /fetch|network/i.test(String(err.message)));
+      if (unreachable) p.textContent = `Couldn’t reach Wikipedia for "${failedTitle}". Check your connection and try again.`;
+      const btn = document.createElement('button');
+      btn.textContent = '↻ Retry';
+      btn.style.cssText = btnStyle;
+      btn.addEventListener('click', () => loadArticle(title));
       content.appendChild(btn);
     }
     content.style.display = 'block';
@@ -7491,6 +7936,7 @@ function navigateTo(article) {
       updateBreadcrumbs();
     }
     if (result.error === 'rate_limited') showGlobalToast('Slow down a moment — try again.', 2500);
+    if (result.error === 'safe_mode') showGlobalToast('Safe mode: that article is blocked.', 2500);
   });
 }
 
@@ -7519,15 +7965,37 @@ function renderProgress(playerId) {
 const MAX_DIST = 6;
 const COLLAPSE_THRESHOLD = 3;
 
+// One colour per distance that actually occurs in play: the server only
+// maps the target's 1/2/3-link neighbourhood, so the old tiers (<=2 close,
+// <=4 mid) painted nearly every reading the same amber. Now amber means
+// exactly one link out, which is also when a pod starts to throb.
 function distColorClass(d) {
   if (d === null || d === undefined) return 'dist-far';
-  if (d <= 2) return 'dist-close';
-  if (d <= 4) return 'dist-mid';
+  if (d <= 1) return 'dist-close';
+  if (d <= 2) return 'dist-mid';
   return 'dist-far';
 }
 
 function renderPlayersBar(distData) {
   const container = document.getElementById('lbRiders');
+
+  // Distance ruler (classic only). Built once per game: startGameUI clears
+  // #lbRiders, and the cleanup pass below only removes .lb-rider nodes.
+  let ticks = container.querySelector('.lb-ticks');
+  if (!ticks) {
+    ticks = document.createElement('div');
+    ticks.className = 'lb-ticks';
+    ticks.setAttribute('aria-hidden', 'true');
+    let th = '';
+    for (let d = MAX_DIST; d >= 0; d--) {
+      const left = 93 - (d / MAX_DIST) * 86; // same mapping the pods use
+      const label = d === MAX_DIST ? `${d}+<span class="lb-tick-unit"> links away</span>` : (d === 0 ? 'target' : String(d));
+      th += `<span class="lb-tick${d === 0 ? ' finish' : ''}" style="left:${left}%"><span>${label}</span></span>`;
+    }
+    ticks.innerHTML = th;
+    container.prepend(ticks);
+  }
+  ticks.style.display = currentGameMode === 'classic' ? '' : 'none';
 
   const entries = [];
   const allPids = new Set([...playerProgress.keys(), ...(distData ? Object.keys(distData) : [])]);
@@ -7636,6 +8104,28 @@ function renderPlayersBar(distData) {
     }
   }
 
+  // Someone is one link out: the finish line pulses faster for everyone,
+  // and a friend's approach is announced once each time they get there.
+  // Tracked across all entries (not per rendered pod) because pods that are
+  // collapsed into a stack never reach the per-pod branch below.
+  const barEl = document.getElementById('playersBar');
+  if (barEl) barEl.classList.toggle('heat', currentGameMode === 'classic' && entries.some(e => e.d === 1));
+  if (currentGameMode === 'classic') {
+    for (const e of entries) {
+      if (e.d === 1) {
+        if (!podWasClose.has(e.pid)) {
+          podWasClose.add(e.pid);
+          // prev == null means this is their starting article, not an approach.
+          if (!isSinglePlayer && e.pid !== myPlayerId && e.prev !== null && e.prev !== undefined) {
+            showGlobalToast(`${e.name} is 1 link away!`, 2500, 'heat');
+          }
+        }
+      } else {
+        podWasClose.delete(e.pid);
+      }
+    }
+  }
+
   const groups = [];
   const assigned = new Set();
   for (let i = 0; i < entries.length; i++) {
@@ -7675,17 +8165,28 @@ function renderPlayersBar(distData) {
       dot.replaceChildren();
       const stack = document.createElement('div');
       stack.className = 'lb-stack';
-      for (const e of group) {
+      // Big rooms: a stack of 20 circles would sprawl across the track, so
+      // draw at most 5 (me first) and count the rest.
+      const STACK_MAX = 5;
+      const ordered = [...group].sort((a, b) => (b.pid === myPlayerId) - (a.pid === myPlayerId));
+      for (const e of ordered.slice(0, STACK_MAX)) {
         const c = document.createElement('span');
         c.className = 'lb-stack-circle';
         c.style.background = e.color;
         stack.appendChild(c);
       }
+      if (group.length > STACK_MAX) {
+        const more = document.createElement('span');
+        more.className = 'lb-stack-more';
+        more.textContent = `+${group.length - STACK_MAX}`;
+        stack.appendChild(more);
+      }
       dot.appendChild(stack);
       const tip = document.createElement('div');
       tip.className = 'lb-tip';
       tip.style.cssText = 'background:var(--surface);flex-direction:column;gap:4px;padding:8px 12px;';
-      for (const e of group) {
+      const TIP_MAX = 10;
+      for (const e of ordered.slice(0, TIP_MAX)) {
         let dHtml = '';
         if (currentGameMode === 'tri' && e.triDists) {
           const distVals = Object.values(e.triDists).filter(v => v !== null && v !== undefined);
@@ -7727,6 +8228,12 @@ function renderPlayersBar(distData) {
         stepsSpan.textContent = String(e.steps) + (e.triInfo || '');
         row.appendChild(stepsSpan);
         tip.appendChild(row);
+      }
+      if (group.length > TIP_MAX) {
+        const moreRow = document.createElement('div');
+        moreRow.style.cssText = 'color:var(--text2);font-size:0.68rem;';
+        moreRow.textContent = `and ${group.length - TIP_MAX} more`;
+        tip.appendChild(moreRow);
       }
       dot.appendChild(tip);
       dot.style.left = avgLeft + '%';
@@ -7778,9 +8285,17 @@ function renderPlayersBar(distData) {
         rider.innerHTML = `
           ${distHtml}
           <span class="lb-name">${esc(e.name)}</span>
-          <span class="lb-steps">${e.steps}${e.triInfo}</span>
+          <span class="lb-steps">${e.steps}<span class="lb-steps-word"> ${e.steps === 1 ? 'step' : 'steps'}</span>${e.triInfo}</span>
           ${stepFlash}
         `;
+        const hasDist = currentGameMode === 'classic' && e.d !== null && e.d !== undefined;
+        const isClose = hasDist && e.d === 1;
+        rider.classList.toggle('is-close', isClose);
+        if (hasDist) {
+          rider.title = `${e.name}: ${e.d} ${e.d === 1 ? 'link' : 'links'} from the target, ${e.steps} ${e.steps === 1 ? 'step' : 'steps'}`;
+        } else {
+          rider.removeAttribute('title');
+        }
         let row = 0;
         for (const u of rowUsed) {
           if (Math.abs(u.left - e.leftPct) < 12 && u.row === row) row++;
@@ -7789,10 +8304,13 @@ function renderPlayersBar(distData) {
           rider.style.top = '50%';
           rider.style.transform = 'translateX(-50%) translateY(-50%)';
         } else {
-          rider.style.top = (row * 20) + 'px';
+          rider.style.top = (row * 22) + 'px';
           rider.style.transform = 'translateX(-50%)';
         }
         rider.style.left = e.leftPct + '%';
+        // On a phone, pods on neighbouring ticks overlap. Draw the one nearer
+        // the target on top so the leader's distance badge is never covered.
+        rider.style.zIndex = hasDist ? String(2 + Math.max(0, MAX_DIST - Math.min(e.d, MAX_DIST))) : '';
         rowUsed.push({ left: e.leftPct, row });
         if (prevData && prevData.distance !== null && e.d !== null && prevData.distance !== e.d && !isNew) {
           rider.classList.remove('pulse');
@@ -9825,29 +10343,18 @@ function compactPath(path, maxNodes = 6) {
   return [names[0], names[1], '…', names[names.length - 2], names[names.length - 1]];
 }
 
-// Localized share strings — when the game ran on the Chinese wiki, all
-// the share text + image labels should be Simplified Chinese for consistency.
+// Share text + image labels, kept in one table so every share surface
+// (copy text, card, image) uses the same wording.
 const SHARE_STRINGS = {
-  en: {
-    steps: 'steps', start: 'Start:', yourTurn: 'your turn →',
-    triSuffix: ' (Tri)', triTargets: '3 targets',
-    marathonSuffix: ' (Marathon)', pts: 'pts', targets: 'targets', min: 'min',
-    cardTitle: 'Your run', copy: 'Copy share', save: 'Save image',
-    showCard: 'Share your run', hideCard: 'Hide share',
-    copied: 'Copied!', saved: 'Saved!', copyFail: 'Copy failed',
-  },
-  zh: {
-    steps: '步', start: '起点:', yourTurn: '轮到你了 →',
-    triSuffix: '(三叉)', triTargets: '3 个目标',
-    marathonSuffix: '(马拉松)', pts: '分', targets: '个目标', min: '分钟',
-    cardTitle: '你的成绩', copy: '复制分享', save: '保存图片',
-    showCard: '分享成绩', hideCard: '隐藏分享',
-    copied: '已复制!', saved: '已保存!', copyFail: '复制失败',
-  },
+  steps: 'steps', start: 'Start:', yourTurn: 'your turn →',
+  triSuffix: ' (Tri)', triTargets: '3 targets',
+  marathonSuffix: ' (Marathon)', pts: 'pts', targets: 'targets', min: 'min',
+  cardTitle: 'Your run', copy: 'Copy share', save: 'Save image',
+  showCard: 'Share your run', hideCard: 'Hide share',
+  copied: 'Copied!', saved: 'Saved!', copyFail: 'Copy failed',
 };
 function shareStr() {
-  const lang = (typeof activeWikiLang === 'function' ? activeWikiLang() : 'en');
-  return SHARE_STRINGS[lang] || SHARE_STRINGS.en;
+  return SHARE_STRINGS;
 }
 
 function buildShareText(r, msg) {
@@ -10033,8 +10540,8 @@ function populateShareCard(msg) {
   const toggleBtn = document.getElementById('shareToggleBtn');
   if (!card) return;
   const S = shareStr();
-  // Apply localized labels to the static-text elements (title, button copy)
-  // before any branching so even early returns leave them in the right lang.
+  // Set the static-text labels (title, button copy) before any branching so
+  // even early returns leave them in their default state.
   const titleEl = card.querySelector('.share-card-title');
   if (titleEl) titleEl.textContent = S.cardTitle;
   // Default: both hidden. Reset from previous game.
@@ -10061,7 +10568,7 @@ function populateShareCard(msg) {
   }
 
   const steps = Math.max(0, r.path.length - 1);
-  // Update the localized "steps" label first — this rebuilds the span that
+  // Update the "steps" label first — this rebuilds the span that
   // holds the step count, so we update its textContent here directly to
   // avoid the duplicate-id pitfall (innerHTML used to inject a second
   // id="scSteps", and the prior getElementById call overwrote a now-stale
@@ -10194,9 +10701,6 @@ function backToHome() {
   currentRoomCode = null;
   isHost = false;
   isSinglePlayer = false;
-  // Unlock the wiki-language toggle now that we're out of any room.
-  currentGameLang = null;
-  updateWikiLangToggleUI();
   showScreen('home');
 }
 
