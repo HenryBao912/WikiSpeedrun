@@ -3565,6 +3565,11 @@
     overflow-x: hidden;
     background: #fff;
     color: #222;
+    /* Containing block for absolutely positioned bits inside articles
+       (screen-reader spans, map pins). Without it they escape this scroll
+       box, stretch the document, and the whole game screen becomes
+       scrollable (seen on the "Wiki" article). */
+    position: relative;
   }
   .wiki-content {
     max-width: 900px;
