@@ -7477,8 +7477,14 @@ function startGameUI(msg) {
   const playersBar = document.getElementById('playersBar');
   playersBar.style.display = 'flex';
   playersBar.classList.toggle('tri-mode', currentGameMode === 'tri');
-  // Laptop rail: set up the end chips (tri) and readout right away, before the first distance reading.
-  if (railTrackMQ.matches) updateRailEnds(document.getElementById('lbRiders'), []);
+  // Laptop rail: the first distance reading can take a few seconds, and an
+  // empty rail looks broken. Draw the ruler with my pod at the start of the
+  // track now; the real reading moves it. Tri has no single start end, so it
+  // only gets its two target chips until distances arrive.
+  if (railTrackMQ.matches) {
+    if (currentGameMode === 'tri') updateRailEnds(document.getElementById('lbRiders'), []);
+    else renderPlayersBar({ [myPlayerId]: { name: 'You', steps: 0, distance: null, prev: null } });
+  }
   startTimer();
   // Marathon's target loads async after game_start, so defer the hint until
   // renderMarathonTarget fires. Other modes have their destination by now.
