@@ -4313,7 +4313,8 @@
      stay horizontal. The pod JS reads the same media query (railTrackMQ), so
      keep the two in sync. Below 1200px (or on short screens) none of this
      applies. */
-  .lb-fill { display: none; }
+  .lb-fill, .lb-end, .lb-readout { display: none; }
+  @media (prefers-reduced-motion: reduce) { #game .lb-riders::after { animation: none !important; } }
   @media (min-width: 1200px) and (min-height: 600px) {
     #game.active {
       display: grid;
@@ -4411,6 +4412,47 @@
       text-align: right;
     }
     #game .lb-ticks.v .lb-tick-unit { display: none; }
+
+    /* Named ends: the destination on top (green, same as the top-bar tag) and
+       the start article at the bottom (purple, same as the origin tag), so the
+       rail reads as the same route as the top bar, turned on its side. */
+    #game .lb-end {
+      display: block;
+      position: absolute; left: 0; right: 0;
+      z-index: 3;
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-size: 0.68rem; font-weight: 700; line-height: 1.35;
+      color: #fff;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    #game .lb-end[hidden] { display: none; }
+    #game .lb-end.top { top: 0; }
+    #game .lb-end.bottom { bottom: 0; }
+    #game .lb-end.dest { background: var(--green); cursor: pointer; }
+    #game .lb-end.origin { background: var(--accent); }
+    /* Plain-words readout under the track: "2 links to go". */
+    #game .lb-readout:not(:empty) {
+      display: block;
+      margin-top: 10px;
+      padding: 4px 6px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.05);
+      text-align: center;
+      font-size: 0.72rem; font-weight: 800;
+    }
+    /* Light pulses run up the track, pointing the way to the destination. */
+    #game .lb-riders[data-mode="classic"]::after {
+      content: '';
+      position: absolute;
+      left: 31px; top: 22px; bottom: 22px;
+      width: 3px; border-radius: 3px;
+      background: linear-gradient(to top, transparent 0, rgba(255, 255, 255, 0.5) 50%, transparent 100%) 0 0 / 100% 72px repeat-y;
+      animation: railFlow 2.8s linear infinite;
+      pointer-events: none;
+      z-index: 0;
+    }
+    @keyframes railFlow { to { background-position: 0 -72px; } }
 
     /* Pods sit right of the track, joined to it by a short connector in their own colour. */
     #game .lb-rider { padding: 2px 7px; font-size: 0.7rem; gap: 3px; z-index: 1; }
@@ -8131,6 +8173,54 @@ function distColorClass(d) {
   return 'dist-far';
 }
 
+// Vertical rail only: name the two ends of the track (destination on top, start
+// at the bottom; in tri mode the two targets) and spell out my distance in words.
+function updateRailEnds(container, entries) {
+  const bar = document.getElementById('playersBar');
+  const clean = t => (t || '').replace(/_/g, ' ');
+  let top = container.querySelector('.lb-end.top');
+  let bottom = container.querySelector('.lb-end.bottom');
+  if (!top) {
+    top = document.createElement('div'); top.className = 'lb-end top';
+    bottom = document.createElement('div'); bottom.className = 'lb-end bottom';
+    container.append(top, bottom);
+  }
+  let readout = bar.querySelector('.lb-readout');
+  if (!readout) {
+    readout = document.createElement('div');
+    readout.className = 'lb-readout';
+    readout.setAttribute('aria-live', 'polite');
+    bar.appendChild(readout);
+  }
+  const setEnd = (el, kind, title) => {
+    el.hidden = !title;
+    if (!title) return;
+    el.className = `lb-end ${el === top ? 'top' : 'bottom'} ${kind}`;
+    el.textContent = clean(title);
+    el.title = clean(title);
+    el.dataset.title = title;
+    el.onclick = kind === 'dest' ? (ev) => { ev.stopPropagation(); dismissInfoHint(); toggleSummary(el, title); } : null;
+  };
+  if (currentGameMode === 'classic') {
+    setEnd(top, 'dest', gameDestination);
+    setEnd(bottom, 'origin', gameOrigin);
+  } else if (currentGameMode === 'tri' && triTargets.length === 3) {
+    setEnd(top, 'dest', triTargets[1]);
+    setEnd(bottom, 'dest', triTargets[2]);
+  } else {
+    setEnd(top, 'dest', '');
+    setEnd(bottom, 'dest', '');
+  }
+  const me = entries.find(e => e.pid === myPlayerId);
+  if (currentGameMode === 'classic' && me && me.d !== null && me.d !== undefined && me.d > 0) {
+    readout.className = 'lb-readout ' + distColorClass(me.d);
+    readout.textContent = me.d === 1 ? '1 link to go!' : `${me.d} links to go`;
+  } else {
+    readout.className = 'lb-readout';
+    readout.textContent = '';
+  }
+}
+
 function renderPlayersBar(distData) {
   const container = document.getElementById('lbRiders');
 
@@ -8305,6 +8395,7 @@ function renderPlayersBar(distData) {
     const show = vertical && currentGameMode === 'classic' && me && me.d !== null && me.d !== undefined;
     fill.style.height = show ? (100 - trackAxis(me.leftPct)) + '%' : '0%';
   }
+  if (vertical) updateRailEnds(container, entries);
 
   const groups = [];
   const assigned = new Set();
