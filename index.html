@@ -4340,17 +4340,22 @@
         var(--surface);
       border-bottom: none;
       border-right: 1px solid var(--surface2);
-      overflow-x: visible;   /* group tooltips may reach over the article */
-      overflow-y: clip;
+      overflow: hidden;      /* browsers without overflow:clip keep everything inside the rail */
+    }
+    @supports (overflow: clip) {
+      /* Group tooltips may reach over the article; top and bottom stay clipped. */
+      #game .players-bar { overflow-x: visible; overflow-y: clip; }
     }
     /* Finish glow: a slim bar across the bottom (destination end); tri mode adds one at the top. */
     #game .players-bar::after {
       top: auto; right: 0; bottom: 0; left: 0;
       width: auto; height: 4px;
+      clip-path: inset(-60px 0 0 0);   /* glow rises into the rail, never sideways over the article */
     }
     #game .players-bar.tri-mode::before {
       top: 0; right: 0; bottom: auto; left: 0;
       width: auto; height: 4px;
+      clip-path: inset(0 0 -60px 0);
     }
     #game .lb-riders { flex: 1; height: auto; min-height: 260px; }
 
@@ -4459,7 +4464,13 @@
     @keyframes railFlow { to { background-position: 0 72px; } }
 
     /* Pods sit right of the track, joined to it by a short connector in their own colour. */
-    #game .lb-rider { padding: 2px 7px; font-size: 0.7rem; gap: 3px; z-index: 1; }
+    #game .lb-rider {
+      padding: 2px 7px; font-size: 0.7rem; gap: 3px; z-index: 1;
+      max-width: calc(100% - 46px);   /* 46px = RAIL_POD_LEFT */
+      box-sizing: border-box;
+      transition: top 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    #game .lb-rider > * { flex-shrink: 0; }
     #game .lb-rider::before {
       content: '';
       position: absolute;
@@ -4471,7 +4482,8 @@
     }
     #game .lb-rider.collapsed::before { display: none; }
     #game .lb-rider.collapsed { box-shadow: none; }
-    #game .lb-rider .lb-name { max-width: 54px; overflow: hidden; text-overflow: ellipsis; }
+    #game .lb-rider .lb-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    #game .lb-rider.collapsed { max-width: none; }
     #game .lb-rider .lb-steps-word { display: none; }
     #game .lb-rider .lb-tip {
       bottom: auto; top: 50%; left: calc(100% + 8px);
@@ -7689,7 +7701,12 @@ async function toggleSummary(el, title) {
   const tooltip = document.createElement('div');
   tooltip.className = 'summary-tooltip';
   tooltip.textContent = 'Loading...';
-  tooltip.style.top = (rect.bottom + 8) + 'px';
+  if (rect.bottom > window.innerHeight - 140) {
+    // Owner sits near the bottom edge (the rail's lower target chip): open upward.
+    tooltip.style.bottom = (window.innerHeight - rect.top + 8) + 'px';
+  } else {
+    tooltip.style.top = (rect.bottom + 8) + 'px';
+  }
   const tooltipW = 280;
   const idealLeft = rect.left + rect.width / 2 - tooltipW / 2;
   const clampedLeft = Math.max(8, Math.min(idealLeft, window.innerWidth - tooltipW - 8));
@@ -8157,14 +8174,19 @@ function renderProgress(playerId) {
 // bottom) in a left rail.
 const railTrackMQ = window.matchMedia('(min-width: 1200px) and (min-height: 600px)');
 const RAIL_POD_LEFT = 46; // px: pods sit right of the track and its connector
-railTrackMQ.addEventListener('change', () => {
-  // Rebuild the ruler and re-place every pod for the new orientation.
+function onRailTrackChange() {
+  // Rebuild the ruler and re-place every pod for the new orientation. Outside a
+  // game there is nothing to do: startGameUI rebuilds the track from scratch.
+  if (!document.getElementById('game')?.classList.contains('active')) return;
   document.querySelector('#lbRiders .lb-ticks')?.remove();
   document.querySelectorAll('#lbRiders .lb-rider').forEach(el => {
     el.style.left = ''; el.style.top = ''; el.style.transform = '';
   });
-  if (typeof latestDistData !== 'undefined') renderPlayersBar(latestDistData);
-});
+  renderPlayersBar(latestDistData);
+}
+// addListener is the pre-2020 spelling (old Safari); a missing listener must not break the script.
+if (railTrackMQ.addEventListener) railTrackMQ.addEventListener('change', onRailTrackChange);
+else if (railTrackMQ.addListener) railTrackMQ.addListener(onRailTrackChange);
 
 const MAX_DIST = 6;
 const COLLAPSE_THRESHOLD = 3;
@@ -8258,9 +8280,9 @@ function renderPlayersBar(distData) {
   // bottom. Tri: first target at the top, second at the bottom.
   const trackAxis = (leftPct) => leftPct;
   container.dataset.mode = currentGameMode;
-  // Smallest gap (in % of the track) at which two pods fit without touching:
-  // a pod is ~22px tall, and the track height depends on the window.
-  const minGapPct = Math.max(3, 26 / (container.clientHeight || 500) * 100);
+  // Vertical layout: every pod and stack is collected here and placed in one
+  // pass at the end, so neighbours never overlap however crowded the room is.
+  const railPlaced = [];
   // My progress fill (vertical classic only; hidden by CSS otherwise).
   let fill = container.querySelector('.lb-fill');
   if (!fill) {
@@ -8325,9 +8347,13 @@ function renderPlayersBar(distData) {
         // Position based on relative closeness: closer to d1 = more left
         e.leftPct = total > 0 ? 7 + (d1 / total) * 86 : 50;
       } else if (dists.length === 1) {
-        // Only one target left — use classic-style positioning
+        // Only one distance known (the other target is still being mapped):
+        // classic-style positioning toward that target's own end of the track
+        // (first target = left/top, second = right/bottom).
         const clamped = Math.min(dists[0], MAX_DIST);
-        e.leftPct = 93 - (clamped / MAX_DIST) * 86;
+        const firstVal = Object.values(e.triDists)[0];
+        const knownIsFirst = firstVal !== null && firstVal !== undefined;
+        e.leftPct = knownIsFirst ? 7 + (clamped / MAX_DIST) * 86 : 93 - (clamped / MAX_DIST) * 86;
       } else {
         e.leftPct = 50;
       }
@@ -8519,7 +8545,7 @@ function renderPlayersBar(distData) {
       dot.classList.toggle('has-me', group.some(e => e.pid === myPlayerId));
       if (vertical) {
         dot.style.left = RAIL_POD_LEFT + 'px';
-        dot.style.top = trackAxis(avgLeft) + '%';
+        railPlaced.push({ el: dot, pct: trackAxis(avgLeft), me: false, isNew: !dot.style.top });
         dot.style.transform = 'translateY(-50%)';
         // Tall tooltips hang down from stacks in the top half of the track and rise up from the bottom half.
         tip.dataset.v = trackAxis(avgLeft) < 50 ? 'down' : 'up';
@@ -8589,12 +8615,10 @@ function renderPlayersBar(distData) {
         }
         let row = 0;
         for (const u of rowUsed) {
-          // Horizontal pods are ~120px wide; vertical ones are ~22px tall on a taller track.
-          if (Math.abs(u.left - e.leftPct) < (vertical ? minGapPct : 12) && u.row === row) row++;
+                    if (Math.abs(u.left - e.leftPct) < 12 && u.row === row) row++;
         }
         if (vertical) {
-          // Same distance: stack downward instead of in extra rows.
-          rider.style.top = `calc(${trackAxis(e.leftPct)}% + ${row * 24}px)`;
+          railPlaced.push({ el: rider, pct: trackAxis(e.leftPct), me: e.pid === myPlayerId, isNew: isNew || !rider.style.top });
           rider.style.transform = 'translateY(-50%)';
           rider.style.left = RAIL_POD_LEFT + 'px';
         } else {
@@ -8618,6 +8642,35 @@ function renderPlayersBar(distData) {
         }
         prevPositions.set(e.pid, { distance: e.d, steps: e.steps });
       }
+    }
+  }
+
+  if (vertical && railPlaced.length) {
+    // Each item wants to sit at pct% of the track. Walk top to bottom and push
+    // anything that would touch its neighbour down by one pod height, then
+    // walk back up so nothing is pushed past the bottom end. Offsets are kept
+    // as "pct% + Npx" so a window resize keeps everything in place.
+    const H = container.clientHeight || 500;
+    const GAP = 24;
+    railPlaced.sort((a, b) => (a.pct - b.pct) || (b.me - a.me));
+    let prevY = -Infinity;
+    for (const it of railPlaced) { it.y = Math.max(it.pct / 100 * H, prevY + GAP); prevY = it.y; }
+    let limit = H - 11;
+    for (let i = railPlaced.length - 1; i >= 0; i--) {
+      if (railPlaced[i].y > limit) railPlaced[i].y = limit;
+      limit = railPlaced[i].y - GAP;
+    }
+    const fresh = [];
+    for (const it of railPlaced) {
+      const off = Math.round(it.y - it.pct / 100 * H);
+      // A pod or stack that has just been created appears in place; without
+      // this it would slide in from the top of the rail (its CSS default).
+      if (it.isNew) { it.el.style.transition = 'none'; fresh.push(it.el); }
+      it.el.style.top = off ? `calc(${it.pct}% + ${off}px)` : it.pct + '%';
+    }
+    if (fresh.length) {
+      void container.offsetHeight; // commit the positions before transitions come back
+      for (const el of fresh) el.style.transition = '';
     }
   }
 
