@@ -6617,6 +6617,11 @@ function setBtnLoading(btn, isLoading) {
 let _startWatchdogTimer = null;
 function armStartWatchdog() {
   clearStartWatchdog();
+  // Solo and daily starts arm this after the start request's reply, and the
+  // server's game_start SSE usually lands first. If the game screen is already
+  // up there is no handshake left to wait for, and arming here would toast
+  // "didn't start" 15s into a game that is running fine.
+  if (document.getElementById('game')?.classList.contains('active')) return;
   _startWatchdogTimer = setTimeout(() => {
     _startWatchdogTimer = null;
     document.querySelectorAll('.btn-loading').forEach(b => b.classList.remove('btn-loading'));
