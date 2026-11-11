@@ -3908,6 +3908,12 @@
     flex-shrink: 0;
   }
   .lb-stack-circle:first-child { margin-left: 0; }
+  /* The stack that hides me gets a ring on my circle (it is always drawn first). */
+  .lb-rider.collapsed.has-me .lb-stack-circle:first-child {
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85);
+    position: relative;
+    z-index: 1;
+  }
   .lb-stack-more {
     margin-left: 3px;
     color: var(--text2);
@@ -4300,16 +4306,18 @@
     .dest-hint-bar { padding: 3px 12px; font-size: 0.72rem; }
   }
   /* Side rail (laptop and desktop). Above 1200px wide the article column is
-     capped at 900px, so ~270px of margin on each side is empty. The race track
-     (how close everyone is to the target) turns vertical and moves into a left
-     rail there: target at the top, far away at the bottom. That frees a whole
-     row of height for the article. The top bar and the breadcrumb trail stay
-     horizontal. The pod JS reads the same media query (railTrackMQ), so keep
-     the two in sync. Below 1200px (or on short screens) nothing here applies. */
+     capped at 900px, so there is empty margin on both sides. The race track
+     (how close everyone is to the target) turns vertical and moves into a slim
+     left rail there: target at the top, far away at the bottom. That frees a
+     whole row of height for the article. The top bar and the breadcrumb trail
+     stay horizontal. The pod JS reads the same media query (railTrackMQ), so
+     keep the two in sync. Below 1200px (or on short screens) none of this
+     applies. */
+  .lb-fill { display: none; }
   @media (min-width: 1200px) and (min-height: 600px) {
     #game.active {
       display: grid;
-      grid-template-columns: 250px minmax(0, 1fr);
+      grid-template-columns: 152px minmax(0, 1fr);
       grid-template-rows: auto auto auto minmax(0, 1fr);
       height: 100vh;
       min-height: 0;
@@ -4320,42 +4328,111 @@
     #game .breadcrumb-bar { grid-column: 2; grid-row: 3; }
     #game .wiki-container { grid-column: 2; grid-row: 4; min-height: 0; }
 
+    /* The rail: a soft green wash at the target end fading into the bar. */
     #game .players-bar {
-      padding: 16px 12px 14px;
+      padding: 14px 8px 12px 6px;
+      background:
+        linear-gradient(180deg, rgba(0, 184, 148, 0.13) 0, rgba(0, 184, 148, 0) 170px),
+        var(--surface);
       border-bottom: none;
-      border-right: 2px solid var(--surface2);
+      border-right: 1px solid var(--surface2);
       overflow-x: visible;   /* group tooltips may reach over the article */
       overflow-y: clip;
     }
-    /* Finish glow: a bar across the top (target end); tri mode adds one at the bottom. */
+    /* Finish glow: a slim bar across the top (target end); tri mode adds one at the bottom. */
     #game .players-bar::after {
       top: 0; right: 0; bottom: auto; left: 0;
-      width: auto; height: 8px;
+      width: auto; height: 4px;
     }
     #game .players-bar.tri-mode::before {
       top: auto; right: 0; bottom: 0; left: 0;
-      width: auto; height: 8px;
+      width: auto; height: 4px;
     }
     #game .lb-riders { flex: 1; height: auto; min-height: 260px; }
 
-    /* Ruler: a horizontal hairline per distance, label on the left. */
-    #game .lb-ticks.v .lb-tick {
-      left: 0; right: 0; bottom: auto;
-      width: auto; height: 1px;
+    /* The track itself: a thin rounded line at x=32. In classic it runs
+       through the same colours the distance numbers use (far blue, then
+       purple, amber one link out, green at the target). */
+    #game .lb-riders::before {
+      content: '';
+      position: absolute;
+      left: 31px; top: 0; bottom: 0;
+      width: 3px;
+      border-radius: 3px;
+      background: rgba(255, 255, 255, 0.09);
+      z-index: 0;
     }
+    #game .lb-riders[data-mode="classic"]::before {
+      background: linear-gradient(to top,
+        rgba(125, 211, 252, 0.28) 0%,
+        rgba(192, 132, 252, 0.34) 55%,
+        rgba(251, 191, 36, 0.5) 85%,
+        #00b894 100%);
+    }
+    /* My progress: a glowing fill up the track from the far end to my pod. */
+    #game .lb-fill {
+      display: block;
+      position: absolute;
+      left: 30px; bottom: 0;
+      width: 5px; height: 0;
+      border-radius: 5px;
+      background: linear-gradient(to top, rgba(108, 92, 231, 0), var(--accent));
+      box-shadow: 0 0 10px 1px rgba(108, 92, 231, 0.55);
+      transition: height 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* Ruler: a dot on the track and a faint hairline per distance, label on the left. */
+    #game .lb-ticks.v .lb-tick {
+      left: 32px; right: 0; bottom: auto;
+      width: auto; height: 1px;
+      background: rgba(255, 255, 255, 0.05);
+    }
+    #game .lb-ticks.v .lb-tick::before {
+      content: '';
+      position: absolute;
+      left: -3px; top: -3px;
+      width: 7px; height: 7px;
+      box-sizing: border-box;
+      border-radius: 50%;
+      background: var(--surface);
+      border: 2px solid rgba(255, 255, 255, 0.28);
+    }
+    #game .lb-ticks.v .lb-tick.finish { background: rgba(0, 184, 148, 0.3); }
+    #game .lb-ticks.v .lb-tick.finish::before { background: #00b894; border-color: #00b894; box-shadow: 0 0 8px #00b894; }
     #game .lb-ticks.v .lb-tick > span {
-      left: 0; bottom: auto; top: 50%;
+      left: auto; right: calc(100% + 8px);
+      bottom: auto; top: 50%;
       transform: translateY(-50%);
-      padding: 0 6px 0 0;
+      padding: 0;
+      background: none;
+      font-size: 0.58rem;
+      text-align: right;
     }
     #game .lb-ticks.v .lb-tick-unit { display: none; }
 
-    /* Pods sit to the right of the labels and are placed by JS (top = distance). */
-    #game .lb-rider .lb-name { max-width: 96px; overflow: hidden; text-overflow: ellipsis; }
+    /* Pods sit right of the track, joined to it by a short connector in their own colour. */
+    #game .lb-rider { padding: 2px 7px; font-size: 0.7rem; gap: 3px; z-index: 1; }
+    #game .lb-rider::before {
+      content: '';
+      position: absolute;
+      right: 100%; top: 50%;
+      width: 8px; height: 2px;
+      margin-top: -1px;
+      background: var(--pc, rgba(255, 255, 255, 0.25));
+      opacity: 0.7;
+    }
+    #game .lb-rider.collapsed::before { display: none; }
+    #game .lb-rider.collapsed { box-shadow: none; }
+    #game .lb-rider .lb-name { max-width: 54px; overflow: hidden; text-overflow: ellipsis; }
+    #game .lb-rider .lb-steps-word { display: none; }
     #game .lb-rider .lb-tip {
       bottom: auto; top: 50%; left: calc(100% + 8px);
       transform: translateY(-50%);
     }
+    #game .lb-rider .lb-tip[data-v="down"] { top: -6px; transform: none; }
+    #game .lb-rider .lb-tip[data-v="up"] { top: auto; bottom: -6px; transform: none; }
     #game .lb-rider.pulse { animation-name: dotPulseV; }
     #game .lb-rider.is-close.pulse { animation: dotPulseV 0.6s ease-out, podHeat 1.1s ease-in-out infinite; }
     @keyframes dotPulseV {
@@ -8030,7 +8107,7 @@ function renderProgress(playerId) {
 // Same condition as the "Side rail" media query in the stylesheet: on laptop
 // and desktop the race track runs vertically (target at the top) in a left rail.
 const railTrackMQ = window.matchMedia('(min-width: 1200px) and (min-height: 600px)');
-const RAIL_POD_LEFT = 36; // px: pods sit right of the distance labels
+const RAIL_POD_LEFT = 46; // px: pods sit right of the track and its connector
 railTrackMQ.addEventListener('change', () => {
   // Rebuild the ruler and re-place every pod for the new orientation.
   document.querySelector('#lbRiders .lb-ticks')?.remove();
@@ -8068,7 +8145,7 @@ function renderPlayersBar(distData) {
     let th = '';
     for (let d = MAX_DIST; d >= 0; d--) {
       const left = 93 - (d / MAX_DIST) * 86; // same mapping the pods use
-      const label = d === MAX_DIST ? `${d}+<span class="lb-tick-unit"> links away</span>` : (d === 0 ? 'target' : String(d));
+      const label = d === MAX_DIST ? `${d}+<span class="lb-tick-unit"> links away</span>` : (d === 0 ? (vertical ? 'goal' : 'target') : String(d));
       // Vertical: target (left = 93) at the top, far at the bottom.
       const pos = vertical ? `top:${100 - left}%` : `left:${left}%`;
       th += `<span class="lb-tick${d === 0 ? ' finish' : ''}" style="${pos}"><span>${label}</span></span>`;
@@ -8081,6 +8158,18 @@ function renderPlayersBar(distData) {
   // the horizontal percentage. Tri and marathon keep their left-to-right order
   // top-to-bottom (first target at the top).
   const trackAxis = (leftPct) => currentGameMode === 'classic' ? 100 - leftPct : leftPct;
+  container.dataset.mode = currentGameMode;
+  // Smallest gap (in % of the track) at which two pods fit without touching:
+  // a pod is ~22px tall, and the track height depends on the window.
+  const minGapPct = Math.max(3, 26 / (container.clientHeight || 500) * 100);
+  // My progress fill (vertical classic only; hidden by CSS otherwise).
+  let fill = container.querySelector('.lb-fill');
+  if (!fill) {
+    fill = document.createElement('div');
+    fill.className = 'lb-fill';
+    fill.setAttribute('aria-hidden', 'true');
+    container.prepend(fill);
+  }
 
   const entries = [];
   const allPids = new Set([...playerProgress.keys(), ...(distData ? Object.keys(distData) : [])]);
@@ -8211,6 +8300,12 @@ function renderPlayersBar(distData) {
     }
   }
 
+  {
+    const me = entries.find(e => e.pid === myPlayerId);
+    const show = vertical && currentGameMode === 'classic' && me && me.d !== null && me.d !== undefined;
+    fill.style.height = show ? (100 - trackAxis(me.leftPct)) + '%' : '0%';
+  }
+
   const groups = [];
   const assigned = new Set();
   for (let i = 0; i < entries.length; i++) {
@@ -8321,10 +8416,13 @@ function renderPlayersBar(distData) {
         tip.appendChild(moreRow);
       }
       dot.appendChild(tip);
+      dot.classList.toggle('has-me', group.some(e => e.pid === myPlayerId));
       if (vertical) {
         dot.style.left = RAIL_POD_LEFT + 'px';
         dot.style.top = trackAxis(avgLeft) + '%';
         dot.style.transform = 'translateY(-50%)';
+        // Tall tooltips hang down from stacks in the top half of the track and rise up from the bottom half.
+        tip.dataset.v = trackAxis(avgLeft) < 50 ? 'down' : 'up';
       } else {
         dot.style.left = avgLeft + '%';
         dot.style.top = '0px';
@@ -8374,6 +8472,7 @@ function renderPlayersBar(distData) {
         const steppedUp = prevData && prevData.steps !== undefined && e.steps > prevData.steps && !isNew;
         const stepFlash = steppedUp ? '<span class="lb-step-flash show">+</span>' : '<span class="lb-step-flash"></span>';
         rider.style.background = e.color;
+        rider.style.setProperty('--pc', e.color);
         rider.innerHTML = `
           ${distHtml}
           <span class="lb-name">${esc(e.name)}</span>
@@ -8391,7 +8490,7 @@ function renderPlayersBar(distData) {
         let row = 0;
         for (const u of rowUsed) {
           // Horizontal pods are ~120px wide; vertical ones are ~22px tall on a taller track.
-          if (Math.abs(u.left - e.leftPct) < (vertical ? 4 : 12) && u.row === row) row++;
+          if (Math.abs(u.left - e.leftPct) < (vertical ? minGapPct : 12) && u.row === row) row++;
         }
         if (vertical) {
           // Same distance: stack downward instead of in extra rows.
