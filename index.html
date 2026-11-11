@@ -4330,8 +4330,6 @@
     /* The visited-pages strip is dropped here to give the article its row back
        (updateBreadcrumbs still runs; it also feeds the step counter). */
     #game .breadcrumb-bar { display: none; }
-    /* Classic's A -> B tags are dropped here: the rail's start (top) and destination (bottom) chips say it. */
-    #game #classicNav { display: none; }
     #game .wiki-container { grid-column: 2; grid-row: 3 / 5; min-height: 0; }
 
     /* The rail: a soft green wash at the destination end (bottom) fading into the bar. */
@@ -7467,7 +7465,7 @@ function startGameUI(msg) {
   const playersBar = document.getElementById('playersBar');
   playersBar.style.display = 'flex';
   playersBar.classList.toggle('tri-mode', currentGameMode === 'tri');
-  // Laptop rail: name the track's ends right away (the top bar no longer shows the route there).
+  // Laptop rail: put the destination chip up right away (before the first distance reading).
   if (railTrackMQ.matches) updateRailEnds(document.getElementById('lbRiders'), []);
   startTimer();
   // Marathon's target loads async after game_start, so defer the hint until
@@ -8211,7 +8209,9 @@ function updateRailEnds(container, entries) {
     el.onclick = kind === 'dest' ? (ev) => { ev.stopPropagation(); dismissInfoHint(); toggleSummary(el, title); } : null;
   };
   if (currentGameMode === 'classic') {
-    setEnd(top, 'origin', gameOrigin);
+    // Classic: the top bar already shows A -> B and the track's alignment says
+    // start-on-top, so only the destination gets a chip (at the bottom).
+    setEnd(top, 'origin', '');
     setEnd(bottom, 'dest', gameDestination);
   } else if (currentGameMode === 'tri' && triTargets.length === 3) {
     setEnd(top, 'dest', triTargets[1]);
