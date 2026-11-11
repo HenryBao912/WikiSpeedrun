@@ -7465,7 +7465,7 @@ function startGameUI(msg) {
   const playersBar = document.getElementById('playersBar');
   playersBar.style.display = 'flex';
   playersBar.classList.toggle('tri-mode', currentGameMode === 'tri');
-  // Laptop rail: put the destination chip up right away (before the first distance reading).
+  // Laptop rail: set up the end chips (tri) and readout right away, before the first distance reading.
   if (railTrackMQ.matches) updateRailEnds(document.getElementById('lbRiders'), []);
   startTimer();
   // Marathon's target loads async after game_start, so defer the hint until
@@ -8209,10 +8209,10 @@ function updateRailEnds(container, entries) {
     el.onclick = kind === 'dest' ? (ev) => { ev.stopPropagation(); dismissInfoHint(); toggleSummary(el, title); } : null;
   };
   if (currentGameMode === 'classic') {
-    // Classic: the top bar already shows A -> B and the track's alignment says
-    // start-on-top, so only the destination gets a chip (at the bottom).
+    // Classic: no chips. The top bar shows A -> B, the track's alignment says
+    // start-on-top, and the green glow at the bottom marks the destination.
     setEnd(top, 'origin', '');
-    setEnd(bottom, 'dest', gameDestination);
+    setEnd(bottom, 'dest', '');
   } else if (currentGameMode === 'tri' && triTargets.length === 3) {
     setEnd(top, 'dest', triTargets[1]);
     setEnd(bottom, 'dest', triTargets[2]);
