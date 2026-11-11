@@ -3367,26 +3367,54 @@
     transition: opacity 0.2s;
   }
   .surrender-btn:hover { opacity: 0.9; cursor: pointer; }
-  /* Safe mode switch (multiplayer lobby, solo setup). */
+  /* Safe mode switch (multiplayer lobby, solo setup). A quiet one-line option
+     under the setup controls: a small switch, the name and a three-word
+     hint. The full explanation is in the title tooltip. */
   .safe-toggle {
     display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    box-sizing: border-box;
-    width: 100%;
-    max-width: 420px; /* same column as the mode buttons and difficulty slider */
-    padding: 10px 14px;
-    margin: 0 auto 14px;
-    background: var(--surface);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 10px;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: 100%;
+    margin: 14px auto 0;
+    padding: 4px 8px;
+    color: var(--text2);
+    font-size: 0.78rem;
+    line-height: 1.2;
     cursor: pointer;
-    text-align: left;
+    user-select: none;
   }
-  .safe-toggle input { margin-top: 3px; width: 16px; height: 16px; accent-color: var(--green); flex-shrink: 0; }
-  .safe-toggle .safe-title { font-weight: 700; font-size: 0.9rem; }
-  .safe-toggle .safe-desc { display: block; color: var(--text2); font-size: 0.75rem; margin-top: 2px; }
+  .safe-toggle input {
+    -webkit-appearance: none;
+    appearance: none;
+    position: relative;
+    flex-shrink: 0;
+    width: 26px; height: 14px;
+    margin: 0;
+    border-radius: 99px;
+    background: var(--surface2);
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .safe-toggle input::after {
+    content: '';
+    position: absolute;
+    top: 2px; left: 2px;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--text2);
+    transition: transform 0.15s, background 0.15s;
+  }
+  .safe-toggle input:checked { background: var(--green); }
+  .safe-toggle input:checked::after { transform: translateX(12px); background: #fff; }
+  .safe-toggle input:focus-visible { outline: 2px solid var(--accent2); outline-offset: 2px; }
+  .safe-toggle .safe-title { font-weight: 600; }
+  .safe-toggle input:checked + span .safe-title { color: var(--text); }
+  .safe-toggle .safe-desc { opacity: 0.75; }
   .safe-toggle.locked { opacity: 0.6; cursor: default; }
+  .safe-toggle.locked input { cursor: default; }
+  #lobby .safe-toggle { margin-top: -10px; } /* the lobby column already has a 24px gap */
   /* Host-only: ends the round when someone idle is stalling the surrender vote. */
   .end-round-btn {
     background: none;
@@ -4337,10 +4365,6 @@
   <button class="back-btn" onclick="showScreen('home')">← Back</button>
   <h1 class="setup-title">Singleplayer</h1>
   <div class="setup-form">
-    <label class="safe-toggle" id="spSafeRow">
-      <input type="checkbox" id="spSafeToggle" onchange="setSoloSafeMode(this.checked)">
-      <span><span class="safe-title">Safe mode</span><span class="safe-desc">Blocks adult articles. Good for classrooms.</span></span>
-    </label>
     <div class="form-group">
       <label class="form-label">Mode</label>
       <div class="mode-selector">
@@ -4394,6 +4418,10 @@
       <div id="spRoundWordsInputs"></div>
       <button class="btn btn-primary" onclick="startSinglePlayer(this)" style="width:100%;margin-top:8px;">Start!</button>
     </div>
+    <label class="safe-toggle" id="spSafeRow" title="Safe mode blocks adult articles: they can't be a start or target, and their links won't open. Good for classrooms.">
+      <input type="checkbox" id="spSafeToggle" onchange="setSoloSafeMode(this.checked)">
+      <span><span class="safe-title">Safe mode</span><span class="safe-desc"> · hides adult articles</span></span>
+    </label>
   </div>
 </div>
 
@@ -4438,10 +4466,6 @@
     <ul class="player-list" id="playerList"></ul>
     <p class="waiting-text" id="waitingText">Waiting for players...</p>
   </div>
-  <label class="safe-toggle" id="mpSafeRow">
-    <input type="checkbox" id="mpSafeToggle" onchange="setSafeMode(this.checked)">
-    <span><span class="safe-title">Safe mode</span><span class="safe-desc">Blocks adult articles: they can't be a start or target, and their links won't open. Good for classrooms.</span></span>
-  </label>
   <div class="form-group">
     <div class="mode-selector" id="mpModeSelector">
       <div class="mode-btn active" id="mpModeClassic" onclick="setMultiplayerMode('classic')">
@@ -4494,6 +4518,10 @@
     <div class="round-words-inputs" id="roundWordsInputs"></div>
     <button class="btn btn-primary btn-small" id="mpStartBtn" onclick="startMultiplayerGame(this)" style="display:none;">Start!</button>
   </div>
+  <label class="safe-toggle" id="mpSafeRow" title="Safe mode blocks adult articles: they can't be a start or target, and their links won't open. Good for classrooms. Only the host can change it.">
+    <input type="checkbox" id="mpSafeToggle" onchange="setSafeMode(this.checked)">
+    <span><span class="safe-title">Safe mode</span><span class="safe-desc"> · hides adult articles</span></span>
+  </label>
 </div>
 
 <!-- ─── Game Screen ─── -->
