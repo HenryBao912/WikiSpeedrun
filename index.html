@@ -4308,7 +4308,8 @@
   /* Side rail (laptop and desktop). Above 1200px wide the article column is
      capped at 900px, so there is empty margin on both sides. The race track
      (how close everyone is to the target) turns vertical and moves into a slim
-     left rail there: target at the top, far away at the bottom. That frees a
+     left rail there: the start at the top and the destination at the bottom, so
+     progress runs downward like the page scroll. That frees a
      whole row of height for the article. The top bar and the breadcrumb trail
      stay horizontal. The pod JS reads the same media query (railTrackMQ), so
      keep the two in sync. Below 1200px (or on short screens) none of this
@@ -4331,24 +4332,24 @@
     #game .breadcrumb-bar { display: none; }
     #game .wiki-container { grid-column: 2; grid-row: 3 / 5; min-height: 0; }
 
-    /* The rail: a soft green wash at the target end fading into the bar. */
+    /* The rail: a soft green wash at the destination end (bottom) fading into the bar. */
     #game .players-bar {
       padding: 14px 8px 12px 6px;
       background:
-        linear-gradient(180deg, rgba(0, 184, 148, 0.13) 0, rgba(0, 184, 148, 0) 170px),
+        linear-gradient(0deg, rgba(0, 184, 148, 0.13) 0, rgba(0, 184, 148, 0) 170px),
         var(--surface);
       border-bottom: none;
       border-right: 1px solid var(--surface2);
       overflow-x: visible;   /* group tooltips may reach over the article */
       overflow-y: clip;
     }
-    /* Finish glow: a slim bar across the top (target end); tri mode adds one at the bottom. */
+    /* Finish glow: a slim bar across the bottom (destination end); tri mode adds one at the top. */
     #game .players-bar::after {
-      top: 0; right: 0; bottom: auto; left: 0;
+      top: auto; right: 0; bottom: 0; left: 0;
       width: auto; height: 4px;
     }
     #game .players-bar.tri-mode::before {
-      top: auto; right: 0; bottom: 0; left: 0;
+      top: 0; right: 0; bottom: auto; left: 0;
       width: auto; height: 4px;
     }
     #game .lb-riders { flex: 1; height: auto; min-height: 260px; }
@@ -4366,20 +4367,20 @@
       z-index: 0;
     }
     #game .lb-riders[data-mode="classic"]::before {
-      background: linear-gradient(to top,
+      background: linear-gradient(to bottom,
         rgba(125, 211, 252, 0.28) 0%,
         rgba(192, 132, 252, 0.34) 55%,
         rgba(251, 191, 36, 0.5) 85%,
         #00b894 100%);
     }
-    /* My progress: a glowing fill up the track from the far end to my pod. */
+    /* My progress: a glowing fill down the track from the start to my pod. */
     #game .lb-fill {
       display: block;
       position: absolute;
-      left: 30px; bottom: 0;
+      left: 30px; top: 0;
       width: 5px; height: 0;
       border-radius: 5px;
-      background: linear-gradient(to top, rgba(108, 92, 231, 0), var(--accent));
+      background: linear-gradient(to bottom, rgba(108, 92, 231, 0), var(--accent));
       box-shadow: 0 0 10px 1px rgba(108, 92, 231, 0.55);
       transition: height 0.8s cubic-bezier(0.22, 1, 0.36, 1);
       pointer-events: none;
@@ -4415,8 +4416,8 @@
     }
     #game .lb-ticks.v .lb-tick-unit { display: none; }
 
-    /* Named ends: the destination on top (green, same as the top-bar tag) and
-       the start article at the bottom (purple, same as the origin tag), so the
+    /* Named ends: the start article on top (purple, same as the origin tag) and
+       the destination at the bottom (green, same as the top-bar tag), so the
        rail reads as the same route as the top bar, turned on its side. */
     #game .lb-end {
       display: block;
@@ -4444,18 +4445,18 @@
       text-align: center;
       font-size: 0.72rem; font-weight: 800;
     }
-    /* Light pulses run up the track, pointing the way to the destination. */
+    /* Light pulses run down the track, pointing the way to the destination. */
     #game .lb-riders[data-mode="classic"]::after {
       content: '';
       position: absolute;
       left: 31px; top: 22px; bottom: 22px;
       width: 3px; border-radius: 3px;
-      background: linear-gradient(to top, transparent 0, rgba(255, 255, 255, 0.5) 50%, transparent 100%) 0 0 / 100% 72px repeat-y;
+      background: linear-gradient(to bottom, transparent 0, rgba(255, 255, 255, 0.5) 50%, transparent 100%) 0 0 / 100% 72px repeat-y;
       animation: railFlow 2.8s linear infinite;
       pointer-events: none;
       z-index: 0;
     }
-    @keyframes railFlow { to { background-position: 0 -72px; } }
+    @keyframes railFlow { to { background-position: 0 72px; } }
 
     /* Pods sit right of the track, joined to it by a short connector in their own colour. */
     #game .lb-rider { padding: 2px 7px; font-size: 0.7rem; gap: 3px; z-index: 1; }
@@ -8150,7 +8151,8 @@ function renderProgress(playerId) {
 }
 
 // Same condition as the "Side rail" media query in the stylesheet: on laptop
-// and desktop the race track runs vertically (target at the top) in a left rail.
+// and desktop the race track runs vertically (start at the top, target at the
+// bottom) in a left rail.
 const railTrackMQ = window.matchMedia('(min-width: 1200px) and (min-height: 600px)');
 const RAIL_POD_LEFT = 46; // px: pods sit right of the track and its connector
 railTrackMQ.addEventListener('change', () => {
@@ -8176,7 +8178,7 @@ function distColorClass(d) {
   return 'dist-far';
 }
 
-// Vertical rail only: name the two ends of the track (destination on top, start
+// Vertical rail only: name the two ends of the track (start on top, destination
 // at the bottom; in tri mode the two targets) and spell out my distance in words.
 function updateRailEnds(container, entries) {
   const bar = document.getElementById('playersBar');
@@ -8205,8 +8207,8 @@ function updateRailEnds(container, entries) {
     el.onclick = kind === 'dest' ? (ev) => { ev.stopPropagation(); dismissInfoHint(); toggleSummary(el, title); } : null;
   };
   if (currentGameMode === 'classic') {
-    setEnd(top, 'dest', gameDestination);
-    setEnd(bottom, 'origin', gameOrigin);
+    setEnd(top, 'origin', gameOrigin);
+    setEnd(bottom, 'dest', gameDestination);
   } else if (currentGameMode === 'tri' && triTargets.length === 3) {
     setEnd(top, 'dest', triTargets[1]);
     setEnd(bottom, 'dest', triTargets[2]);
@@ -8239,18 +8241,18 @@ function renderPlayersBar(distData) {
     for (let d = MAX_DIST; d >= 0; d--) {
       const left = 93 - (d / MAX_DIST) * 86; // same mapping the pods use
       const label = d === MAX_DIST ? `${d}+<span class="lb-tick-unit"> links away</span>` : (d === 0 ? (vertical ? 'goal' : 'target') : String(d));
-      // Vertical: target (left = 93) at the top, far at the bottom.
-      const pos = vertical ? `top:${100 - left}%` : `left:${left}%`;
+      // Vertical: far (left = 7) at the top, the target (left = 93) at the bottom.
+      const pos = vertical ? `top:${left}%` : `left:${left}%`;
       th += `<span class="lb-tick${d === 0 ? ' finish' : ''}" style="${pos}"><span>${label}</span></span>`;
     }
     ticks.innerHTML = th;
     container.prepend(ticks);
   }
   ticks.style.display = currentGameMode === 'classic' ? '' : 'none';
-  // Vertical track: classic puts the target at the top (distance 0), so flip
-  // the horizontal percentage. Tri and marathon keep their left-to-right order
-  // top-to-bottom (first target at the top).
-  const trackAxis = (leftPct) => currentGameMode === 'classic' ? 100 - leftPct : leftPct;
+  // Vertical track: the horizontal percentage maps straight to a top-to-bottom
+  // one. Classic: far away (left 7) at the top, the target (left 93) at the
+  // bottom. Tri: first target at the top, second at the bottom.
+  const trackAxis = (leftPct) => leftPct;
   container.dataset.mode = currentGameMode;
   // Smallest gap (in % of the track) at which two pods fit without touching:
   // a pod is ~22px tall, and the track height depends on the window.
@@ -8396,7 +8398,7 @@ function renderPlayersBar(distData) {
   {
     const me = entries.find(e => e.pid === myPlayerId);
     const show = vertical && currentGameMode === 'classic' && me && me.d !== null && me.d !== undefined;
-    fill.style.height = show ? (100 - trackAxis(me.leftPct)) + '%' : '0%';
+    fill.style.height = show ? trackAxis(me.leftPct) + '%' : '0%';
   }
   if (vertical) updateRailEnds(container, entries);
 
