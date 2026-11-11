@@ -4326,8 +4326,10 @@
     #game .game-header { grid-column: 1 / -1; grid-row: 1; }
     #game .dest-hint-bar { grid-column: 1 / -1; grid-row: 2; }
     #game .players-bar { grid-column: 1; grid-row: 3 / 5; }
-    #game .breadcrumb-bar { grid-column: 2; grid-row: 3; }
-    #game .wiki-container { grid-column: 2; grid-row: 4; min-height: 0; }
+    /* The visited-pages strip is dropped here to give the article its row back
+       (updateBreadcrumbs still runs; it also feeds the step counter). */
+    #game .breadcrumb-bar { display: none; }
+    #game .wiki-container { grid-column: 2; grid-row: 3 / 5; min-height: 0; }
 
     /* The rail: a soft green wash at the target end fading into the bar. */
     #game .players-bar {
@@ -4424,6 +4426,7 @@
       border-radius: 6px;
       font-size: 0.68rem; font-weight: 700; line-height: 1.35;
       color: #fff;
+      text-align: center;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     #game .lb-end[hidden] { display: none; }
