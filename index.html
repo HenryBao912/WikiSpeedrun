@@ -4440,16 +4440,20 @@
     #game .lb-end.bottom { bottom: 0; }
     #game .lb-end.dest { background: var(--green); cursor: pointer; }
     #game .lb-end.origin { background: var(--accent); }
-    /* Plain-words readout under the track: "2 links to go". */
-    #game .lb-readout:not(:empty) {
+    /* Plain-words readout at the top of the rail: "2 links to go". Classic
+       keeps the slot even while it is empty, so the track does not jump when
+       the first reading lands. */
+    #game .lb-readout.on {
       display: block;
-      margin-top: 10px;
+      margin-bottom: 10px;
       padding: 4px 6px;
       border-radius: 6px;
       background: rgba(255, 255, 255, 0.05);
       text-align: center;
       font-size: 0.72rem; font-weight: 800;
+      line-height: 1.3; min-height: calc(1.3em + 8px); /* one line of text plus the padding */
     }
+    #game .lb-readout.on:empty { background: none; }
     /* Light pulses run down the track, pointing the way to the destination. */
     #game .lb-riders[data-mode="classic"]::after {
       content: '';
@@ -8225,7 +8229,7 @@ function updateRailEnds(container, entries) {
     readout = document.createElement('div');
     readout.className = 'lb-readout';
     readout.setAttribute('aria-live', 'polite');
-    bar.appendChild(readout);
+    bar.prepend(readout); // above the track
   }
   const setEnd = (el, kind, title) => {
     el.hidden = !title;
@@ -8250,10 +8254,10 @@ function updateRailEnds(container, entries) {
   }
   const me = entries.find(e => e.pid === myPlayerId);
   if (currentGameMode === 'classic' && me && me.d !== null && me.d !== undefined && me.d > 0) {
-    readout.className = 'lb-readout ' + distColorClass(me.d);
+    readout.className = 'lb-readout on ' + distColorClass(me.d);
     readout.textContent = me.d === 1 ? '1 link to go!' : `${me.d} links to go`;
   } else {
-    readout.className = 'lb-readout';
+    readout.className = 'lb-readout' + (currentGameMode === 'classic' ? ' on' : '');
     readout.textContent = '';
   }
 }
