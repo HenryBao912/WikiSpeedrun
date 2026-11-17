@@ -3397,17 +3397,20 @@
     cursor: pointer;
     transition: background 0.15s;
   }
-  .safe-toggle input::after {
-    content: '';
-    position: absolute;
-    top: 2px; left: 2px;
-    width: 10px; height: 10px;
-    border-radius: 50%;
-    background: var(--text2);
-    transition: transform 0.15s, background 0.15s;
+  /* The knob is a background image on the input itself, not an ::after:
+     Firefox does not reliably draw pseudo-elements on checkboxes. */
+  .safe-toggle input {
+    background-image: radial-gradient(circle, var(--text2) 4.5px, transparent 5px);
+    background-size: 10px 10px;
+    background-repeat: no-repeat;
+    background-position: 2px 50%;
+    transition: background-color 0.15s, background-position 0.15s;
   }
-  .safe-toggle input:checked { background: var(--green); }
-  .safe-toggle input:checked::after { transform: translateX(12px); background: #fff; }
+  .safe-toggle input:checked {
+    background-color: var(--green);
+    background-image: radial-gradient(circle, #fff 4.5px, transparent 5px);
+    background-position: 14px 50%;
+  }
   .safe-toggle input:focus-visible { outline: 2px solid var(--accent2); outline-offset: 2px; }
   .safe-toggle .safe-title { font-weight: 600; }
   .safe-toggle input:checked + span .safe-title { color: var(--text); }
@@ -8361,7 +8364,9 @@ function renderPlayersBar(distData) {
         // classic-style positioning toward that target's own end of the track
         // (first target = left/top, second = right/bottom).
         const clamped = Math.min(dists[0], MAX_DIST);
-        const firstVal = Object.values(e.triDists)[0];
+        // Look the target up by name: the server only stores the targets the
+        // player still has to reach, so "first value" can be the second target.
+        const firstVal = triTargets.length === 3 ? e.triDists[triTargets[1]] : Object.values(e.triDists)[0];
         const knownIsFirst = firstVal !== null && firstVal !== undefined;
         e.leftPct = knownIsFirst ? 7 + (clamped / MAX_DIST) * 86 : 93 - (clamped / MAX_DIST) * 86;
       } else {
