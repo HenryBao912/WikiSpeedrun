@@ -788,6 +788,8 @@ function loadIndexHtml() {
   indexHtmlEtag = baseVariant.etag;
 }
 loadIndexHtml();
+// Sitemap lastmod = the day this deploy booted, not "today" on every request.
+const SITEMAP_LASTMOD = new Date().toISOString().slice(0, 10);
 
 // DOMPurify is the sanitizer guarding all Wikipedia-HTML injection. It's served
 // from our own origin (vendored at build time) rather than a CDN: a CDN is a
@@ -4907,6 +4909,16 @@ const server = http.createServer(async (req, res) => {
   const parsed = url.parse(req.url, true);
   cors(res);
 
+  // /multiplayer/ → /multiplayer (301). Only for known page routes, so Google
+  // and shared links with a trailing slash don't hit the 404.
+  if (parsed.pathname.length > 1 && parsed.pathname.endsWith('/') &&
+      pageVariants.has(parsed.pathname.replace(/\/+$/, '')) &&
+      (req.method === 'GET' || req.method === 'HEAD')) {
+    res.writeHead(301, { Location: parsed.pathname.replace(/\/+$/, '') + (parsed.search || '') });
+    res.end();
+    return;
+  }
+
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
     res.end();
@@ -5215,6 +5227,10 @@ const server = http.createServer(async (req, res) => {
       'Allow: /\n' +
       'Disallow: /events\n' +
       'Disallow: /action\n' +
+      // POST-only beacons; Googlebot found them in the client JS and logged 404s.
+      'Disallow: /perf\n' +
+      'Disallow: /pageview\n' +
+      'Disallow: /clientlog\n' +
       'Disallow: /r/\n' +
       'Sitemap: https://wikispeedrun.io/sitemap.xml\n'
     );
@@ -5225,7 +5241,7 @@ const server = http.createServer(async (req, res) => {
   // URLs are the prerequisite for Google sitelinks under the main result.
   if (parsed.pathname === '/sitemap.xml') {
     res.writeHead(200, { 'Content-Type': 'application/xml', 'Cache-Control': 'public, max-age=86400' });
-    const today = new Date().toISOString().slice(0, 10);
+    const today = SITEMAP_LASTMOD;
     const urls = Object.keys(PAGE_ROUTES).map(route =>
       '  <url>\n' +
       `    <loc>https://wikispeedrun.io${route === '/' ? '/' : route}</loc>\n` +
